@@ -834,7 +834,7 @@ jobs:
       # passo "Subir WAHA e o par Redis da VPS fresca") — a jornada de onboarding é exercitada; o que só
       # o Plus tem, não.
       #
-# As CINCO specs da missão "Follow-up Vivo" (`followup-linguagem`,
+      # As CINCO specs da missão "Follow-up Vivo" (`followup-linguagem`,
       # `followup-ramos`, `followup-dossie`, `followup-tempo-adaptativo`,
       # `gatilho-de-etapa`) entraram nas listas de execução, e não aqui, porque a
       # medição não dá motivo para excluí-las: grep de waha/resend/nuvemshop/redis
@@ -1713,6 +1713,7 @@ jobs:
       - name: Build de produção (com o ambiente do E2E)
         run: pnpm e2e:build
         env:
+          NODE_OPTIONS: --max-old-space-size=6144
           NEXT_TELEMETRY_DISABLED: "1"
           # `off`, NÃO vazio. Vazio seleciona o Sentry DA COMUNIDADE — está
           # escrito em lib/sentry/dsn.ts:8-10, e é o default de propósito num
@@ -2303,7 +2304,8 @@ jobs:
     # Nenhuma permissão: este job só lê o resultado de `needs` e escreve o
     # summary. Sem o bloco, o token herdaria o default do REPOSITÓRIO, que vive
     # fora do repo e muda num clique.
-    permissions: {}
+    permissions:
+      contents: read
     steps:
       - name: Falhar se qualquer parte não passou
         env:

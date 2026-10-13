@@ -85,7 +85,7 @@ describe("publish-image: cancela só o que se supera", () => {
     expect(g(EVENTOS.tag)).toContain("refs/tags/v1.35.0");
     expect(g({ ...EVENTOS.tag, ref: "refs/tags/v1.36.0" })).not.toBe(g(EVENTOS.tag));
     // E a matriz entra no grupo: sem ela, o build do worker cancelaria o do app.
-    expect(g({ ...EVENTOS.pr, matriz: "deskcomm-worker" })).not.toBe(g(EVENTOS.pr));
+    expect(g({ ...EVENTOS.pr, matriz: "estallo-crm-worker" })).not.toBe(g(EVENTOS.pr));
     // A arquitetura também entra no grupo: os jobs ARM e AMD64 devem rodar juntos.
     expect(g({ ...EVENTOS.main, arquitetura: "arm64" })).not.toBe(g(EVENTOS.main));
   });

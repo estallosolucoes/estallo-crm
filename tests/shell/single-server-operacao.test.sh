@@ -301,7 +301,7 @@ env_sb_inicial
 SMTP_HOST=smtp.env.com SMTP_PORT=587 SMTP_USERNAME=u SMTP_PASSWORD=s SMTP_FROM_EMAIL=a@env.com PSQL_SMTP='' smtp; rc=$?
 check "sem linha no banco, cai no .env do CRM (como lib/email/config.ts)" \
   bash -c '[ "$1" -eq 0 ] && grep -qx "SMTP_HOST=\"smtp.env.com\"" "$2"' _ "$rc" "$SB/.env"
-check "sem nome de remetente, usa o nome da instalação" grep -qx 'SMTP_SENDER_NAME="DeskcommCRM"' "$SB/.env"
+check "sem nome de remetente, usa o nome da instalação" grep -qx 'SMTP_SENDER_NAME="Estallo CRM"' "$SB/.env"
 
 env_sb_inicial
 SMTP_HOST=smtp.env.com SMTP_FROM_EMAIL=a@env.com PSQL_SMTP='\x1f587\x1f\x1f\x1f\x1f\n' smtp; rc=$?

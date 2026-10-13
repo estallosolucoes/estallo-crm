@@ -24,7 +24,10 @@ function job(yml: string, nome: string): string {
 
 describe("nenhuma tag publica sem estar contida na main", () => {
   it("o job da trava existe", () => {
-    expect(job(publish, "a-tag-veio-da-main"), "a trava de procedência sumiu de publish-image.yml").not.toBe("");
+    expect(
+      job(publish, "a-tag-veio-da-main"),
+      "a trava de procedência sumiu de publish-image.yml",
+    ).not.toBe("");
   });
 
   it.each(["build-and-push", "imagem-do-app-sobe"])(
@@ -79,7 +82,12 @@ describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
     // não o nome da função — que já mudou uma vez, quando a conferência passou a
     // comparar digest em vez de código de status (issue #488).
     expect(t, "o corte não consulta mais o registro").toMatch(/ghcr\.io\/v2\//);
-    for (const img of ["deskcommcrm", "deskcomm-worker", "deskcomm-scheduler", "deskcomm-voice-agent"]) {
+    for (const img of [
+      "estallo-crm",
+      "estallo-crm-worker",
+      "estallo-crm-scheduler",
+      "estallo-crm-voice-agent",
+    ]) {
       expect(t, `a conferência não cobre ${img}`).toContain(img);
     }
     expect(t).toMatch(/::error::/);

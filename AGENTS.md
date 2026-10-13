@@ -174,7 +174,7 @@ O CI tem cinco checks obrigatórios na `main`: `verify`, `build-and-size`, `inva
 `imagens-ok`. Não confie nesta lista — reconte antes de citar:
 
 ```bash
-gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
+gh api repos/melgarafael/Estallo CRM/branches/main/protection \
   --jq '.required_status_checks.contexts|join(", ")'
 ```
 
@@ -257,7 +257,7 @@ função aparece várias vezes, e quem vale é a **última**. Pergunte ao banco 
 Contar no arquivo responde "o arquivo menciona", não "o banco faz".
 
 **Marca própria (white-label)** — o produto é revendido e o nome não é seu. **Nunca** escreva
-"Deskcomm"/"DeskcommCRM" em código que alcança o usuário: `tests/unit/branding.test.ts` varre
+"Deskcomm"/"Estallo CRM" em código que alcança o usuário: `tests/unit/branding.test.ts` varre
 `app|components|lib|workers|hooks` e reprova (a allowlist só encolhe). A marca resolve do banco
 (`platform_branding`, `organizations.settings.branding`); `APP_NAME`/`APP_LOGO_URL`/`APP_ACCENT_HEX`
 no `.env` são semente e piso de rollback. Fora do DOM (e-mail, ícone, `issuer` do MFA) use

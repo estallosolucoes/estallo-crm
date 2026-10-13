@@ -36,7 +36,7 @@ chmod +x "$WORK/bin/docker" "$WORK/bin/crontab"
 PROJ="$WORK/projeto"
 mkdir -p "$PROJ"
 printf 'services:\n  app:\n    image: x\n' > "$PROJ/docker-compose.prod.yml"
-printf 'APP_IMAGE=exemplo/deskcommcrm:1.0.0\nNEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br\n' > "$PROJ/.env"
+printf 'APP_IMAGE=exemplo/estallo-crm:1.0.0\nNEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br\n' > "$PROJ/.env"
 LOG="$PROJ/.update-agent.log"
 
 # A linha logo depois do aviso — é ela que carrega a razão.

@@ -233,7 +233,10 @@ describe("o ambiente da suíte desliga a telemetria", () => {
 
   it("e `off` de fato desliga — a guarda acima não vale nada se o valor não desligasse", () => {
     expect(resolveSentryDsn("off")).toBeUndefined();
-    // Controle: o vazio NÃO desliga, e é por isso que a linha acima é obrigatória.
-    expect(isCommunityDsn(resolveSentryDsn(""))).toBe(true);
+    // O fork também fecha a coleta quando nenhuma configuração foi fornecida.
+    expect(resolveSentryDsn("")).toBeUndefined();
+    expect(resolveSentryDsn(undefined)).toBeUndefined();
+    expect(resolveSentryDsn(null)).toBeUndefined();
+    expect(isCommunityDsn(resolveSentryDsn(""))).toBe(false);
   });
 });

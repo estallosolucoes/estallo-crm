@@ -315,7 +315,7 @@ export async function GET(req: NextRequest) {
       data: {
         status,
         // APP_VERSION é injetada no build da imagem (ARG no Dockerfile) e vale
-        // "1.2.3" numa release, ou o SHA curto fora de tag.
+        // "1.2.3" numa release, ou o SHA do commit fora de tag.
         //
         // Antes isto era `process.env.npm_package_version ?? "0.1.0"`, e a
         // variável só existe quando o processo nasce de um `npm`/`pnpm run`. O

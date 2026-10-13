@@ -5,9 +5,8 @@
  * limpeza do teto de orçamento (0159) por nunca ter tido agendador. Quem avisa o
  * cliente que o gasto passou do ponto escolhido é o item `budget_warning` na
  * Central (`agent_inbox_items`), aberto pelo próprio gate. Este arquivo fica de
- * pé porque o alarme POR E-MAIL continua sendo uma peça desejada — e é a dívida
- * D1 de marca (`tests/unit/branding.test.ts`): ele ainda escreve o nosso nome,
- * o que só passa a importar no dia em que ele voltar a ser enviado.
+ * pé porque o alarme POR E-MAIL continua sendo uma peça desejada. O assunto é
+ * neutro, para não impor a marca do produto a uma organização com marca própria.
  */
 export interface BudgetAlarmEmailOptions {
   pct: number;
@@ -32,7 +31,7 @@ export function buildBudgetAlarmEmail(opts: BudgetAlarmEmailOptions): {
   text: string;
 } {
   const pctStr = `${opts.pct.toFixed(2)}%`;
-  const subject = `Alerta IA: orçamento atingiu ${pctStr} — DeskcommCRM`;
+  const subject = `Alerta IA: orçamento atingiu ${pctStr}`;
   const orgLine = opts.orgName
     ? `<p style="margin:0 0 16px;font-size:14px;color:#57534e">Organização: <strong>${escapeHtml(opts.orgName)}</strong></p>`
     : "";

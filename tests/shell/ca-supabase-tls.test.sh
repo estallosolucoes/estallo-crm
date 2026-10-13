@@ -77,7 +77,7 @@ mkdir -p "$PROJ"
 printf 'services:\n  app:\n    image: ${APP_IMAGE:-x}\n  worker:\n    image: ${WORKER_IMAGE:-x}\n  scheduler:\n    image: ${SCHEDULER_IMAGE:-x}\n' \
   > "$PROJ/docker-compose.prod.yml"
 cat > "$PROJ/.env" <<'ENV'
-APP_IMAGE=exemplo/deskcommcrm:1.0.0
+APP_IMAGE=exemplo/estallo-crm:1.0.0
 SUPABASE_DB_URL=postgresql://postgres.ref:SENHA-SUPER-SECRETA@aws-0.sa-east-1.pooler.supabase.com:5432/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://ref.supabase.co
 ENV

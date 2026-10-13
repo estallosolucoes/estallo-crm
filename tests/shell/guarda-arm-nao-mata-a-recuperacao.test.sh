@@ -147,7 +147,7 @@ export PATH="$WORK/bin:$PATH"
 # clone ainda não tem `.env` nenhum — que é como o install.sh chega ao
 # `source _common.sh` na prática.
 montar_instalacao() {  # montar_instalacao <raiz> <0|1 sem .env> [WAHA_IMAGE]
-  local raiz="$1" sem_env="${2:-0}" waha="${3:-devlikeapro/waha:latest-2026.7.2}" proj="$1/deskcommcrm"
+  local raiz="$1" sem_env="${2:-0}" waha="${3:-devlikeapro/waha:latest-2026.7.2}" proj="$1/estallo-crm"
   mkdir -p "$proj"
   cp -RL "$REPO_ROOT/hostgator-setup-kit" "$proj/"
   mkdir -p "$proj/supabase"
@@ -155,7 +155,7 @@ montar_instalacao() {  # montar_instalacao <raiz> <0|1 sem .env> [WAHA_IMAGE]
   printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$proj/docker-compose.prod.yml"
   if [ "$sem_env" = 0 ]; then
     cat > "$proj/.env" <<ENV
-APP_IMAGE=${NS}/deskcommcrm:0.9.0
+APP_IMAGE=${NS}/estallo-crm:0.9.0
 APP_PULL_POLICY=missing
 WAHA_IMAGE=${waha}
 SUPABASE_DB_URL=postgresql://x/y
@@ -191,7 +191,7 @@ ENV
 
 # rodar_update <raiz> <arch> <0|1 sem imagem publicada> <saída> → RC global
 #
-# A invocação é RELATIVA (`bash deskcommcrm/hostgator-setup-kit/update.sh`) de
+# A invocação é RELATIVA (`bash estallo-crm/hostgator-setup-kit/update.sh`) de
 # propósito: com o caminho absoluto o `cd` do `enter_project` não mudaria nada
 # e a prova mediria menos. `--to v0.9.0 --force` fixa o alvo, para o teste não
 # depender de nenhum tag novo. `< /dev/null` evita travar num `read -p`.
@@ -201,7 +201,7 @@ rodar_update() {
   RC=0
   ( cd "$raiz" && \
     env FAKE_ARCH="$arch" ARM_SEM_IMAGEM="$sem_imagem" \
-        bash deskcommcrm/hostgator-setup-kit/update.sh --to v0.9.0 --force \
+        bash estallo-crm/hostgator-setup-kit/update.sh --to v0.9.0 --force \
   ) > "$saida" 2>&1 < /dev/null || RC=$?
 }
 
@@ -287,20 +287,20 @@ R3B="$WORK/caso3b"; mkdir -p "$R3B"
 montar_instalacao "$R3B" 0 devlikeapro/waha:noweb-arm-2026.7.2
 OUT3B="$WORK/saida3b.txt"
 rodar_update "$R3B" aarch64 0 "$OUT3B"; RC3B="$RC"
-ENV3B="$R3B/deskcommcrm/.env"
+ENV3B="$R3B/estallo-crm/.env"
 check "em ARM64 o update.sh sai com 0 (rc=$RC3B)" test "$RC3B" -eq 0
 check "em ARM64 o update usa as imagens publicadas por pull" \
   grep -q 'compose .*pull' "$DOCKER_LOG"
 check "em ARM64 não tenta compilar as imagens localmente" \
   nao_contem '-f docker-compose.build.yml build' "$DOCKER_LOG"
 check "o app recebe a versão da atualização" \
-  grep -q "^APP_IMAGE=${NS}/deskcommcrm:0.9.0$" "$ENV3B"
+  grep -q "^APP_IMAGE=${NS}/estallo-crm:0.9.0$" "$ENV3B"
 check "o worker recebe a mesma versão do app" \
-  grep -q "^WORKER_IMAGE=${NS}/deskcomm-worker:0.9.0$" "$ENV3B"
+  grep -q "^WORKER_IMAGE=${NS}/estallo-crm-worker:0.9.0$" "$ENV3B"
 check "o scheduler recebe a mesma versão do app" \
-  grep -q "^SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:0.9.0$" "$ENV3B"
+  grep -q "^SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:0.9.0$" "$ENV3B"
 check "a voz recebe a mesma versão do app" \
-  grep -q "^VOICE_AGENT_IMAGE=${NS}/deskcomm-voice-agent:0.9.0$" "$ENV3B"
+  grep -q "^VOICE_AGENT_IMAGE=${NS}/estallo-crm-voice-agent:0.9.0$" "$ENV3B"
 check "a atualização preserva o WAHA ARM64 escolhido na instalação" \
   grep -q '^WAHA_IMAGE=devlikeapro/waha:noweb-arm-2026.7.2$' "$ENV3B"
 
@@ -313,7 +313,7 @@ R3C="$WORK/caso3c"; mkdir -p "$R3C"
 montar_instalacao "$R3C" 0 '"devlikeapro/waha:latest-2026.7.2"'
 OUT3C="$WORK/saida3c.txt"
 rodar_update "$R3C" aarch64 0 "$OUT3C"; RC3C="$RC"
-ENV3C="$R3C/deskcommcrm/.env"
+ENV3C="$R3C/estallo-crm/.env"
 check "em ARM64 com WAHA amd64 o update.sh sai com 0 (rc=$RC3C)" test "$RC3C" -eq 0
 check "o .env passa a ter o WAHA NOWEB ARM64" \
   grep -q '^WAHA_IMAGE=devlikeapro/waha:noweb-arm-2026.7.2$' "$ENV3C"
@@ -327,10 +327,10 @@ montar_instalacao "$R3D" 0 devlikeapro/waha-plus:2026.7.2
 OUT3D="$WORK/saida3d.txt"
 rodar_update "$R3D" aarch64 0 "$OUT3D"; RC3D="$RC"
 check "em ARM64 um WAHA escolhido pelo operador fica intacto (rc=$RC3D)" \
-  grep -q '^WAHA_IMAGE=devlikeapro/waha-plus:2026.7.2$' "$R3D/deskcommcrm/.env"
+  grep -q '^WAHA_IMAGE=devlikeapro/waha-plus:2026.7.2$' "$R3D/estallo-crm/.env"
 
 check "em x86_64 o WAHA amd64 não muda" \
-  grep -q '^WAHA_IMAGE=devlikeapro/waha:latest-2026.7.2$' "$R3/deskcommcrm/.env"
+  grep -q '^WAHA_IMAGE=devlikeapro/waha:latest-2026.7.2$' "$R3/estallo-crm/.env"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo
@@ -375,7 +375,7 @@ echo '── 5. RECUPERAÇÃO: um kit antigo ainda protege arquiteturas sem imag
 # é exatamente o comportamento da guarda antiga do #1042: recusa RISC-V sem olhar nada.
 R5="$WORK/caso5"; mkdir -p "$R5"; montar_instalacao "$R5" 0
 (
-  cd "$R5/deskcommcrm" || exit 1
+  cd "$R5/estallo-crm" || exit 1
   git checkout --quiet v0.9.0
   sed -i.bak 's/instalacao_real_do_kit_aqui && existe=1/: guarda velha/' hostgator-setup-kit/_common.sh
   rm -f hostgator-setup-kit/_common.sh.bak
@@ -385,7 +385,7 @@ R5="$WORK/caso5"; mkdir -p "$R5"; montar_instalacao "$R5" 0
 OUT5A="$WORK/saida5a.txt"; OUT5B="$WORK/saida5b.txt"
 : > "$DOCKER_LOG"; RC5A=0
 ( cd "$R5" && env FAKE_ARCH=riscv64 ARM_SEM_IMAGEM=1 \
-    bash deskcommcrm/hostgator-setup-kit/update.sh --to v0.9.0 --force \
+    bash estallo-crm/hostgator-setup-kit/update.sh --to v0.9.0 --force \
 ) > "$OUT5A" 2>&1 < /dev/null || RC5A=$?
 check "com o kit velho no disco, nem --to/--force passam da guarda (rc=$RC5A, e != 0)" \
   test "$RC5A" -ne 0
@@ -393,7 +393,7 @@ check "e o que ele lê é a recusa do #1042" \
   grep -q 'Use uma VPS x86_64/amd64' "$OUT5A"
 # Depois de trocar manualmente o código para a versão que contém a recuperação.
 : > "$DOCKER_LOG"; RC5B=0
-( cd "$R5/deskcommcrm" && git checkout --quiet v0.9.0 && \
+( cd "$R5/estallo-crm" && git checkout --quiet v0.9.0 && \
   env FAKE_ARCH=riscv64 ARM_SEM_IMAGEM=1 \
     bash hostgator-setup-kit/update.sh --to v0.9.0 --force \
 ) > "$OUT5B" 2>&1 < /dev/null || RC5B=$?

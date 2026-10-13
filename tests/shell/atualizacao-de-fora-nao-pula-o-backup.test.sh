@@ -118,7 +118,7 @@ montar_projeto() {
   printf 'select 1;\n' > "$proj/supabase/baseline.sql"
   printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$proj/docker-compose.prod.yml"
   cat > "$proj/.env" <<ENV
-APP_IMAGE=${NS}/deskcommcrm:latest
+APP_IMAGE=${NS}/estallo-crm:latest
 APP_PULL_POLICY=always
 SUPABASE_DB_URL=postgresql://x/y
 NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br
@@ -158,23 +158,23 @@ STUB
   chmod +x "$destino"
 }
 
-# kit DENTRO do projeto: <raiz>/deskcommcrm/hostgator-setup-kit (o jeito que o
+# kit DENTRO do projeto: <raiz>/estallo-crm/hostgator-setup-kit (o jeito que o
 # cabeçalho do update.sh ensina, rodado de dentro do projeto).
 montar_instalacao() {
-  local raiz="$1" proj="$1/deskcommcrm"
+  local raiz="$1" proj="$1/estallo-crm"
   mkdir -p "$proj"
   cp -RL "$REPO_ROOT/hostgator-setup-kit" "$proj/"
   plantar_backup_duble "$proj/hostgator-setup-kit/backup.sh" "$raiz/marca-backup"
   montar_projeto "$proj"
 }
 
-# Kit NA RAIZ da instalação e projeto em <raiz>/deskcommcrm — o layout do relato
+# Kit NA RAIZ da instalação e projeto em <raiz>/estallo-crm — o layout do relato
 # da issue, que o próprio enter_project detecta (`elif [ -f deskcommcrm/$COMPOSE
 # ]; then cd deskcommcrm`). Aqui o operador roda `bash update.sh` de dentro da
 # raiz, então `$0` é só `update.sh` e o `dirname "$0"` vira "." — o que, DEPOIS
 # do cd, significa "procure o backup.sh no PROJETO", que é o erro relatado.
 montar_kit_na_raiz() {
-  local raiz="$1" proj="$1/deskcommcrm"
+  local raiz="$1" proj="$1/estallo-crm"
   mkdir -p "$proj"
   cp -RL "$REPO_ROOT/hostgator-setup-kit/." "$raiz/"
   plantar_backup_duble "$raiz/backup.sh" "$raiz/marca-backup"
@@ -212,10 +212,10 @@ echo '── 2. Do diretório de cima, `bash deskcommcrm/hostgator-setup-kit/upd
 # do enter_project o caminho relativo passa a apontar para dentro dele mesmo.
 R2="$WORK/caso2"; mkdir -p "$R2"; montar_instalacao "$R2"
 OUT2="$WORK/saida2.txt"
-rodar_de "$R2" deskcommcrm/hostgator-setup-kit/update.sh "$OUT2"; RC2="$RC"
+rodar_de "$R2" estallo-crm/hostgator-setup-kit/update.sh "$OUT2"; RC2="$RC"
 check "o backup.sh do kit foi EXECUTADO (a marca é dele)" test -f "$R2/marca-backup"
 check "e procurado NO KIT, não no diretório do projeto" \
-  grep -q "^zero=$R2/deskcommcrm/hostgator-setup-kit/backup\.sh$" "$R2/marca-backup"
+  grep -q "^zero=$R2/estallo-crm/hostgator-setup-kit/backup\.sh$" "$R2/marca-backup"
 check "o kit anunciou o backup feito" grep -q "✓ backup feito" "$OUT2"
 check "a saída não tem o \"No such file or directory\" do relato" \
   nao_contem "No such file or directory" "$OUT2"
@@ -230,10 +230,10 @@ echo '── 3. Do projeto, `bash hostgator-setup-kit/update.sh`: o jeito que se
 # no lugar ela traria só `hostgator-setup-kit/backup.sh`.
 R3="$WORK/caso3"; mkdir -p "$R3"; montar_instalacao "$R3"
 OUT3="$WORK/saida3.txt"
-rodar_de "$R3/deskcommcrm" hostgator-setup-kit/update.sh "$OUT3"; RC3="$RC"
+rodar_de "$R3/estallo-crm" hostgator-setup-kit/update.sh "$OUT3"; RC3="$RC"
 check "o backup.sh do kit foi EXECUTADO (a marca é dele)" test -f "$R3/marca-backup"
 check "e procurado NO KIT" \
-  grep -q "^zero=$R3/deskcommcrm/hostgator-setup-kit/backup\.sh$" "$R3/marca-backup"
+  grep -q "^zero=$R3/estallo-crm/hostgator-setup-kit/backup\.sh$" "$R3/marca-backup"
 check "o kit anunciou o backup feito" grep -q "✓ backup feito" "$OUT3"
 
 printf '\nstatus: caso1=%s caso2=%s caso3=%s\n' "$RC1" "$RC2" "$RC3"

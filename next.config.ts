@@ -8,6 +8,8 @@ import type { NextConfig } from "next";
  *  - Initial bundle /app/inbox < 250KB gzipped
  */
 const nextConfig: NextConfig = {
+  // Argumentos de autenticação contêm senhas; não os registre no desenvolvimento.
+  logging: { serverFunctions: false },
   // Self-host: gera .next/standalone pro container Docker (node server.js) — é
   // o que o estágio `runner` do Dockerfile copia, então é o modo de build deste
   // repositório. O ramo de `process.env.VERCEL` é resíduo defensivo, não um modo

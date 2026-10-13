@@ -5,8 +5,8 @@
  * ── O defeito que este arquivo protege ─────────────────────────────────────
  *
  * `#648`: um `import` que só estoura sob `tsx` (`@react-pdf/hyphenate`) deixou
- * o drain do `event_log` parado por dez dias. As imagens `deskcomm-worker` e
- * `deskcomm-scheduler` construíam, publicavam, recebiam tag e release sem que
+ * o drain do `event_log` parado por dez dias. As imagens `estallo-crm-worker` e
+ * `estallo-crm-scheduler` construíam, publicavam, recebiam tag e release sem que
  * nenhum job as executasse antes — e o `/healthz` do worker continuava verde.
  * Ou seja: "contêiner de pé" NÃO era o critério que faltava; o que faltava era
  * alguém exigindo o LAÇO CARREGADO.
@@ -127,8 +127,8 @@ describe("o gate de publicação das imagens de fundo (#604)", () => {
     const job = blocoDoJob(JOB_DE_FUNDO);
     expect(job).toContain("Dockerfile.worker");
     expect(job).toContain("Dockerfile.scheduler");
-    expect(job).toContain("deskcomm-worker:pr");
-    expect(job).toContain("deskcomm-scheduler:pr");
+    expect(job).toContain("estallo-crm-worker:pr");
+    expect(job).toContain("estallo-crm-scheduler:pr");
   });
 
   it("exige o laço carregado e a linha do event-log-drain no crontab — não só contêiner de pé", () => {

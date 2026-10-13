@@ -1,4 +1,4 @@
-import { LOGOTIPO, SIMBOLO } from "@/lib/branding/desenho";
+import { SIMBOLO } from "@/lib/branding/desenho";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,24 +66,13 @@ export function SimboloDoProduto({ nome, className, decorativo = false }: Props)
 export function LogotipoDoProduto({ nome, className, decorativo = false }: Props) {
   return (
     <svg
-      viewBox={LOGOTIPO.viewBox}
+      viewBox="0 0 300 48"
       className={cn("shrink-0", className)}
       {...acessibilidade(nome, decorativo)}
     >
-      <g className={SIMBOLO_CLARO_ESCURO} transform={LOGOTIPO.simbolo.transform}>
-        <path d={LOGOTIPO.simbolo.d} />
-        <rect {...LOGOTIPO.simbolo.modulo} />
-      </g>
-      <g className={NOME_CLARO_ESCURO}>
-        {LOGOTIPO.nome.map((g) => (
-          <path key={g.transform} transform={g.transform} d={g.d} />
-        ))}
-      </g>
-      <g className={SUFIXO_CLARO_ESCURO}>
-        {LOGOTIPO.sufixo.map((g) => (
-          <path key={g.transform} transform={g.transform} d={g.d} />
-        ))}
-      </g>
+      <text x="0" y="36" fontSize="34" fontWeight="600" className={NOME_CLARO_ESCURO}>
+        {nome}
+      </text>
     </svg>
   );
 }

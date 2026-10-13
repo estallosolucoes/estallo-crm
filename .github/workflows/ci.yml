@@ -25,6 +25,7 @@ on:
 # continua por job em publish-image.yml — mesma regra, menor escopo que precisa.
 permissions:
   contents: read
+  pull-requests: read
 
 # ── Uma rodada por PR: o push novo cancela a antiga — POR JOB, nunca por workflow
 #
@@ -380,7 +381,6 @@ jobs:
         if: matrix.parte == 1 && github.event_name != 'pull_request'
         run: pnpm release:acervo-cabe
 
-
       # Scripts do kit self-host num repo git descartável (docker/crontab
       # dublados). É o único gate que exercita o update.sh — um erro aqui
       # rebobina a instalação de quem hospeda, e nenhum teste TS o veria.
@@ -597,6 +597,9 @@ jobs:
       # Uma variável, os dois scripts: `scripts/test-db.sh` e
       # `scripts/test-update-com-dados.sh` leem esta para escolher a imagem.
       TEST_DB_IMAGE: pgvector/pgvector:pg${{ matrix.pg }}
+      # Compatibilidade do kit herdado: o fork ainda não tem releases próprias.
+      CONFERENCIA_KIT_RELEASE: v1.80.0
+      CONFERENCIA_KIT_REMOTE: https://github.com/melgarafael/DeskcommCRM.git
     steps:
       - uses: actions/checkout@v7
 

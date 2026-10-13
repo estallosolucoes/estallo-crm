@@ -1,0 +1,18 @@
+flowchart LR
+  GitHub[GitHub Actions] --> GHCR[Imagens Estallo por SHA]
+  GHCR --> Swarm[Stack estallo-crm]
+  DNS[crm.estallo.com.br] --> Traefik[Traefik existente]
+  Traefik --> App[Aplicação]
+  Swarm --> App
+  Swarm --> Worker[Worker]
+  Swarm --> Scheduler[Scheduler]
+  Scheduler --> App
+  App --> Supabase[Supabase exclusivo: Auth / RLS / Storage / Realtime]
+  Worker --> Supabase
+  Worker --> WAHA[WAHA NOWEB]
+  WAHA --> App
+  App --> Redis[Redis interno via HTTP]
+  Host[Agente no host] --> Swarm
+  App --> Host
+  Host --> Recibo[Recibo e progresso na tela de atualização]
+  Host --> Backup[Backup protegido e cópia externa]
