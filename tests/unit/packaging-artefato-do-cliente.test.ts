@@ -230,7 +230,10 @@ describe("packaging — o artefato que o cliente instala", () => {
 
       const defaultDaPolitica = politica!.replace(/^\$\{[A-Z_]+:-(.+)\}$/, "$1");
       const imagem = bloco.match(/^\s{4}image:\s*(\S+)/m)?.[1] ?? "";
-      const tagDaImagem = imagem.replace(/^\$\{[A-Z_]+:-(.+)\}$/, "$1").split(":").pop();
+      const tagDaImagem = imagem
+        .replace(/^\$\{[A-Z_]+:-(.+)\}$/, "$1")
+        .split(":")
+        .pop();
       const tagEhMovel = ["latest", "main", "stable"].includes(tagDaImagem ?? "");
       avaliados += 1;
 
@@ -314,16 +317,14 @@ describe("packaging — o artefato que o cliente instala", () => {
   it("o workflow publica as quatro imagens e injeta APP_VERSION", () => {
     const wf = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
     for (const imagem of [
-      "deskcommcrm",
-      "deskcomm-worker",
-      "deskcomm-scheduler",
-      "deskcomm-voice-agent",
+      "estallo-crm",
+      "estallo-crm-worker",
+      "estallo-crm-scheduler",
+      "estallo-crm-voice-agent",
     ]) {
       expect(wf, `publish-image.yml não publica '${imagem}'`).toContain(`name: ${imagem}`);
     }
-    expect(wf, "publish-image.yml não passa APP_VERSION como build-arg").toContain(
-      "APP_VERSION=",
-    );
+    expect(wf, "publish-image.yml não passa APP_VERSION como build-arg").toContain("APP_VERSION=");
     // A sonda prende o EFEITO (o canal `stable` passa a existir), não a forma.
     // Ela já mudou uma vez: `stable` saiu da lista de tags da matriz — onde cada
     // imagem o movia sozinha — para o job `promover-stable`, que só roda com as

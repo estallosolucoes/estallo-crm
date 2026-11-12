@@ -1,4 +1,4 @@
-# DeskcommCRM
+# Estallo CRM
 
 > Open-source AI sales OS: a self-hosted, multi-tenant CRM where AI agents natively operate sales and support over WhatsApp. An open alternative to Kommo, Octadesk and Intercom — for any business that sells through conversations (e-commerce, clinics, real estate, info-products, agencies, services). MIT-licensed, no paid tier; the recommended production path is a one-command install on a HostGator VPS.
 
@@ -14,14 +14,14 @@ Key facts:
 
 ## Docs
 
-- [README (Portuguese)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.md): visão geral, quickstart, stack
-- [README (English)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.en.md): project overview, quickstart, stack
-- [README (Spanish)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.es.md): visión general en español
-- [Vision & positioning](https://github.com/melgarafael/DeskcommCRM/blob/main/VISION.md): what the project believes about self-improving AI agents
-- [Architecture](https://github.com/melgarafael/DeskcommCRM/blob/main/ARCHITECTURE.md): one-page architecture
-- [Setup guide](https://github.com/melgarafael/DeskcommCRM/blob/main/docs/SETUP.md): step-by-step setup of every integration
-- [Self-host on a VPS](https://github.com/melgarafael/DeskcommCRM/blob/main/docs/deploy-selfhost/README.md): docker compose deploy on any VPS
+- [README (Portuguese)](https://github.com/wjuniorl/estallo-crm/blob/main/README.md): visão geral, quickstart, stack
+- [README (English)](https://github.com/wjuniorl/estallo-crm/blob/main/README.en.md): project overview, quickstart, stack
+- [README (Spanish)](https://github.com/wjuniorl/estallo-crm/blob/main/README.es.md): visión general en español
+- [Vision & positioning](https://github.com/wjuniorl/estallo-crm/blob/main/VISION.md): what the project believes about self-improving AI agents
+- [Architecture](https://github.com/wjuniorl/estallo-crm/blob/main/ARCHITECTURE.md): one-page architecture
+- [Setup guide](https://github.com/wjuniorl/estallo-crm/blob/main/docs/SETUP.md): step-by-step setup of every integration
+- [Self-host on a VPS](https://github.com/wjuniorl/estallo-crm/blob/main/docs/deploy-selfhost/README.md): docker compose deploy on any VPS
 
 ## Repository
 
-- [GitHub](https://github.com/melgarafael/DeskcommCRM): source code, issues, discussions
+- [GitHub](https://github.com/wjuniorl/estallo-crm): source code, issues, discussions

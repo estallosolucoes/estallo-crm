@@ -1,0 +1,27 @@
+{
+  "origin": "https://crm.estallo.com.br",
+  "revision": "8563e3b720c8c34a07f4360f51f1023897885312",
+  "dependencies": {
+    "supabase": {
+      "status": "ok",
+      "latency_ms": 395
+    },
+    "redis": {
+      "status": "ok",
+      "latency_ms": 4
+    },
+    "waha": {
+      "status": "ok",
+      "latency_ms": 5
+    }
+  },
+  "title": "Entrar · Estallo CRM",
+  "icon": {
+    "status": 200,
+    "type": "image/png"
+  },
+  "billingPath": "/app/settings/billing",
+  "navColor": "rgb(38, 51, 61)",
+  "mobileDrawer": true,
+  "pageErrors": 0
+}

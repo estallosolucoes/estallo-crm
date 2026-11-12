@@ -353,7 +353,7 @@ const DA_EMPRESA: RecursoOpcional[] = [
   {
     id: "conversa_fica_com_quem_atendeu",
     nome: "A conversa fica com quem atendeu",
-    oQueFaz: "Quem responde vira dono da conversa, e a IA se cala até alguém devolver.",
+    oQueFaz: "A conversa encerrada que recebe mensagem nova volta direto para o último atendente.",
     nivel: "organizacao",
     padrao: "desligado",
     quemDecide: "manager",
@@ -614,6 +614,25 @@ const DA_EMPRESA: RecursoOpcional[] = [
       f.settings === null || f.modulos === null
         ? "nao_lido"
         : capacidadesLigadas(f.settings, f.modulos).includes("propostas")
+          ? "ligado"
+          : "desligado",
+  },
+  {
+    id: "agenda_da_empresa",
+    nome: "Agenda",
+    oQueFaz:
+      "Compromissos, horários livres e agendamento pelo agente de IA. Desligada, some do menu e o agente não marca horários.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    // A chave mora NA PRÓPRIA linha (`ChaveDaAgenda`, em /app/settings/recursos):
+    // sem tela de assunto para onde levar, não há "Ajustar".
+    href: null,
+    capacidade: "agenda",
+    ler: (f) =>
+      f.settings === null || f.modulos === null
+        ? "nao_lido"
+        : capacidadesLigadas(f.settings, f.modulos).includes("agenda")
           ? "ligado"
           : "desligado",
   },

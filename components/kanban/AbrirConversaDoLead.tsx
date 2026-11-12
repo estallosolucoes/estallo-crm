@@ -118,11 +118,11 @@ export function AbrirConversaDoLead({ contactId, phone, variante = "card" }: Pro
         disabled={!podeAbrir || abrindo}
         aria-busy={abrindo}
         title={podeAbrir ? t("Abrir conversa no Inbox") : semTelefone}
-        className="group mt-3 flex w-full items-center gap-2.5 rounded-md border border-border bg-muted/40 px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-70"
+        className="group mt-2 flex w-full items-center gap-2.5 rounded-[10px] border border-border bg-surface px-3 py-2.5 text-left transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-70"
       >
         <ChatCircle size={16} weight="regular" className="shrink-0 text-text-muted" aria-hidden />
         <span className="min-w-0 flex-1">
-          <span className="block text-xs font-medium text-text">
+          <span className="block text-xs font-semibold text-text">
             {abrindo
               ? t("Abrindo…")
               : podeAbrir

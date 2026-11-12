@@ -80,15 +80,6 @@ async function fixture(pool: pg.Pool) {
     webhook_secret_encrypted: "\\x00",
     metadata: { ai_gate: "allowlist" },
   });
-  const knobs = await db.from("channel_knobs").insert({
-    organization_id: org,
-    channel_session_id: channel,
-    throttle_ms: 0,
-    jitter_max_ms: 0,
-    window_start_hour: 0,
-    window_end_hour: 24,
-  });
-  if (knobs.error) throw knobs.error;
   const contact = await inserir("contacts", {
     organization_id: org,
     name: "Joana Revisão",
@@ -188,6 +179,10 @@ async function entrar(page: Page, f: Fixture) {
 }
 
 const painel = (page: Page) => page.locator('section[aria-label="Assistência do agente"]');
+// O painel mora num popover atrás do botão de IA do composer.
+async function abrirAssistencia(page: Page) {
+  await page.getByRole("button", { name: "Assistência do agente (IA)" }).click();
+}
 
 test.afterAll(async () => {
   for (const org of orgs) {
@@ -208,6 +203,7 @@ test("rejeitar tira a sugestão da tela e diz que rejeitou; sem agente publicado
     const f = await fixture(pool);
     await entrar(page, f);
     await page.goto(`/app/inbox/${f.conversation}`);
+    await abrirAssistencia(page);
 
     // ── 1) Gera pelo caminho real da rota ──────────────────────────────────
     const gerada = page.waitForResponse(

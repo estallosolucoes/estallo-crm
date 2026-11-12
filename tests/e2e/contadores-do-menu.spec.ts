@@ -148,10 +148,14 @@ async function abrirCasos(page: Page, casoVisivel: boolean): Promise<void> {
   let ultimo = "";
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     await page.goto("/app/ai/cases");
+    const grupoDaIA = sidebar(page).getByRole("button", { name: "Agente de IA", exact: true });
+    if ((await grupoDaIA.getAttribute("aria-expanded")) === "false") await grupoDaIA.click();
     try {
       // "Abertos (N)" só aparece com a lista CARREGADA — antes disso, contar
       // itens mediria o esqueleto.
-      await expect(page.getByRole("tab", { name: /^Abertos \(\d+\)$/ })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("tab", { name: /^Abertos \(\d+\)$/ })).toBeVisible({
+        timeout: 20_000,
+      });
       const alvo = page.getByTestId("case-item").filter({ hasText: TITULO_DO_CASO });
       await expect(alvo).toHaveCount(casoVisivel ? 1 : 0, { timeout: 20_000 });
       return;
@@ -179,7 +183,9 @@ async function folgaDoMenu(page: Page): Promise<number> {
     const nav = document.querySelector('nav[aria-label="Navegação principal"]')!;
     const cs = getComputedStyle(nav);
     const fimDaCaixa =
-      nav.getBoundingClientRect().bottom - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth);
+      nav.getBoundingClientRect().bottom -
+      parseFloat(cs.paddingBottom) -
+      parseFloat(cs.borderBottomWidth);
     const filhos = [...nav.children].map((c) => c.getBoundingClientRect().bottom);
     return Math.round(fimDaCaixa - Math.max(...filhos));
   });
@@ -197,7 +203,11 @@ async function medirSelo(page: Page, href: string, testId: string, vizinho: stri
       const s = selo.getBoundingClientRect();
       const o = outro.getBoundingClientRect();
       return {
-        dentro: s.left >= l.left && s.right <= l.right + 0.5 && s.top >= l.top && s.bottom <= l.bottom + 0.5,
+        dentro:
+          s.left >= l.left &&
+          s.right <= l.right + 0.5 &&
+          s.top >= l.top &&
+          s.bottom <= l.bottom + 0.5,
         alturaDoItem: Math.round(l.height),
         alturaDoVizinho: Math.round(o.height),
         fundo: getComputedStyle(selo).backgroundColor,
@@ -267,24 +277,27 @@ test.describe("contadores do menu", () => {
     await abrirCasos(page, false);
     const depois = await casosEsperandoNaTela(page);
     expect(depois).toBe(antes);
-    if (depois === 0) await expect(seloDeCasos, "zero não desenha nada").toHaveCount(0, { timeout: ESPERA });
+    if (depois === 0)
+      await expect(seloDeCasos, "zero não desenha nada").toHaveCount(0, { timeout: ESPERA });
     else await expect(seloDeCasos).toHaveText(String(depois), { timeout: ESPERA });
     await captura(page, "02-casos-depois-de-fechar");
   });
 
-  test("Inbox mostra quantas conversas esperam uma pessoa — o mesmo número da aba Fila", async ({ page }) => {
+  test("Inbox mostra quantas conversas esperam uma pessoa — o mesmo número do resumo de roteamento", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginComoAdmin(page, lerCreds());
 
     await page.goto("/app/inbox");
     await expect(page.getByText(CONTATO).first()).toBeVisible({ timeout: ESPERA });
 
-    // O número da aba Fila entra no nome acessível ("Fila 3"); sem número, a aba
-    // é só "Fila".
-    const abaFila = page.getByRole("tab", { name: /^Fila/ }).first();
-    await expect(abaFila).toHaveText(/^Fila\s*\d+$/, { timeout: ESPERA });
-    const naAba = Number((await abaFila.textContent())!.replace(/\D/g, ""));
-    expect(naAba, "a conversa escalada semeada está na Fila").toBeGreaterThan(0);
+    // A fila é do roteamento, sem categoria própria no Inbox. O selo continua
+    // refletindo o resumo do backend e não uma das situações de resposta.
+    const resumo = await page.request.get("/api/v1/conversations/counts");
+    expect(resumo.ok()).toBe(true);
+    const naAba = ((await resumo.json()) as { data: { fila: number } }).data.fila;
+    expect(naAba).toBeGreaterThan(0);
 
     const seloDaFila = itemDoMenu(page, "/app/inbox").getByTestId("contador-da-fila");
     await expect(seloDaFila).toHaveText(String(naAba), { timeout: ESPERA });
@@ -304,13 +317,10 @@ test.describe("contadores do menu", () => {
     if (error) throw new Error(`tirar a conversa da fila falhou: ${error.message}`);
 
     await page.reload();
-    await expect(abaFila).toBeVisible({ timeout: ESPERA });
     const depois = naAba - 1;
     if (depois === 0) {
-      await expect(abaFila).toHaveText(/^Fila$/, { timeout: ESPERA });
       await expect(seloDaFila, "zero não desenha nada").toHaveCount(0, { timeout: ESPERA });
     } else {
-      await expect(abaFila).toHaveText(new RegExp(`^Fila\\s*${depois}$`), { timeout: ESPERA });
       await expect(seloDaFila).toHaveText(String(depois), { timeout: ESPERA });
     }
     await captura(page, "04-inbox-depois-de-sair-da-fila");

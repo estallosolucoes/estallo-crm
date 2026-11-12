@@ -13,25 +13,63 @@ import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
+import {
+  Tag,
+  Receipt,
+  ArrowRight,
+  Check,
+  X,
+  UserCircle,
+  Funnel,
+  Flag,
+  Brain,
+  ClockCounterClockwise,
+  BookOpen,
+  Plus,
+  DotsThree,
+  Trash,
+  ListChecks,
+  Package,
+} from "@/lib/ui/icons";
+import { FormularioDeTarefa } from "@/app/app/tasks/_components/FormularioDeTarefa";
+import { AdicionarProdutoDialog } from "@/components/kanban/AdicionarProdutoDialog";
+import { useTasks } from "@/hooks/tasks/useTasks";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useBulkAction } from "@/hooks/kanban/useBulkAction";
+import { BlocoRecolhivel } from "@/components/ui/bloco-recolhivel";
+import { ROLE_RANK } from "@/lib/auth/types";
+import { useWinLead } from "@/hooks/kanban/useUpdateLead";
+import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
-import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
-import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
+import { useTagsDoContato } from "@/hooks/contacts/useTagsDoContato";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
-import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
-import { useEditLead } from "@/hooks/kanban/useUpdateLead";
-import { useBulkAction } from "@/hooks/kanban/useBulkAction";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { LeadDossierDoFunil } from "@/components/kanban/LeadDossierDoFunil";
 import { cn } from "@/lib/utils";
 import { PROXIMO_PASSO_DA_MENSAGEM_NOVA } from "@/lib/atendimento/proximo-passo-padrao";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -48,6 +86,7 @@ interface LeadRow {
   value_cents: number | null;
   currency: string | null;
   updated_at: string;
+  expected_close_date?: string | null;
   pipeline_id: string;
   custom_fields: Record<string, unknown> | null;
   field_defs: CustomFieldDef[];
@@ -115,7 +154,13 @@ interface DesfechoDraft {
   salvando: boolean;
 }
 
-function EncerrarDemanda({ draft, onAbrir, onAlterar, onFechar, onPronto }: {
+function EncerrarDemanda({
+  draft,
+  onAbrir,
+  onAlterar,
+  onFechar,
+  onPronto,
+}: {
   draft: DesfechoDraft | null;
   onAbrir: () => void;
   onAlterar: (patch: Partial<Pick<DesfechoDraft, "desfecho" | "salvando">>) => void;
@@ -123,31 +168,77 @@ function EncerrarDemanda({ draft, onAbrir, onAlterar, onFechar, onPronto }: {
   onPronto: () => void;
 }) {
   const t = useT();
-  if (!draft) return <Button size="sm" variant="ghost" onClick={onAbrir}>{t("Encerrar demanda")}</Button>;
-  return <form className="mt-2 space-y-2" onSubmit={async (event) => {
-    event.preventDefault(); onAlterar({ salvando: true });
-    try {
-      await apiClient.patch(`/api/v1/demandas/${draft.demandaId}`, { action: "encerrar", desfecho: draft.desfecho, expected_revision: draft.revision });
-      toast.success(t("Desfecho registrado.")); onFechar(); onPronto();
-    } catch { toast.error(t("Não foi possível encerrar. Cancele esta edição e abra novamente para revisar o desfecho.")); onPronto(); }
-    finally { onAlterar({ salvando: false }); }
-  }}>
-    <label className="block">{t("Desfecho")}
-      <select aria-label={t("Desfecho da demanda")} className="mt-1 w-full rounded-md border bg-background p-2" value={draft.desfecho} onChange={(e) => onAlterar({ desfecho: e.target.value })}>
-        <option value="resolvida">{t("Resolvida")}</option><option value="convertida">{t("Convertida")}</option>
-        <option value="nao_procede">{t("Não procede")}</option><option value="encerrada_pelo_cliente">{t("Encerrada pelo cliente")}</option>
-        <option value="perdida">{t("Perdida")}</option><option value="expirada_sem_resposta">{t("Expirada sem resposta")}</option>
-      </select>
-    </label>
-    <p>{t("Registra o resultado desta demanda. As conversas dos outros canais permanecem disponíveis.")}</p>
-    <Button size="sm" disabled={draft.salvando} type="submit">{t("Confirmar desfecho")}</Button>
-    <Button size="sm" variant="ghost" type="button" disabled={draft.salvando} onClick={onFechar}>{t("Cancelar")}</Button>
-  </form>;
+  if (!draft)
+    return (
+      <Button size="sm" variant="ghost" onClick={onAbrir}>
+        {t("Encerrar demanda")}
+      </Button>
+    );
+  return (
+    <form
+      className="mt-2 space-y-2"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        onAlterar({ salvando: true });
+        try {
+          await apiClient.patch(`/api/v1/demandas/${draft.demandaId}`, {
+            action: "encerrar",
+            desfecho: draft.desfecho,
+            expected_revision: draft.revision,
+          });
+          toast.success(t("Desfecho registrado."));
+          onFechar();
+          onPronto();
+        } catch {
+          toast.error(
+            t(
+              "Não foi possível encerrar. Cancele esta edição e abra novamente para revisar o desfecho.",
+            ),
+          );
+          onPronto();
+        } finally {
+          onAlterar({ salvando: false });
+        }
+      }}
+    >
+      <label className="block">
+        {t("Desfecho")}
+        <select
+          aria-label={t("Desfecho da demanda")}
+          className="mt-1 w-full rounded-md border bg-background p-2"
+          value={draft.desfecho}
+          onChange={(e) => onAlterar({ desfecho: e.target.value })}
+        >
+          <option value="resolvida">{t("Resolvida")}</option>
+          <option value="convertida">{t("Convertida")}</option>
+          <option value="nao_procede">{t("Não procede")}</option>
+          <option value="encerrada_pelo_cliente">{t("Encerrada pelo cliente")}</option>
+          <option value="perdida">{t("Perdida")}</option>
+          <option value="expirada_sem_resposta">{t("Expirada sem resposta")}</option>
+        </select>
+      </label>
+      <p>
+        {t(
+          "Registra o resultado desta demanda. As conversas dos outros canais permanecem disponíveis.",
+        )}
+      </p>
+      <Button size="sm" disabled={draft.salvando} type="submit">
+        {t("Confirmar desfecho")}
+      </Button>
+      <Button size="sm" variant="ghost" type="button" disabled={draft.salvando} onClick={onFechar}>
+        {t("Cancelar")}
+      </Button>
+    </form>
+  );
 }
 
 const DESFECHO_LEGIVEL: Record<string, string> = {
-  resolvida: "Resolvida", convertida: "Convertida", nao_procede: "Não procede",
-  encerrada_pelo_cliente: "Encerrada pelo cliente", perdida: "Perdida", expirada_sem_resposta: "Expirada sem resposta",
+  resolvida: "Resolvida",
+  convertida: "Convertida",
+  nao_procede: "Não procede",
+  encerrada_pelo_cliente: "Encerrada pelo cliente",
+  perdida: "Perdida",
+  expirada_sem_resposta: "Expirada sem resposta",
 };
 
 /** Vocabulário de quem atende, não o do banco. */
@@ -225,7 +316,7 @@ function MarcarProximoPasso({ demandaId, onPronto }: { demandaId: string; onPron
         placeholder={t("O que acontece a seguir?")}
         aria-label={t("Próximo passo desta demanda")}
         data-testid="campo-proximo-passo"
-        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-hidden focus:ring-1 focus:ring-ring"
+        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:ring-1 focus:ring-ring focus:outline-hidden"
       />
       <div className="flex gap-1.5">
         <Button
@@ -237,12 +328,7 @@ function MarcarProximoPasso({ demandaId, onPronto }: { demandaId: string; onPron
         >
           {salvando ? t("Salvando…") : t("Salvar")}
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs"
-          onClick={() => setAberto(false)}
-        >
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAberto(false)}>
           {t("Cancelar")}
         </Button>
       </div>
@@ -254,9 +340,7 @@ function formatMoney(cents: number | null, currency: string | null): string {
   if (cents == null) return "—";
   const cur = currency ?? "BRL";
   try {
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: cur }).format(
-      cents / 100,
-    );
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: cur }).format(cents / 100);
   } catch {
     return `${(cents / 100).toFixed(2)} ${cur}`;
   }
@@ -288,9 +372,9 @@ function SemLista({
   onTentarDeNovo: () => void;
 }) {
   const t = useT();
-  if (!erro) return <p className="mt-2 text-xs text-muted-foreground">{t(vazio)}</p>;
+  if (!erro) return <p className="text-xs text-muted-foreground">{t(vazio)}</p>;
   return (
-    <div className="mt-2 space-y-1">
+    <div className="space-y-1">
       <p className="text-xs text-error-fg">{t("Não consegui ler estes dados.")}</p>
       <Button size="sm" variant="outline" onClick={onTentarDeNovo}>
         {t("Tentar de novo")}
@@ -346,183 +430,276 @@ function ondeEstaOLead(l: LeadRow): string {
  */
 const CLASSES_DE_ONDE_ESTA = "line-clamp-2 text-muted-foreground";
 
-function InboxLeadEditor({
-  leads,
-  selecionadoId,
-  onSelecionar,
-  onSalvo,
-}: {
-  leads: LeadRow[];
-  selecionadoId: string | null;
-  onSelecionar: (id: string) => void;
-  onSalvo: () => void;
-}) {
-  const t = useT();
-  const ativo = leads.find((l) => l.id === selecionadoId) ?? leads[0]!;
-  const status = (l: LeadRow) => t(STATUS_DO_LEAD[l.status] ?? l.status);
-
-  return (
-    <div className="mt-2 space-y-2">
-      {leads.length > 1 && (
-        <ul className="space-y-1">
-          {leads.map((l) => {
-            const marcado = l.id === ativo.id;
-            return (
-              <li key={l.id}>
-                <button
-                  type="button"
-                  data-testid={`inbox-lead-${l.id}`}
-                  aria-pressed={marcado}
-                  onClick={() => onSelecionar(l.id)}
-                  className={cn(
-                    "w-full rounded-md border p-2 text-left text-xs",
-                    marcado ? "border-accent bg-accent/10" : "border-border",
-                  )}
-                >
-                  <div className="truncate font-medium">{l.title}</div>
-                  <div className={CLASSES_DE_ONDE_ESTA} title={ondeEstaOLead(l)}>
-                    {ondeEstaOLead(l)}
-                  </div>
-                  <div className="text-muted-foreground">
-                    {status(l)} · {formatMoney(l.value_cents, l.currency)}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {leads.length === 1 && (
-        <div data-testid="inbox-lead-unico" className="text-xs text-muted-foreground">
-          <p>{ativo.title} · {status(ativo)}</p>
-          <p className={CLASSES_DE_ONDE_ESTA} title={ondeEstaOLead(ativo)}>
-            {ondeEstaOLead(ativo)}
-          </p>
-        </div>
-      )}
-      <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
-      <CamposDoFunil
-        key={ativo.id}
-        leadId={ativo.id}
-        pipelineId={ativo.pipeline_id}
-        fieldDefs={ativo.field_defs ?? []}
-        valores={ativo.custom_fields ?? {}}
-        onSalvo={onSalvo}
-      />
-    </div>
-  );
-}
+const COR_DO_STATUS: Record<string, string> = {
+  open: "bg-accent/10 text-accent",
+  won: "bg-success/15 text-success",
+  lost: "bg-destructive/10 text-destructive",
+};
 
 /**
- * Mover o negócio de etapa SEM sair da conversa — ex.: passar a "Pedido
- * confirmado" quando o cliente confirma pelo WhatsApp. Antes só dava pelo quadro
- * do funil: quem atendia tinha de sair da conversa, achar o card e arrastá-lo.
- *
- * Usa o MESMO caminho do "Mover para…" do quadro (`/api/v1/leads/bulk`, que
- * posiciona o card no banco e emite atividade, evento e auditoria), então a
- * etapa que avisa na Central avisa igual. Etapa de PERDA fica de fora: ela pede
- * o motivo, e esse diálogo mora no quadro.
+ * Os negócios do contato, do mais recente para o mais antigo. Clicar abre o
+ * MESMO dossiê do quadro (`LeadDossierDoFunil`) — lá ficam etapa, campos,
+ * tarefas e histórico. Ganhar e perder ficam AQUI, no card, para fechar o
+ * negócio sem abrir o dossiê (mesmas rotas /win e /lose do quadro).
  */
-function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => void }) {
-  const t = useT();
-  const mover = useBulkAction(lead.pipeline_id);
-  const etapas = (lead.etapas_do_funil ?? []).filter((e) => !e.is_lost || e.id === lead.stage_id);
-  if (!lead.stage_id || etapas.length === 0) return null;
-
-  async function escolher(stageId: string) {
-    if (stageId === lead.stage_id) return;
-    try {
-      await mover.mutateAsync({ action: "move", lead_ids: [lead.id], params: { stage_id: stageId } });
-      toast.success(t("Etapa atualizada."));
-      onMovido();
-    } catch {
-      // o hook já mostrou o erro
-    }
-  }
-
+function LeadsRecentes({
+  leads,
+  contactId,
+  usuarioId,
+  onAbrir,
+  podeFechar,
+  onPerder,
+  onFechado,
+}: {
+  leads: LeadRow[];
+  /** O contato da conversa: a tarefa criada pelo card nasce presa a ele também. */
+  contactId: string | null;
+  /** Quem está no painel: nasce como responsável da tarefa criada pelo card. */
+  usuarioId: string | undefined;
+  onAbrir: (lead: LeadRow) => void;
+  podeFechar: boolean;
+  onPerder: (lead: LeadRow) => void;
+  onFechado: () => void;
+}) {
   return (
-    <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
-      <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
-        {t("Etapa do funil")}
-      </label>
-      <Select value={lead.stage_id} onValueChange={(v) => void escolher(v)} disabled={mover.isPending}>
-        <SelectTrigger id={`etapa-${lead.id}`} className="h-8 w-full text-xs" data-testid="inbox-etapa-select">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {etapas.map((e) => (
-            <SelectItem key={e.id} value={e.id} className="text-xs">
-              {e.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <ul className="space-y-1.5">
+      {leads.map((l) => (
+        <CardDoNegocio
+          key={l.id}
+          lead={l}
+          onAbrir={onAbrir}
+          // Excluir vale para todo negócio (ganho e perdido inclusive); ganhar e
+          // perder, só para o aberto. Mesmo piso de papel nos dois (agent+).
+          podeExcluir={podeFechar}
+          contactId={contactId}
+          usuarioId={usuarioId}
+          podeFechar={podeFechar && l.status === "open"}
+          onPerder={onPerder}
+          onFechado={onFechado}
+        />
+      ))}
+    </ul>
   );
 }
 
-function CamposDoFunil({
-  leadId,
-  pipelineId,
-  fieldDefs,
-  valores,
-  onSalvo,
+function CardDoNegocio({
+  lead: l,
+  contactId,
+  usuarioId,
+  onAbrir,
+  podeExcluir,
+  podeFechar,
+  onPerder,
+  onFechado,
 }: {
-  leadId: string;
-  pipelineId: string;
-  fieldDefs: CustomFieldDef[];
-  valores: Record<string, unknown>;
-  onSalvo: () => void;
+  lead: LeadRow;
+  contactId: string | null;
+  usuarioId: string | undefined;
+  onAbrir: (lead: LeadRow) => void;
+  podeExcluir: boolean;
+  podeFechar: boolean;
+  onPerder: (lead: LeadRow) => void;
+  onFechado: () => void;
 }) {
   const t = useT();
-  const edit = useEditLead(pipelineId);
-  const [customFields, setCustomFields] = useState(valores);
-  // A RÉGUA do diff (issue #2132): o valor carregado quando o painel abriu.
-  // Só o que a pessoa mudar daqui vai viajar — o merge é do servidor.
-  const [camposCarregados, setCamposCarregados] = useState(valores);
-
-  if (fieldDefs.length === 0) {
-    return <p className="text-xs text-muted-foreground">{t("Este funil não tem campos extras.")}</p>;
-  }
-
-  async function salvar() {
-    const payload = soChavesAlteradas(camposCarregados, customFields);
-    try {
-      await edit.mutateAsync({ leadId, patch: { custom_fields: payload } });
-      // O que acabou de gravar vira a nova régua: o próximo salvamento não
-      // reenvia este, e uma limpeza alheia no intervalo não é atropelada.
-      setCamposCarregados({ ...customFields });
-      toast.success(t("Campos atualizados"));
-      onSalvo();
-    } catch {
-      // toast already shown
-    }
-  }
-
+  // `useWinLead` é por funil, e cada negócio da lista pode estar num funil.
+  const ganhar = useWinLead(l.pipeline_id);
+  // Excluir é a MESMA ação do card do quadro (`KanbanCardActions`): rota em
+  // lote com um id só — mesmo gate de papel, mesma RLS, mesma auditoria.
+  const excluir = useBulkAction(l.pipeline_id);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  // "Criar tarefa": o MESMO formulário da tela de Tarefas e do dossiê, já preso
+  // ao negócio e ao contato, com quem cria como responsável. A lista não é
+  // buscada (`enabled: false`) — o card só precisa da criação.
+  const { criarTarefa } = useTasks({ lead_id: l.id }, { enabled: false });
+  const [criandoTarefa, setCriandoTarefa] = useState(false);
+  // Chave de remontagem: cada abertura começa com o formulário limpo.
+  const [aberturasDaTarefa, setAberturasDaTarefa] = useState(0);
+  const [adicionandoProduto, setAdicionandoProduto] = useState(false);
   return (
-    <div className="space-y-3">
-      <CustomFieldsEditor
-        fields={fieldDefs}
-        value={customFields}
-        onChange={setCustomFields}
-        mode="lead"
-        className="gap-3 md:grid-cols-1"
-      />
-      <Button
-        size="sm"
-        className="h-7 w-full text-xs"
-        disabled={edit.isPending}
-        onClick={() => void salvar()}
+    <li className="flex items-stretch overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-accent/60">
+      <button
+        type="button"
+        data-testid={`inbox-lead-${l.id}`}
+        onClick={() => onAbrir(l)}
+        className="min-w-0 flex-1 p-2.5 text-left text-xs hover:bg-accent/5"
       >
-        {edit.isPending ? "Salvando…" : "Salvar"}
-      </Button>
-    </div>
+        <div className="truncate text-[13px] font-medium text-text">{l.title}</div>
+        <div className={CLASSES_DE_ONDE_ESTA} title={ondeEstaOLead(l)}>
+          {ondeEstaOLead(l)}
+        </div>
+        <div className="mt-1.5 flex items-center gap-2">
+          <span
+            className={cn(
+              "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+              COR_DO_STATUS[l.status] ?? "bg-muted text-muted-foreground",
+            )}
+          >
+            {t(STATUS_DO_LEAD[l.status] ?? l.status)}
+          </span>
+          <span className="font-medium text-text tabular-nums">
+            {formatMoney(l.value_cents, l.currency)}
+          </span>
+        </div>
+      </button>
+      {(podeExcluir || podeFechar) && (
+        <div className="flex flex-col items-center justify-start gap-1 border-l border-border px-1.5 py-1.5">
+          {podeExcluir && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("Ações do lead")}
+                  title={t("Ações do lead")}
+                  data-testid={`inbox-lead-acoes-${l.id}`}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent/10 hover:text-text data-[state=open]:bg-accent/10 data-[state=open]:text-accent"
+                >
+                  <DotsThree size={16} weight="bold" aria-hidden />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  {t("Ações do lead")}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-testid={`inbox-lead-criar-tarefa-${l.id}`}
+                  onSelect={() => {
+                    setAberturasDaTarefa((n) => n + 1);
+                    setCriandoTarefa(true);
+                  }}
+                >
+                  <ListChecks size={15} className="mr-2" aria-hidden />
+                  {t("Criar tarefa")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid={`inbox-lead-adicionar-produto-${l.id}`}
+                  onSelect={() => setAdicionandoProduto(true)}
+                >
+                  <Package size={15} className="mr-2" aria-hidden />
+                  {t("Adicionar produto")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid={`inbox-lead-excluir-${l.id}`}
+                  disabled={excluir.isPending}
+                  onSelect={() => setConfirmandoExclusao(true)}
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <Trash size={15} className="mr-2" aria-hidden />
+                  {t("Excluir lead")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {podeFechar && (
+            <>
+              <button
+                type="button"
+                aria-label={t("Marcar como ganho")}
+                title={t("Marcar como ganho")}
+                data-testid={`inbox-lead-ganhar-${l.id}`}
+                disabled={ganhar.isPending}
+                onClick={() => ganhar.mutate({ leadId: l.id }, { onSuccess: onFechado })}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-success/15 hover:text-success disabled:opacity-50"
+              >
+                <Check size={15} weight="bold" aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-label={t("Marcar como perdido")}
+                title={t("Marcar como perdido")}
+                data-testid={`inbox-lead-perder-${l.id}`}
+                onClick={() => onPerder(l)}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              >
+                <X size={15} weight="bold" aria-hidden />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {/* Montado só aberto, como a tarefa: cada card teria a sua consulta. */}
+      {adicionandoProduto && (
+        <AdicionarProdutoDialog
+          aberto={adicionandoProduto}
+          aoMudarAbertura={setAdicionandoProduto}
+          lead={l}
+          aoAdicionar={onFechado}
+        />
+      )}
+      {/* Montado só aberto: cada card da lista teria a sua consulta da equipe. */}
+      {criandoTarefa && (
+        <FormularioDeTarefa
+          key={aberturasDaTarefa}
+          aberto={criandoTarefa}
+          aoMudarAbertura={setCriandoTarefa}
+          aoSalvar={async (entrada) => {
+            await criarTarefa(entrada);
+            toast.success(t("Tarefa criada"));
+          }}
+          leadId={l.id}
+          contactId={contactId}
+          responsavelPadrao={usuarioId ?? null}
+          tituloDoNegocio={l.title}
+        />
+      )}
+      {/*
+        `AlertDialog`, e não `Dialog`: excluir é irreversível, e o padrão de
+        `docs/doctrine/destrutivo-pede-confirmacao.md` é a janela que não fecha
+        por clique fora.
+      */}
+      <AlertDialog open={confirmandoExclusao} onOpenChange={setConfirmandoExclusao}>
+        <AlertDialogContent data-testid="inbox-lead-excluir-confirmacao">
+          <AlertDialogHeader>
+            <span
+              aria-hidden
+              className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-destructive/10 text-destructive"
+            >
+              <Trash size={22} />
+            </span>
+            <AlertDialogTitle>{t("Excluir lead?")}</AlertDialogTitle>
+            <p className="text-sm font-medium text-text">{l.title}</p>
+            <AlertDialogDescription>
+              {t(
+                "O negócio e seu histórico de atividades serão excluídos. O contato e as conversas continuam disponíveis.",
+              )}
+            </AlertDialogDescription>
+            <p className="text-xs text-muted-foreground">{t("Esta ação não pode ser desfeita.")}</p>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={excluir.isPending}>{t("Cancelar")}</AlertDialogCancel>
+            {/* `preventDefault`: quem fecha é o `onSuccess`, para um erro não
+                chegar sobre uma janela que já sumiu (mesmo padrão do quadro). */}
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              disabled={excluir.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                excluir.mutate(
+                  { action: "delete", lead_ids: [l.id], params: {} },
+                  {
+                    onSuccess: () => {
+                      setConfirmandoExclusao(false);
+                      onFechado();
+                    },
+                  },
+                );
+              }}
+            >
+              {excluir.isPending ? t("Excluindo…") : t("Excluir lead")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </li>
   );
 }
 
 export function CRMSidePanel({ conversation }: Props) {
-  const { user } = useAuth();
+  const { user, activeOrg } = useAuth();
   const readonly = user.support?.access_mode === "support_readonly";
+  // Com a Agenda desligada na empresa (/app/crm), o atalho de marcar some.
+  const agendaLigada = activeOrg?.capacidades_ligadas?.includes("agenda") ?? false;
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -531,18 +708,26 @@ export function CRMSidePanel({ conversation }: Props) {
   // A saída do filtro produz null enquanto o detalhe carrega. O rascunho não
   // some nessa lacuna; outra conversa/contato real o descarta, sem expô-lo.
   useEffect(() => {
-    if (conversation && desfechoDraft && (conversation.id !== desfechoDraft.conversationId || contactId !== desfechoDraft.contactId)) setDesfechoDraft(null);
+    if (
+      conversation &&
+      desfechoDraft &&
+      (conversation.id !== desfechoDraft.conversationId || contactId !== desfechoDraft.contactId)
+    )
+      setDesfechoDraft(null);
   }, [conversation, contactId, desfechoDraft]);
 
-
-  const [enrichment, setEnrichment] = useState<(ProspectEnrichment & { collected_at: string }) | null>(null);
+  const [enrichment, setEnrichment] = useState<
+    (ProspectEnrichment & { collected_at: string }) | null
+  >(null);
   const [enrichmentError, setEnrichmentError] = useState(false);
   const [leads, setLeads] = useState<LeadRow[] | null>(null);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [activities, setActivities] = useState<ActivityRow[] | null>(null);
   const [demandas, setDemandas] = useState<DemandaRow[] | null>(null);
   const [fatos, setFatos] = useState<Array<{ id: string; headline: string; body: string }>>([]);
-  const [historico, setHistorico] = useState<Array<{ id: string; desfecho: string; fechada_em: string }>>([]);
+  const [historico, setHistorico] = useState<
+    Array<{ id: string; desfecho: string; fechada_em: string }>
+  >([]);
   const [summaryContactId, setSummaryContactId] = useState<string | null>(null);
   /**
    * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
@@ -555,7 +740,20 @@ export function CRMSidePanel({ conversation }: Props) {
 
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
-  const [leadAtivoId, setLeadAtivoId] = useState<string | null>(null);
+  // "Ver mais" abre de 3 em 3 (o total vem da rota, `leads_total`).
+  // Guardado JUNTO do contato: trocar de conversa volta a 3 sem efeito de reset.
+  const [limitePorContato, setLimitePorContato] = useState<{ contato: string | null; n: number }>({
+    contato: null,
+    n: 3,
+  });
+  const limiteLeads = limitePorContato.contato === contactId ? limitePorContato.n : 3;
+  const [leadsTotal, setLeadsTotal] = useState(0);
+  const [leadAberto, setLeadAberto] = useState<LeadRow | null>(null);
+  const [perdendo, setPerdendo] = useState<LeadRow | null>(null);
+  // Ganhar/perder: a régua das rotas /win e /lose (agent+, sem suporte só-leitura).
+  const podeFechar =
+    !readonly &&
+    (user.is_platform_admin || (activeOrg ? ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent : false));
   const defaultPipeline = useDefaultPipeline(leadDialogOpen);
 
   useEffect(() => {
@@ -571,8 +769,9 @@ export function CRMSidePanel({ conversation }: Props) {
       setOrders(null);
       setActivities(null);
       setDemandas(null);
-      setFatos([]); setHistorico([]);
-      setLeadAtivoId(null);
+      setFatos([]);
+      setHistorico([]);
+      setLeadAberto(null);
       return;
     }
     let cancelled = false;
@@ -589,18 +788,20 @@ export function CRMSidePanel({ conversation }: Props) {
             enrichment?: (ProspectEnrichment & { collected_at: string }) | null;
             enrichment_error?: boolean;
             leads: LeadRow[];
+            leads_total?: number;
             orders: OrderRow[];
             activities: ActivityRow[];
             demandas: DemandaRow[];
             fatos?: Array<{ id: string; headline: string; body: string }>;
             historico?: Array<{ id: string; desfecho: string; fechada_em: string }>;
           };
-        }>(`/api/v1/contacts/${contactId}/crm-summary`);
+        }>(`/api/v1/contacts/${contactId}/crm-summary?leads_limit=${limiteLeads}`);
         if (cancelled) return;
         setSummaryContactId(contactId);
         setEnrichment(r.data.enrichment ?? null);
         setEnrichmentError(r.data.enrichment_error ?? false);
         setLeads(r.data.leads);
+        setLeadsTotal(r.data.leads_total ?? r.data.leads.length);
         setOrders(r.data.orders);
         setActivities(r.data.activities);
         // `?? []` e não `?? null`: aqui a leitura DEU CERTO. Cair em `null`
@@ -608,7 +809,8 @@ export function CRMSidePanel({ conversation }: Props) {
         // mostraria esqueleto para sempre num contato sem demanda aberta —
         // que é o caso saudável.
         setDemandas(r.data.demandas ?? []);
-        setFatos(r.data.fatos ?? []); setHistorico(r.data.historico ?? []);
+        setFatos(r.data.fatos ?? []);
+        setHistorico(r.data.historico ?? []);
       } catch {
         if (cancelled) return;
         // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
@@ -618,7 +820,8 @@ export function CRMSidePanel({ conversation }: Props) {
         setOrders(null);
         setActivities(null);
         setDemandas(null);
-        setFatos([]); setHistorico([]);
+        setFatos([]);
+        setHistorico([]);
       }
     }
 
@@ -638,7 +841,16 @@ export function CRMSidePanel({ conversation }: Props) {
     // Depender do DADO que muda é mais honesto que um contador de invalidação:
     // `assigned_to_user_id` cobre assumir/transferir/liberar e `bot_silenced_until`
     // cobre pausar e devolver — que são exatamente os quatro gestos que geram linha.
-  }, [contactId, contact?.is_anonymized, tentativa, conversation?.assigned_to_user_id, conversation?.bot_silenced_until, conversation?.service_revision, conversation?.current_demanda_id]);
+  }, [
+    contactId,
+    contact?.is_anonymized,
+    tentativa,
+    limiteLeads,
+    conversation?.assigned_to_user_id,
+    conversation?.bot_silenced_until,
+    conversation?.service_revision,
+    conversation?.current_demanda_id,
+  ]);
 
   // Recarrega o resumo pelo MESMO caminho do "Tentar de novo": o efeito depende
   // de `tentativa`, então a demanda recém-marcada volta do servidor em vez de
@@ -647,7 +859,8 @@ export function CRMSidePanel({ conversation }: Props) {
   // esta tela inteira combate.
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
 
-  const tags = contact?.tags ?? [];
+  // Otimista: chips e editor leem a MESMA lista, que muda no clique.
+  const { tags, aplicar: aplicarTags } = useTagsDoContato(contactId ?? "", contact?.tags ?? []);
   const displayName = rotuloDoContato(contact, t);
 
   // `erro` PRIMEIRO, e não é detalhe: as três listas voltam a `null` quando a
@@ -658,7 +871,8 @@ export function CRMSidePanel({ conversation }: Props) {
   const sectionsLoading = useMemo(
     () =>
       !erro &&
-      (summaryContactId !== contactId || (leads === null && orders === null && activities === null && demandas === null)),
+      (summaryContactId !== contactId ||
+        (leads === null && orders === null && activities === null && demandas === null)),
     [erro, summaryContactId, contactId, leads, orders, activities, demandas],
   );
 
@@ -671,25 +885,40 @@ export function CRMSidePanel({ conversation }: Props) {
   }
 
   return (
-    <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
-      <section>
-        <h3 className="text-xs font-semibold text-text">
-          {t("Contato")}
-        </h3>
-        <Card className="mt-2 space-y-2 p-3 text-sm">
+    <aside className="flex h-full flex-col gap-3 overflow-y-auto border-l border-border bg-muted/20 p-3">
+      <BlocoRecolhivel
+        id="inbox-contato"
+        titulo={t("Contato")}
+        icone={<UserCircle size={14} aria-hidden />}
+      >
+        <div className="space-y-2 text-sm">
           <div className="font-medium">{displayName}</div>
           {contact?.phone_number && (
-            <div className="text-xs text-muted-foreground">{phoneForDisplay(contact.phone_number)}</div>
+            <div className="text-xs text-muted-foreground">
+              {phoneForDisplay(contact.phone_number)}
+            </div>
           )}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {tags.map((t) => (
-                <ChipDeEtiqueta key={t} tag={t} className="h-4 px-1.5 text-[10px]" />
+                <ChipDeEtiqueta
+                  key={t}
+                  tag={t}
+                  entidade="contact"
+                  className="h-4 px-1.5 text-[10px]"
+                />
               ))}
             </div>
           )}
           <div className="flex flex-wrap gap-2 pt-1">
-            {contactId&&conversation?<Link className="underline" href={`/app/agenda?contato=${contactId}&conversa=${conversation.id}`}>{t("Marcar compromisso")}</Link>:null}
+            {agendaLigada && contactId && conversation ? (
+              <Link
+                className="underline"
+                href={`/app/agenda?contato=${contactId}&conversa=${conversation.id}`}
+              >
+                {t("Marcar compromisso")}
+              </Link>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
@@ -700,16 +929,6 @@ export function CRMSidePanel({ conversation }: Props) {
             >
               <Tag size={12} className="mr-1" weight="regular" aria-hidden /> {t("Tags do contato")}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-xs"
-              disabled={readonly || !contactId || (leadDialogOpen && defaultPipeline.isLoading)}
-              onClick={() => setLeadDialogOpen(true)}
-            >
-              <Users size={12} className="mr-1" weight="regular" aria-hidden />
-              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
-            </Button>
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
                 <Link href={`/app/contacts/${contactId}`}>
@@ -719,12 +938,93 @@ export function CRMSidePanel({ conversation }: Props) {
               </Button>
             )}
           </div>
-          {tagEditorOpen && contactId && <ContactTagsEditor contactId={contactId} orgId={conversation.organization_id} tags={tags} />}
-        </Card>
-      </section>
+          {tagEditorOpen && contactId && <ContactTagsEditor tags={tags} onChange={aplicarTags} />}
+        </div>
+      </BlocoRecolhivel>
+
+      <BlocoRecolhivel
+        id="inbox-oportunidades"
+        data-testid="inbox-campos-lead"
+        titulo={t("Leads recentes")}
+        icone={<Funnel size={14} aria-hidden />}
+        contagem={leadsTotal}
+        acoes={
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-xs text-accent"
+            disabled={readonly || !contactId || (leadDialogOpen && defaultPipeline.isLoading)}
+            onClick={() => setLeadDialogOpen(true)}
+          >
+            <Plus size={12} className="mr-0.5" weight="bold" aria-hidden />
+            {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
+          </Button>
+        }
+      >
+        {sectionsLoading ? (
+          <Skeleton className="h-14 w-full" />
+        ) : leads && leads.length > 0 ? (
+          <>
+            <LeadsRecentes
+              leads={leads}
+              contactId={contactId}
+              usuarioId={user.id}
+              onAbrir={setLeadAberto}
+              podeFechar={podeFechar}
+              onPerder={setPerdendo}
+              onFechado={recarregar}
+            />
+            {leadsTotal > leads.length && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="mt-1 h-7 w-full text-xs"
+                data-testid="inbox-leads-ver-mais"
+                onClick={() =>
+                  setLimitePorContato({ contato: contactId ?? null, n: limiteLeads + 3 })
+                }
+              >
+                {t("Ver mais")}
+              </Button>
+            )}
+          </>
+        ) : (
+          <SemLista
+            vazio="Sem leads."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
+        )}
+        {leadAberto && leads?.some((l) => l.id === leadAberto.id) && (
+          <LeadDossierDoFunil
+            pipelineId={leadAberto.pipeline_id}
+            leadId={leadAberto.id}
+            titulo={leadAberto.title}
+            onClose={() => {
+              setLeadAberto(null);
+              recarregar();
+            }}
+          />
+        )}
+        {perdendo && (
+          <LoseLeadDialog
+            open
+            onOpenChange={(v) => {
+              if (!v) {
+                setPerdendo(null);
+                recarregar();
+              }
+            }}
+            leadId={perdendo.id}
+            pipelineId={perdendo.pipeline_id}
+          />
+        )}
+      </BlocoRecolhivel>
 
       <LeadEnrichment
-        data={summaryContactId === contactId && !erro && !contact?.is_anonymized ? enrichment : null}
+        data={
+          summaryContactId === contactId && !erro && !contact?.is_anonymized ? enrichment : null
+        }
         loading={sectionsLoading}
         error={erro || (summaryContactId === contactId && enrichmentError)}
         onRetry={recarregar}
@@ -738,34 +1038,26 @@ export function CRMSidePanel({ conversation }: Props) {
           stages={defaultPipeline.data.stages}
           contactId={contactId}
           onCreated={() => {
-            setLeadAtivoId(null);
             recarregar();
           }}
         />
       )}
 
-      <Separator />
-
-      {!readonly && <ConversationTagsEditor
-        conversationId={conversation.id}
-        orgId={conversation.organization_id}
-        tags={conversation.tags ?? []}
-      />}
-
-      <Separator />
-
       {/* ANTES dos negócios de propósito (doutrina cap. 5): lead é o negócio,
           conversa é o canal, demanda é o que precisa acabar. Quem abre esta
           conversa está atendendo alguém que pediu alguma coisa — a primeira
           pergunta a responder é o que ainda está pendente, não quanto vale. */}
-      <section data-testid="inbox-demandas">
-        <h3 className="text-xs font-semibold text-text">
-          {t("Demandas abertas")}
-        </h3>
+      <BlocoRecolhivel
+        id="inbox-demandas"
+        data-testid="inbox-demandas"
+        titulo={t("Demandas abertas")}
+        icone={<Flag size={14} aria-hidden />}
+        contagem={demandas?.length ?? null}
+      >
         {sectionsLoading ? (
-          <Skeleton className="mt-2 h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
         ) : demandas && demandas.length > 0 ? (
-          <ul className="mt-2 space-y-1.5">
+          <ul className="space-y-1.5">
             {demandas.map((d) => {
               const semPasso = !d.proximo_passo;
               return (
@@ -781,7 +1073,7 @@ export function CRMSidePanel({ conversation }: Props) {
                     <span className="truncate font-medium">
                       {t(ESTADO_LEGIVEL[d.estado] ?? d.estado)}
                     </span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground tabular-nums">
                       {t("há {tempo}").replace("{tempo}", `${horasDesde(d.aberta_em)}h`)}
                     </span>
                   </div>
@@ -796,15 +1088,53 @@ export function CRMSidePanel({ conversation }: Props) {
                       vazamento e tinha de sair da tela para resolver — peça que
                       só recebe é ilha pelo invariante 1, e foi o gate dos mapas
                       de arquitetura que apontou isso. */}
-                  {d.id === conversation.current_demanda_id && <Badge variant="outline">{t("Demanda vigente neste canal")}</Badge>}
-                  {!readonly && <EncerrarDemanda
-                    draft={desfechoDraft?.conversationId === conversation.id && desfechoDraft.contactId === contactId && desfechoDraft.demandaId === d.id ? desfechoDraft : null}
-                    onAbrir={() => { if (contactId) setDesfechoDraft({ conversationId: conversation.id, contactId, demandaId: d.id, revision: d.revision, desfecho: "resolvida", salvando: false }); }}
-                    onAlterar={(patch) => setDesfechoDraft((current) => current?.conversationId === conversation.id && current.contactId === contactId && current.demandaId === d.id ? { ...current, ...patch } : current)}
-                    onFechar={() => setDesfechoDraft((current) => current?.conversationId === conversation.id && current.contactId === contactId && current.demandaId === d.id ? null : current)}
-                    onPronto={recarregar}
-                  />}
-                  {semPasso && !readonly ? <MarcarProximoPasso demandaId={d.id} onPronto={recarregar} /> : null}
+                  {d.id === conversation.current_demanda_id && (
+                    <Badge variant="outline">{t("Demanda vigente neste canal")}</Badge>
+                  )}
+                  {!readonly && (
+                    <EncerrarDemanda
+                      draft={
+                        desfechoDraft?.conversationId === conversation.id &&
+                        desfechoDraft.contactId === contactId &&
+                        desfechoDraft.demandaId === d.id
+                          ? desfechoDraft
+                          : null
+                      }
+                      onAbrir={() => {
+                        if (contactId)
+                          setDesfechoDraft({
+                            conversationId: conversation.id,
+                            contactId,
+                            demandaId: d.id,
+                            revision: d.revision,
+                            desfecho: "resolvida",
+                            salvando: false,
+                          });
+                      }}
+                      onAlterar={(patch) =>
+                        setDesfechoDraft((current) =>
+                          current?.conversationId === conversation.id &&
+                          current.contactId === contactId &&
+                          current.demandaId === d.id
+                            ? { ...current, ...patch }
+                            : current,
+                        )
+                      }
+                      onFechar={() =>
+                        setDesfechoDraft((current) =>
+                          current?.conversationId === conversation.id &&
+                          current.contactId === contactId &&
+                          current.demandaId === d.id
+                            ? null
+                            : current,
+                        )
+                      }
+                      onPronto={recarregar}
+                    />
+                  )}
+                  {semPasso && !readonly ? (
+                    <MarcarProximoPasso demandaId={d.id} onPronto={recarregar} />
+                  ) : null}
                 </li>
               );
             })}
@@ -816,51 +1146,59 @@ export function CRMSidePanel({ conversation }: Props) {
             onTentarDeNovo={() => setTentativa((n) => n + 1)}
           />
         )}
-      </section>
+      </BlocoRecolhivel>
 
-      <Separator />
-
-      <section data-testid="inbox-memoria">
-        <h3 className="text-xs font-semibold">{t("Memória do contato")}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">{t("Fatos duráveis registrados nas notas. Pendências pertencem à demanda vigente.")}</p>
-        {!sectionsLoading && fatos.map((f) => <details key={f.id} className="mt-2 text-xs"><summary className="wrap-anywhere">{f.headline}</summary><p className="mt-1 whitespace-pre-wrap wrap-anywhere">{f.body}</p></details>)}
-        {!sectionsLoading && fatos.length === 0 && <p className="mt-2 text-xs text-muted-foreground">{t("Nenhum fato durável registrado.")}</p>}
-        {!sectionsLoading && historico.length > 0 && <div className="mt-3 text-xs"><h4>{t("Histórico encerrado — sem tarefas pendentes")}</h4>{historico.map((h) => <p key={h.id}>{t(DESFECHO_LEGIVEL[h.desfecho] ?? h.desfecho)}{h.fechada_em ? ` · ${shortDate(h.fechada_em, localeDaData)}` : ""}</p>)}</div>}
-      </section>
-      <Separator />
+      <BlocoRecolhivel
+        id="inbox-memoria"
+        data-testid="inbox-memoria"
+        titulo={t("Memória do contato")}
+        icone={<Brain size={14} aria-hidden />}
+        contagem={fatos.length}
+      >
+        <p className="text-xs text-muted-foreground">
+          {t("Fatos duráveis registrados nas notas. Pendências pertencem à demanda vigente.")}
+        </p>
+        {!sectionsLoading &&
+          fatos.map((f) => (
+            <details key={f.id} className="mt-2 text-xs">
+              <summary className="wrap-anywhere">{f.headline}</summary>
+              <p className="mt-1 wrap-anywhere whitespace-pre-wrap">{f.body}</p>
+            </details>
+          ))}
+        {!sectionsLoading && fatos.length === 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t("Nenhum fato durável registrado.")}
+          </p>
+        )}
+        {!sectionsLoading && historico.length > 0 && (
+          <div className="mt-3 text-xs">
+            <h4>{t("Histórico encerrado — sem tarefas pendentes")}</h4>
+            {historico.map((h) => (
+              <p key={h.id}>
+                {t(DESFECHO_LEGIVEL[h.desfecho] ?? h.desfecho)}
+                {h.fechada_em ? ` · ${shortDate(h.fechada_em, localeDaData)}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
+      </BlocoRecolhivel>
 
       {/* O que os roteiros de atendimento coletaram (módulo opcional; desligado
           ou sem roteiro, não desenha nada). */}
-      {contactId && !contact?.is_anonymized && <RoteirosDoContato contactId={contactId} variante="painel" />}
+      {contactId && !contact?.is_anonymized && (
+        <RoteirosDoContato contactId={contactId} variante="painel" />
+      )}
 
-      <section data-testid="inbox-campos-lead">
-        <h3 className="text-xs font-semibold text-text">
-          {t("Leads recentes")}
-        </h3>
+      <BlocoRecolhivel
+        id="inbox-pedidos"
+        titulo={t("Pedidos recentes")}
+        icone={<Receipt size={14} aria-hidden />}
+        contagem={orders?.length ?? null}
+      >
         {sectionsLoading ? (
-          <Skeleton className="mt-2 h-14 w-full" />
-        ) : leads && leads.length > 0 ? (
-          <fieldset disabled={readonly}><InboxLeadEditor
-            leads={leads}
-            selecionadoId={leadAtivoId}
-            onSelecionar={setLeadAtivoId}
-            onSalvo={recarregar}
-          /></fieldset>
-        ) : (
-          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
-        )}
-      </section>
-
-      <Separator />
-
-      <section>
-        <h3 className="text-xs font-semibold text-text">
-          {t("Pedidos recentes")}
-        </h3>
-        {sectionsLoading ? (
-          <Skeleton className="mt-2 h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
         ) : orders && orders.length > 0 ? (
-          <ul className="mt-2 space-y-1.5">
+          <ul className="space-y-1.5">
             {orders.map((o) => (
               <li
                 key={o.id}
@@ -879,20 +1217,23 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem pedidos." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem pedidos."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
-      </section>
+      </BlocoRecolhivel>
 
-      <Separator />
-
-      <section>
-        <h3 className="text-xs font-semibold text-text">
-          {t("Atividade")}
-        </h3>
+      <BlocoRecolhivel
+        id="inbox-atividade"
+        titulo={t("Atividade")}
+        icone={<ClockCounterClockwise size={14} aria-hidden />}
+      >
         {sectionsLoading ? (
-          <Skeleton className="mt-2 h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
         ) : activities && activities.length > 0 ? (
-          <ul className="mt-2 space-y-1.5">
+          <ul className="space-y-1.5">
             {activities.map((a) => (
               <li key={a.id} className="rounded-md border border-border p-2 text-xs">
                 {/* Rótulo do vocabulário único (activity-vocabulary), nunca o
@@ -912,32 +1253,40 @@ export function CRMSidePanel({ conversation }: Props) {
                   />
                   {t(activityLabel(a.type))}
                 </div>
-                {a.reason && <div className="mt-0.5 truncate text-muted-foreground">{t(a.reason)}</div>}
+                {a.reason && (
+                  <div className="mt-0.5 truncate text-muted-foreground">{t(a.reason)}</div>
+                )}
                 <div className="text-muted-foreground">
-                  {a.performed_by_name ?? t(actorLabel(a.actor_kind))} · {shortDate(a.performed_at, localeDaData)}
+                  {a.performed_by_name ?? t(actorLabel(a.actor_kind))} ·{" "}
+                  {shortDate(a.performed_at, localeDaData)}
                 </div>
               </li>
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem atividade." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Sem atividade."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
-      </section>
-
-      <Separator />
+      </BlocoRecolhivel>
 
       {/* Perguntar ao acervo — a MESMA busca que a IA faz, com a origem de cada
           trecho. Não é busca própria: o componente só pergunta e mostra, e quem
           decide limiar/top-K é a rota, que chama `buscarConhecimento`. Colocada
           DEPOIS das seções de trabalho: é consulta, não é o que o atendente abre
           a conversa para fazer. */}
-      <section>
-        <h3 className="text-xs font-semibold">{t("Acervo")}</h3>
-        <p className="mt-1 mb-2 text-xs text-muted-foreground">
+      <BlocoRecolhivel
+        id="inbox-acervo"
+        titulo={t("Acervo")}
+        icone={<BookOpen size={14} aria-hidden />}
+      >
+        <p className="mb-2 text-xs text-muted-foreground">
           {t("Pergunte como a IA perguntaria — a resposta vem com a origem de cada trecho.")}
         </p>
         <AcervoSearch />
-      </section>
+      </BlocoRecolhivel>
     </aside>
   );
 }

@@ -181,13 +181,13 @@ describe("a organização não consegue se trancar do lado de fora", () => {
 describe("medição da folga (pergunta de aceite da issue #1341)", () => {
   /**
    * Baseline: a configuração de HOJE — nenhuma escolha, nem da empresa nem do
-   * vínculo. É o número que o issue publica (15 itens: atendimento 4, CRM 3,
-   * IA 3, canais 2, análise 3), medido aqui pelo módulo que alimenta o menu.
+   * vínculo. O issue publicou 15; o Estallo tirou "Respostas rápidas" do menu
+   * (mora no hub do CRM), então são 14 — medido pelo módulo que alimenta o menu.
    */
-  it("hoje: 15 itens no menu lateral, folga 0 (é o teto da dobra a 1280x900)", () => {
-    expect(itensNoMenuLateral(INTERFACE_COMPLETA)).toBe(15);
+  it("hoje: 14 itens no menu lateral (o teto da dobra a 1280x900 é 15)", () => {
+    expect(itensNoMenuLateral(INTERFACE_COMPLETA)).toBe(14);
     // `undefined` é o caminho de quem não tem escolha nenhuma gravada
-    expect(itensNoMenuLateral(undefined)).toBe(15);
+    expect(itensNoMenuLateral(undefined)).toBe(14);
   });
 
   /**
@@ -195,8 +195,8 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
    * A escolha da empresa é interseção, então o menu só ENCOLHE — a mudança não
    * tem como empurrar o instrumento de tela para o vermelho.
    */
-  it("configuração COMPLETA (ninguém escolheu): 15 itens, folga 0 — igual a hoje", () => {
-    expect(itensNoMenuLateral(combinarInterfaces(completa, completa))).toBe(15);
+  it("configuração COMPLETA (ninguém escolheu): 14 itens — igual a hoje", () => {
+    expect(itensNoMenuLateral(combinarInterfaces(completa, completa))).toBe(14);
   });
 
   it("configuração SIMPLIFICADA (empresa escolhe o preset): 6 itens, folga 9", () => {

@@ -36,7 +36,7 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
-import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
+import { depsDoRitmo, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { McpToolDefinition } from "../types";
 
@@ -149,11 +149,8 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       }
     }
 
-    // Freio anti-ban do número (#1491): aplicar ANTES de criar ou reabrir a conversa.
-    // Se o freio segurar o envio por teto diário ou espaçamento, recusa com 429
-    // sem deixar uma conversa vazia pendente no CRM.
-    const ritmo = await depsDoRitmo(createAdminClient());
-    const segurado = await segurarEnvioPorToken(ritmo, {
+    // Ritmo fixo do número (#1491): aplicar ANTES de criar ou reabrir a conversa.
+    await segurarEnvioPorToken(depsDoRitmo(createAdminClient()), {
       organizationId: ctx.organizationId,
       channelSessionId: input.channel_session_id,
       requestId: ctx.requestId,
@@ -185,7 +182,6 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
       },
       parsed,
     );
-    await registrarEnvioPorToken(ritmo, ctx.organizationId, segurado, message.status);
 
     const response = {
       contact_id: opened.contact_id,

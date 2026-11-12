@@ -56,9 +56,6 @@ vi.mock("@/hooks/channels/useChannelSessions", async (original) => {
   const real = await original<typeof CanaisModule>();
   return { ...real, useChannelSessions: () => ({ data: [] }) };
 });
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useConversationTagVocabulary: () => ({ data: [] }),
-}));
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
     get: (url: string) => {
@@ -110,7 +107,8 @@ function montar(barra: InboxFiltersValue) {
 /** O número que o operador vê na aba "Todas" — o badge é o `<span>` da aba. */
 function contadorDaAbaTodas(): string | null {
   const aba = screen.getByRole("tab", { name: /Todas/ });
-  return aba.querySelector("span")?.textContent ?? null;
+  // Desde o redesenho (16/10/2026) a contagem é o chip `.ibx-category-count`.
+  return aba.querySelector(".ibx-category-count")?.textContent ?? null;
 }
 
 function perguntasDe(url: string): string[] {

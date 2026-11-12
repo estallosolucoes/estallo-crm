@@ -76,6 +76,8 @@ import type { CredentialRow, Provider } from "@/hooks/ai/useCredentials";
 import { credentialStatus } from "@/hooks/ai/useCredentials";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { callbacksHabilitados } from "@/lib/followup/callback-policy";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
+import { centavosParaCampo, parseReaisToCents } from "@/lib/money";
 
 /**
  * O canal oferecido no seletor é exatamente o que `listSelectableChannels`
@@ -1061,14 +1063,14 @@ export function AgentForm(props: Props) {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="cost_budget_cents">{t("Custo máximo por atendimento (centavos)")}</Label>
-                <Input
+                <Label htmlFor="cost_budget_cents">{t("Custo máximo por atendimento (US$)")}</Label>
+                {/* O custo do modelo é cotado em dólar (\`computeCostCents\`): o campo
+                    mostra US$ e grava centavos de dólar, como antes. */}
+                <CampoDeDinheiro
                   id="cost_budget_cents"
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={form.cost_budget_cents}
-                  onChange={(e) => patch({ cost_budget_cents: Number(e.target.value) })}
+                  moeda="USD"
+                  value={centavosParaCampo(form.cost_budget_cents)}
+                  onChange={(e) => patch({ cost_budget_cents: parseReaisToCents(e.target.value) ?? 0 })}
                   disabled={disabled}
                 />
               </div>

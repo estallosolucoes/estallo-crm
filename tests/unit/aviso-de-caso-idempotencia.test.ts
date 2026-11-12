@@ -137,12 +137,7 @@ function monta(existente: Record<string, unknown> | null) {
         return { externalId: "wamid.X" };
       },
     },
-    pacing: {
-      async decide() {
-        return { liberado: true };
-      },
-      async registraEnvio() {},
-    },
+    async esperarRitmo() {},
   };
   return { deps, enviados, patches, central };
 }

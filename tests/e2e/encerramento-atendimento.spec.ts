@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "./helpers/test";
+import { abrirFichaDoContato } from "./helpers/ficha-do-contato";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 const credentials = credenciaisSupabaseDeTeste();
@@ -64,6 +65,8 @@ const PRAZO_DA_RECARGA = { timeout: 15_000 };
 async function abrirConversa(page: Page, conversation: string): Promise<void> {
   await page.goto(`/app/inbox/${conversation}`);
   await page.waitForURL(new RegExp(`/app/inbox\\?id=${conversation}`));
+  // A ficha do contato (demandas, memória) é gaveta abaixo da faixa 2xl: abre como a pessoa abriria.
+  await abrirFichaDoContato(page);
 }
 
 test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à fila", async ({
@@ -240,6 +243,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible(PRAZO_DA_RECARGA);
     await page.goto("/app/inbox?filter=unassigned");
     await page.getByText("Voltei para novo atendimento", { exact: true }).first().click();
+    await abrirFichaDoContato(page); // a navegação fecha a gaveta da ficha
     await expect(
       page.getByTestId("inbox-demandas").getByText("Demanda vigente neste canal"),
     ).toBeVisible(PRAZO_DA_RECARGA);
@@ -276,6 +280,33 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
             ?.status,
       )
       .toBe("closed");
+    // Responder no atendimento fechado não exige clicar em Reabrir. Este já
+    // tem dono: o claim condicional sozinho não mudaria seu estado.
+    const campo = page.getByRole("textbox", { name: "Mensagem", exact: true });
+    await expect(campo).toBeEnabled();
+    await campo.fill("Retomando o atendimento por mensagem.");
+    const envio = page.waitForResponse((resposta) =>
+      resposta.url().endsWith("/api/v1/messages") && resposta.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Enviar", exact: true }).click();
+    expect((await envio).status()).toBe(201);
+    await expect.poll(async () => {
+      const { data } = await db.from("conversations")
+        .select("status,assigned_to_user_id").eq("organization_id", org).eq("id", conversation).single();
+      // Conversa reaberta COM dono volta como `claimed` (aberta e atribuída: o banco grava assim em fn_service_status);
+      // sem dono seria `open`. Os dois dizem «atendimento aberto» — o que se prova é aberta, com o mesmo dono.
+      return data && { ...data, status: data.status === "claimed" ? "open" : data.status };
+    }).toEqual({ status: "open", assigned_to_user_id: user });
+    await expect(page.getByText("Retomando o atendimento por mensagem.", { exact: true }).first()).toBeVisible();
+    await page.screenshot({ path: `${evidence}/conversa-fechada-reaberta-ao-enviar.png`, fullPage: true });
+    await page.reload();
+    await expect(campo).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Fechar", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Fechar", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Fechar", exact: true }).click();
+    await expect.poll(async () =>
+      (await db.from("conversations").select("status").eq("organization_id", org).eq("id", conversation).single()).data?.status,
+    ).toBe("closed");
     await insert("agent_cases", { organization_id: org, conversation_id: conversation,
       title: "Caso de atendimento anterior", summary: "Resposta pendente anterior", blocker: "Decisão humana",
       context_snapshot: { service_boundary: originalBoundary.data } });
@@ -285,7 +316,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await page.getByPlaceholder("Escreva sua resposta para a IA...").fill("Resposta registrada após mudança do atendimento");
     await page.getByRole("button", { name: "Enviar", exact: true }).click();
     await expect(page.getByText("Resposta registrada; não repassada porque o atendimento mudou. Revise a conversa.", { exact: true })).toBeVisible();
-    expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(1);
+    expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(2);
     await page.goto("/app/ai/inbox");
     await expect(page.getByRole("heading", { name: "Central de avisos" })).toBeVisible();
     await expect(page.getByTestId("inbox-item")).toContainText("Resposta registrada; atendimento mudou");
@@ -295,18 +326,23 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     const language = await db.auth.admin.updateUserById(user, { user_metadata: { locale: "es" } });
     if (language.error) throw language.error;
     await page.reload();
+    await abrirFichaDoContato(page); // o reload fecha a gaveta da ficha
     await expect(page.getByTestId("inbox-memoria")).toContainText("Historial cerrado — sin tareas pendientes", PRAZO_DA_RECARGA);
     await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelto");
     await page.screenshot({ path: `${evidence}/task4-historico-es.png`, fullPage: true });
     await page.getByRole("button", { name: "Reabrir", exact: true }).click();
-    await expect.poll(async () => (await db.from("conversations").select("status").eq("organization_id",org).eq("id",conversation).single()).data?.status).toBe("open");
+    await expect.poll(async () => {
+      const status = (await db.from("conversations").select("status").eq("organization_id",org).eq("id",conversation).single()).data?.status;
+      return status === "claimed" ? "open" : status; // aberta com dono = claimed
+    }).toBe("open");
     await page.getByRole("button", { name: "Cerrar", exact: true }).click();
     await page
       .getByRole("alertdialog")
       .getByRole("button", { name: "Cerrar", exact: true })
       .click();
     await expect.poll(async () => (await db.from("conversations").select("status").eq("organization_id",org).eq("id",conversation).single()).data?.status).toBe("closed");
-    expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(1);
+    // Fechar não envia nada: seguem os 2 envios do teste (a resposta inicial e a que reabriu a conversa fechada).
+    expect(hits.filter((url) => url.includes("sendText"))).toHaveLength(2);
 
   } finally {
     await context.close().catch(() => undefined);

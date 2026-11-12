@@ -7,7 +7,8 @@
  * menos nove telas, e ninguém sabia que existia.
  *
  * SÓ LEITURA, de propósito: ligar daqui criaria um segundo caminho de escrita
- * para a mesma chave. Quem liga continua sendo a tela do assunto.
+ * para a mesma chave. Quem liga continua sendo a tela do assunto. Exceção: a
+ * Agenda não tem tela de assunto, então a chave dela mora aqui (pedido do dono).
  *
  * Gate = manager+. O admin vê tudo com "Ajustar"; o gerente vê a lista inteira,
  * mas só ganha o botão onde a tela de destino o aceita — link que morre em /403
@@ -15,6 +16,7 @@
  */
 import { redirect } from "next/navigation";
 
+import { ChaveDaAgenda } from "@/components/recursos-opcionais/ChaveDaAgenda";
 import { LinhaDoRecurso } from "@/components/recursos-opcionais/LinhaDoRecurso";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
@@ -73,7 +75,11 @@ export default async function RecursosOpcionaisPage() {
         rotuloDoEstado={rotulo}
         ajustar={!semModulo(r) && r.href && podeAbrir(r) ? r.href : null}
         idioma={idioma}
-      />
+      >
+        {r.id === "agenda_da_empresa" && podeAbrir(r) && estado !== "nao_lido" ? (
+          <ChaveDaAgenda ligada={estado === "ligado"} />
+        ) : null}
+      </LinhaDoRecurso>
     );
   };
 

@@ -19,18 +19,15 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { valoresAntesDepois } from "@/lib/leads/valores-audit";
-import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { prepararMovimentacaoDeLead } from "@/lib/leads/preparar-movimentacao";
 import {
   RECUSA_RETOMADA_ETAPA_INDISPONIVEL,
   RECUSA_RETOMADA_LEAD_ABERTO,
   RECUSA_RETOMADA_SEM_ETAPA,
   camposCopiadosNaRetomada,
-  modoDeReabertura,
-  recusaReabertura,
 } from "@/lib/leads/reabertura";
 import {
   recusaDeCamposObrigatorios,
-  recusaDeMotivoDoGanho,
   settingsDoFunil,
   validaCamposExigidos,
 } from "@/lib/leads/campos-exigidos";
@@ -38,7 +35,6 @@ import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import {
-  decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { motivosDaCategoria } from "@/lib/leads/motivos-de-perda-do-funil";
@@ -332,6 +328,8 @@ export interface ListLeadsQuery {
   lost_reason_category?: string;
   /** Só os negócios deste contato — o escopo do turno do agente, no WHERE, antes do limite. */
   contact_id?: string;
+  /** Trecho do título (sem diferenciar maiúsculas) — o seletor de negócio das Tarefas. */
+  search?: string;
   limit?: number;
   cursor?: string | null;
 }
@@ -386,6 +384,10 @@ export async function listLeadsHandler(
   if (q.status) query = query.eq("status", q.status);
   if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
   if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+  if (q.search) {
+    // `%` e `_` digitados são texto, não curinga.
+    query = query.ilike("title", `%${q.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+  }
   // Negócio de pessoal não é listado (spec 21, etapa 12 — leitura exclui):
   // a MESMA primitiva de ids da lista do inbox (`conversations/_handler.ts`),
   // antes do limite, para cursor e `has_more` descreverem o conjunto visível.
@@ -1146,6 +1148,7 @@ export async function moveLeadHandler(
   const { data: lead, error: selErr } = await supabase
     .from("crm_leads")
     .select("*")
+    .eq("organization_id",ctx.organization_id)
     .eq("id", leadId)
     .maybeSingle();
 
@@ -1171,6 +1174,7 @@ export async function moveLeadHandler(
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
     .select("id, pipeline_id, organization_id, name, is_lost, is_won")
+    .eq("organization_id",ctx.organization_id)
     .eq("id", input.to_stage_id)
     .maybeSingle();
   if (stageErr) {
@@ -1185,15 +1189,6 @@ export async function moveLeadHandler(
       traduzir("Stage não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-  if (stage.pipeline_id !== lead.pipeline_id) {
-    throw new ApiError(
-      422,
-      "pipeline_immutable_use_clone",
-      { use: "/api/v1/leads/{id}/clone" },
-      ctx.requestId,
-      traduzir(RECUSA_DE_TROCA_DE_FUNIL, ctx.idioma ?? "pt-BR"),
-    );
-  }
 
   // ── RETOMAR COMO NOVO NEGÓCIO (issue #1538) ────────────────────────────────
   //
@@ -1205,29 +1200,16 @@ export async function moveLeadHandler(
   // Vem ANTES da régua de campos, como no arrasto: um encerrado que não reabre
   // não tem campo de etapa a pedir.
   const settings = await settingsDoFunil(supabase, lead.pipeline_id);
-  {
-    const recusa = recusaReabertura({
-      modo: modoDeReabertura(settings),
-      statusAtual: (lead as { status?: string }).status,
-      etapaDestino: stage,
-      idioma: ctx.idioma,
-    });
-    if (recusa) {
-      throw new ApiError(
-        409,
-        recusa.codigo,
-        { use: "/api/v1/leads/{id}/retomar", lead_id: leadId },
-        ctx.requestId,
-        recusa.mensagem,
-      );
-    }
-  }
+  const preparado=prepararMovimentacaoDeLead({lead,etapa:stage,settings,
+    lost_reason:input.lost_reason,won_reason:input.won_reason,idioma:ctx.idioma});
+  if(!preparado.ok)throw new ApiError(preparado.status,preparado.codigo,preparado.details,ctx.requestId,preparado.mensagem);
 
   let position = input.position_in_stage;
   if (position === undefined) {
     const { data: maxRow } = await supabase
       .from("crm_leads")
       .select("position_in_stage")
+      .eq("organization_id",ctx.organization_id)
       .eq("stage_id", input.to_stage_id)
       .order("position_in_stage", { ascending: false })
       .limit(1)
@@ -1247,7 +1229,6 @@ export async function moveLeadHandler(
   //
   // Fora da régua, e não dentro dela: `campos-exigidos.ts` segue sem saber o que
   // é "mesma etapa" — quem sabe é quem lê a etapa atual ao lado do destino.
-  const mesmaEtapa = stage.id === lead.stage_id;
 
   // ── OS CAMPOS OBRIGATÓRIOS (issue #1536) ────────────────────────────────────
   //
@@ -1256,52 +1237,12 @@ export async function moveLeadHandler(
   // arrasto, decidida pela MESMA função: o que falta vira 422 com
   // `details.faltando`, e a tool do MCP devolve a frase ao modelo — que pergunta
   // ao cliente ou passa para o humano, em vez de mover calado.
-  const vereditoDeCampos = mesmaEtapa
-    ? { faltando: [] }
-    : validaCamposExigidos({
-        lead: lead as Record<string, unknown>,
-        settingsDoFunil: settings,
-        destino: {
-          stageId: stage.id,
-          desfecho: stage.is_won ? "won" : stage.is_lost ? "lost" : null,
-        },
-        motivoDeGanho: input.won_reason ?? null,
-      });
-  if (vereditoDeCampos.faltando.length > 0) {
-    const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, ctx.idioma);
-    throw new ApiError(
-      422,
-      recusa.codigo,
-      { faltando: vereditoDeCampos.faltando },
-      ctx.requestId,
-      recusa.mensagem,
-    );
-  }
-  if (stage.is_won) {
-    const recusaGanho = recusaDeMotivoDoGanho({
-      motivo: input.won_reason,
-      settingsDoFunil: settings,
-      idioma: ctx.idioma,
-    });
-    if (recusaGanho) {
-      throw new ApiError(422, recusaGanho.codigo, undefined, ctx.requestId, recusaGanho.mensagem);
-    }
-  }
 
   // ── O MOTIVO DA PERDA (issue #917) ──────────────────────────────────────────
   //
   // Este handler é o escritor de etapa de TODOS os clientes que não são o board
   // (MCP `crm_move_lead_stage`, ações de automação), e a regra é a mesma do
   // arrasto: etapa de perda exige motivo, e o motivo sai na mesma escrita.
-  const veredito = decideMotivoDaPerda({
-    etapaDeDestino: stage,
-    motivo: input.lost_reason,
-    motivoAtual: (lead as { lost_reason?: string | null }).lost_reason ?? null,
-    idioma: ctx.idioma,
-  });
-  if (!veredito.ok) {
-    throw new ApiError(422, veredito.codigo, undefined, ctx.requestId, veredito.mensagem);
-  }
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
@@ -1312,11 +1253,9 @@ export async function moveLeadHandler(
       stage_id: input.to_stage_id,
       position_in_stage: position,
       updated_at: nowIso,
-      ...veredito.patch,
-      ...(stage.is_won && input.won_reason?.trim()
-        ? { won_reason: input.won_reason.trim() }
-        : {}),
+      ...preparado.patch,
     })
+    .eq("organization_id",ctx.organization_id)
     .eq("id", leadId)
     .eq("updated_at", lead.updated_at)
     .select("*")
@@ -1373,6 +1312,7 @@ export async function moveLeadHandler(
   const { data: fromStage } = await supabase
     .from("crm_stages")
     .select("name")
+    .eq("organization_id",ctx.organization_id)
     .eq("id", lead.stage_id)
     .maybeSingle();
 

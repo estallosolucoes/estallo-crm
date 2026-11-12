@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # HANDOFF — Sistema de Follow-up Inteligente
 
 > ⚠️ **INSTRUÇÃO PERMANENTE (não remover):** Este documento DEVE ser lido no
@@ -54,7 +56,7 @@
   idempotente no `baseline.sql` + linha no MANIFEST: (a) DEDUP FIRST via window function
   genérica — `(org, contact)` com >1 vivo (active/waiting_reply/paused_handoff) mantém o
   `started_at` mais recente e cancela o resto (`cancelled/exclusivity_backfill/next_eval_at
-  null`) ANTES do índice (self-host-safe); (b) `idx_followup_enrollments_one_live` (MESMO
+null`) ANTES do índice (self-host-safe); (b) `idx_followup_enrollments_one_live` (MESMO
   nome, WHERE inalterado) de `(pointer_id, contact_id)` → `(organization_id, contact_id)`;
   (c) `agent_id uuid references ai_agents(id) on delete set null` + índice.
   **Gate refatorado** (`agent-followup-gate.ts`): 1 método `loadEnabledPublishedFollowupAgents`
@@ -72,16 +74,17 @@
   profunda que o brief mandou não fazer. O `agent_id` já fica PERSISTIDO no enrollment; o
   wire-up futuro é só no seam do turno, sem migration. Ressalva: número segue a conversa
   (continuidade preservada) e o agente pinado normalmente É o do número — divergência só com
-  >1 agente armando o mesmo fluxo (raro no MVP).
-  **PROVA:** `test:invariants` **2x verde** (40 files, 247 passed | 1 skipped, incl. baseline
-  install `ON_ERROR_STOP=1` + update) — exclusividade **RED→GREEN** (índice antigo enrolla nos
-  2 fluxos = spam; o novo barra o 2º via 23505 org-wide), dedup 0062 (2 vivos → 1 + cancelled/
-  exclusivity_backfill), agent-pin (menor uuid). `test:unit` **564/564**, typecheck 0, lint 0
-  erros. **Consequência tratada+disclosed:** o índice virar org-wide quebrou o STOP test da
-  reactivity (seedava 3 vivos p/ o MESMO contato — estado agora impossível por decisão do
-  Rafael) → corrigido p/ 1 vivo (`paused_handoff`) + 1 terminal (`completed`), sob
-  `DESKCOMM_GOV_INVARIANTS_EDIT=1`. **Pendente do controller:** aplicar 0062 no dev DB remoto +
-  regenerar `database.types.ts`. Detalhe: `.superpowers/sdd/task-8.6-report.md`.
+
+  > 1 agente armando o mesmo fluxo (raro no MVP).
+  > **PROVA:** `test:invariants` **2x verde** (40 files, 247 passed | 1 skipped, incl. baseline
+  > install `ON_ERROR_STOP=1` + update) — exclusividade **RED→GREEN** (índice antigo enrolla nos
+  > 2 fluxos = spam; o novo barra o 2º via 23505 org-wide), dedup 0062 (2 vivos → 1 + cancelled/
+  > exclusivity_backfill), agent-pin (menor uuid). `test:unit` **564/564**, typecheck 0, lint 0
+  > erros. **Consequência tratada+disclosed:** o índice virar org-wide quebrou o STOP test da
+  > reactivity (seedava 3 vivos p/ o MESMO contato — estado agora impossível por decisão do
+  > Rafael) → corrigido p/ 1 vivo (`paused_handoff`) + 1 terminal (`completed`), sob
+  > `DESKCOMM_GOV_INVARIANTS_EDIT=1`. **Pendente do controller:** aplicar 0062 no dev DB remoto +
+  > regenerar `database.types.ts`. Detalhe: `.superpowers/sdd/task-8.6-report.md`.
 
 - 2026-07-23: **Task 8.3 (jornada) — fix de review CRITICAL: try/finally cobria tarde demais.** O `try`
   original só abria DEPOIS do enrollment confirmado — mas o pointer vira elegível pro silence sweep
@@ -106,9 +109,9 @@
   model ids reais utilizáveis — a spec NUNCA roda um agente de IA de verdade. Ela chama
   `completeTurnForEnrollment` (turn-bridge.ts) — a MESMA função que o worker 24/7 chamaria depois de uma
   chamada real de LLM — com resultado CONTROLADO (`{kind:'sent'}` no nó action, `{kind:'classified',
-  class:'positivo'}` no ai_classify). TUDO o resto é real: build/publish/link do fluxo na UI, silence sweep
+class:'positivo'}` no ai_classify). TUDO o resto é real: build/publish/link do fluxo na UI, silence sweep
   gateado por agente publicado, engine avançando nó a nó via tick real do cron (`fn_claim_due_followup_
-  enrollments`), enqueue real em `job_queue`, roteamento de aresta, event_log real (`emit_event` +
+enrollments`), enqueue real em `job_queue`, roteamento de aresta, event_log real (`emit_event` +
   `event-log-drain`) acordando `reactivity.ts`, fila.
   **`scripts/e2e-followup-journey-helpers.ts` (novo)** — CLI de subcomandos (pg direto via `SUPABASE_DB_URL`,
   mesmo `createPgAdminClient` de produção que o worker 24/7 usa) cobrindo o que a API pública genuinamente não
@@ -216,7 +219,7 @@
   um pointer `kind='silence'` de um `it` anterior (nunca desativado)
   contaminava `pointers_scanned`/`pointers_gated_out` do `it` seguinte — fix:
   `beforeEach` deletando `followup_flow_pointers where trigger_config->>'kind'
-  = 'silence'` (escopo estreito, cascade via `on delete cascade`).
+= 'silence'` (escopo estreito, cascade via `on delete cascade`).
   **PROVA:** typecheck 0, lint 0 novo (os 2 erros pré-existentes de
   `graph-schema.test.ts`, Task 2.1, intocados), unit 551/551 sem regressão
   (nenhum unit novo — brief só pediu invariantes pra esta task). Invariantes:
@@ -230,7 +233,7 @@
   é coluna real por campo (`trigger_config`/`handoff_keywords` etc., confirmado lendo `supabase/baseline.sql`
   antes de codar). A suposição do brief ("aditivo, sem migration, é tudo jsonb") não batia; o campo novo
   precisou de **migration real**: `ai_agent_versions.followup jsonb not null default
-  '{"enabled":false,"flow_pointer_ids":[]}'::jsonb`. Ainda assim aditivo — versões existentes nascem com o
+'{"enabled":false,"flow_pointer_ids":[]}'::jsonb`. Ainda assim aditivo — versões existentes nascem com o
   default, zero regressão em agentes que nunca falaram de follow-up.
   **Colisão de numeração real (multi-worktree):** `HANDOFF` dizia "migration seguinte livre: 0058", mas o
   dev DB remoto é COMPARTILHADO entre worktrees paralelos — outro branch já tinha aplicado `0058_media_multimodal`,
@@ -244,7 +247,7 @@
   contrato de imutabilidade que o resto da tabela já respeita (achado ao ler a trigger antes de mexer no schema).
   **Aplicação sem MCP:** as tools `mcp__plugin_supabase_supabase__*` não estavam carregadas nesta sessão.
   `SUPABASE_DB_URL` (pooler, role `agent_worker`) não tem ownership pra DDL (`must be owner of table
-  ai_agent_versions`) — aplicado via Management API (`POST /v1/projects/:ref/database/query`) com o access
+ai_agent_versions`) — aplicado via Management API (`POST /v1/projects/:ref/database/query`) com o access
   token do keychain (`security find-generic-password -s "Supabase CLI" -a "access-token" -w`, decodificado de
   `go-keyring-base64:`), mesmo mecanismo que o CLI usa. Achado extra: a API da Management exige `User-Agent`
   ou o Cloudflare WAF devolve 403 (`error code: 1010`) sem explicar — resolvido com
@@ -307,7 +310,7 @@
      provado (7 testes: 6 tipos de nó + 3 condições de aresta + posições não-triviais + piso de
      2 nós). `graphsEqual` (sorted-key stringify) alimenta o dirty-state do incremento 5.
   2. `page.tsx` (gate manager+, 404 fora da org) + `FlowBuilder.tsx` (shell `next/dynamic
-     ssr:false` — `@xyflow/react` só carrega nesta rota) + `FlowCanvas.tsx` + `NodePalette.tsx`
+ssr:false` — `@xyflow/react` só carrega nesta rota) + `FlowCanvas.tsx` + `NodePalette.tsx`
      (clique OU HTML5 drag-and-drop via `screenToFlowPosition`). GET `/api/v1/ai/followup-flows/:id`
      ganhou `versions_count`/`previous_version_id` (2ª query de linhagem, sem `.limit()` de
      propósito — o fake DB de `tests/api/followup-flows.test.ts` não suporta esse método).
@@ -330,33 +333,33 @@
      Desativar; Rollback usa `previous_version_id`, desabilitado com ≤1 versão; select de
      `handoff_policy` faz PATCH direto. `FlowCanvas.tsx` trocou o snapshot estático do SSR por
      `useFollowupFlow` (react-query, reativo às mutations).
-  **PROVA — sequência mandatória completa** (Playwright headed, dev server real porta 3022 +
-  DB remoto real, `tests/e2e/followup-builder.spec.ts`, 6/6 verde em 3 rodadas seguidas): monta
-  trigger+wait+action+end via paleta → conecta só trigger→wait→action (SEM end) → configura
-  wait=10min + action prompt_hint → Publicar com grafo incompleto → 422 com erros ANCORADOS
-  (screenshot mostra 4 cards com ring vermelho + mensagem própria: trigger/wait/action por
-  `no_end_path`/inalcançável, end por `unreachable_node` — não um banner genérico) → conecta
-  action→end → Publicar de novo → toast "Fluxo publicado." + badge "Ativo" → RELOAD da página →
-  grafo idêntico (4 nós, 3 arestas, "10 min" e o prompt_hint intactos) → Rollback desabilitado
-  (1 versão, é o 1º publish). Screenshots `test-results/followup-6.2-0{1..8}-*.png`.
-  **Achado de robustez do PRÓPRIO TESTE** (não bug do app, documentado no spec): comparar
-  posição de nó via `getBoundingClientRect` só é estável se o `fitView` já assentou ANTES de
-  medir dos DOIS lados (antes do reload e depois) — sob carga (suíte inteira, não isolado),
-  uma corrida esporádica gerava ~390px de diferença; fix foi uma espera de 400ms após o clique
-  em fit-view em ambos os lados da comparação (não era flake de posição real, era flake de
-  QUANDO medir a posição).
-  **`npm run build` (Turbopack) verde.** Bundle: chunk do `@xyflow/react`
-  (`.next/static/chunks/0r6p4oj5ltmpf.js`, 192K bruto / ~60K gzip) confirmado AUSENTE de
-  `rootMainFiles` (bundle compartilhado) e do `build-manifest.json` de AMBAS as páginas
-  (`/app/ai/followups` e `/app/ai/followups/[id]`) — só carrega client-side via o
-  `next/dynamic` do `FlowBuilder.tsx`, e só quando o usuário abre o builder.
-  **typecheck 0 / lint 0 novo** (2 erros pré-existentes em `graph-schema.test.ts` da Task 2.1,
-  intocado) / **unit 538/538** (+7 desta onda, sem regressão).
-  **Decisão deliberada de escopo:** edição de condição de aresta (class_match/cond_result) via
-  UI fica pra uma próxima iteração — a sequência de aceite mandatória só exercita arestas
-  `always` (trigger→wait→action→end); `ai_classify`/`condition` com múltiplas saídas
-  continuam editáveis via `NodeConfigPanel` (o NÓ), só a aresta em si nasce sempre `always`.
-  Detalhe completo em `.superpowers/sdd/task-6.2-report.md`.
+     **PROVA — sequência mandatória completa** (Playwright headed, dev server real porta 3022 +
+     DB remoto real, `tests/e2e/followup-builder.spec.ts`, 6/6 verde em 3 rodadas seguidas): monta
+     trigger+wait+action+end via paleta → conecta só trigger→wait→action (SEM end) → configura
+     wait=10min + action prompt_hint → Publicar com grafo incompleto → 422 com erros ANCORADOS
+     (screenshot mostra 4 cards com ring vermelho + mensagem própria: trigger/wait/action por
+     `no_end_path`/inalcançável, end por `unreachable_node` — não um banner genérico) → conecta
+     action→end → Publicar de novo → toast "Fluxo publicado." + badge "Ativo" → RELOAD da página →
+     grafo idêntico (4 nós, 3 arestas, "10 min" e o prompt_hint intactos) → Rollback desabilitado
+     (1 versão, é o 1º publish). Screenshots `test-results/followup-6.2-0{1..8}-*.png`.
+     **Achado de robustez do PRÓPRIO TESTE** (não bug do app, documentado no spec): comparar
+     posição de nó via `getBoundingClientRect` só é estável se o `fitView` já assentou ANTES de
+     medir dos DOIS lados (antes do reload e depois) — sob carga (suíte inteira, não isolado),
+     uma corrida esporádica gerava ~390px de diferença; fix foi uma espera de 400ms após o clique
+     em fit-view em ambos os lados da comparação (não era flake de posição real, era flake de
+     QUANDO medir a posição).
+     **`npm run build` (Turbopack) verde.** Bundle: chunk do `@xyflow/react`
+     (`.next/static/chunks/0r6p4oj5ltmpf.js`, 192K bruto / ~60K gzip) confirmado AUSENTE de
+     `rootMainFiles` (bundle compartilhado) e do `build-manifest.json` de AMBAS as páginas
+     (`/app/ai/followups` e `/app/ai/followups/[id]`) — só carrega client-side via o
+     `next/dynamic` do `FlowBuilder.tsx`, e só quando o usuário abre o builder.
+     **typecheck 0 / lint 0 novo** (2 erros pré-existentes em `graph-schema.test.ts` da Task 2.1,
+     intocado) / **unit 538/538** (+7 desta onda, sem regressão).
+     **Decisão deliberada de escopo:** edição de condição de aresta (class_match/cond_result) via
+     UI fica pra uma próxima iteração — a sequência de aceite mandatória só exercita arestas
+     `always` (trigger→wait→action→end); `ai_classify`/`condition` com múltiplas saídas
+     continuam editáveis via `NodeConfigPanel` (o NÓ), só a aresta em si nasce sempre `always`.
+     Detalhe completo em `.superpowers/sdd/task-6.2-report.md`.
 
 - 2026-07-22: **Task 6.1 ✅ (commit fcd0068) — página + lista de fluxos, 1ª tela user-visible da feature.**
   `app/app/ai/followups/page.tsx` (server component, mesmo padrão de `app/app/ai/agents/page.tsx`:
@@ -373,7 +376,7 @@
   novo item porque o filtro casa por STRING de permissão, não por href.
   **Contagem de enrollments vivos por fluxo: DEFERIDA.** O GET de `/api/v1/ai/followup-flows` não expõe
   isso hoje; adicionar exigiria mudar o SELECT da rota (subquery correlacionada `count(*) from
-  followup_enrollments where pointer_id=... and status not in (completed,cancelled,dead)`) — fora do
+followup_enrollments where pointer_id=... and status not in (completed,cancelled,dead)`) — fora do
   escopo mínimo desta task (a UI de 6.1 já comunica status/versão sem o número). Fica pra quando 6.2/6.3
   precisarem mostrar fila viva.
   **PROVA (Playwright headed, `tests/e2e/followup-builder.spec.ts`, 2/2 verde):** dev server real
@@ -390,10 +393,8 @@
   inspecionados: paleta Sage, ícone `FlowArrow` ativo na sidebar, badge "Rascunho" como pill neutro —
   nada de shadcn-default). **`npm run typecheck` 0 / `npm run lint` 0 novo** (2 erros pré-existentes em
   `graph-schema.test.ts` da Task 2.1, intocado, seguem os mesmos). Draft de teste (`E2E Follow-up
-  <timestamp>`) fica no dev DB — sem endpoint DELETE, sweep manual é dívida conhecida, não bloqueia.
+<timestamp>`) fica no dev DB — sem endpoint DELETE, sweep manual é dívida conhecida, não bloqueia.
   **Sem migration nesta task** (só leitura/escrita via a rota 3.1 já existente).
-
-
 
 - 2026-07-22: **Task 5.2 ✅ (commits 863d625/ba22723/ebf4a72/d50fffb) — reatividade: inbound acorda classify, STOP cancela tudo, handoff pausa/retoma (o anti-Tomik).**
   `lib/followup/reactivity.ts` (novo) — `applyReactivityEvent(db, clock, row)` trata 3
@@ -434,17 +435,17 @@
   cancela tudo (3 pointers distintos — a constraint `idx_followup_enrollments_one_live` não
   permite 2 vivos no mesmo pointer) + idempotência sob re-drain; inbound wake + O TESTE
   CRÍTICO da corrida classify-lento (sequência `classify_enqueued→inbound_woke→
-  classify_enqueued`, nunca sai do nó via `no_reply`); `cancel_on_reply` true/ausente;
+classify_enqueued`, nunca sai do nó via `no_reply`); `cancel_on_reply` true/ausente;
   handoff pause/cancel/allow; **O CENTERPIECE anti-Tomik**: abre(pause, `next_eval_at=null`)
   → fecha(`ai.handoff_resolved`) → retoma(`active`, `next_eval_at=now+30min`) → o tick do
   engine REAL consegue reclamar essa linha depois (`steps_taken` incrementa) — nunca preso;
-  + idempotência do fechamento. Suíte completa de invariantes: 38/38 arquivos, 225 passed |
-  1 skipped (era 215+1 na Task 5.1 — exatos +10 testes, +1 arquivo, zero regressão);
-  install+update do baseline.sql sem erro novo em `pgvector/pgvector:pg17` descartável.
-  **Sem migration nesta task** (widening de Zod sobre jsonb existente, sem tocar schema).
-  Detalhe completo em `.superpowers/sdd/task-5.2-report.md`.
-  **Pendente pra Onda 6:** nenhuma. O motor de reatividade está completo e coberto; a UI
-  (builder React Flow) é trabalho totalmente separado.
+  - idempotência do fechamento. Suíte completa de invariantes: 38/38 arquivos, 225 passed |
+    1 skipped (era 215+1 na Task 5.1 — exatos +10 testes, +1 arquivo, zero regressão);
+    install+update do baseline.sql sem erro novo em `pgvector/pgvector:pg17` descartável.
+    **Sem migration nesta task** (widening de Zod sobre jsonb existente, sem tocar schema).
+    Detalhe completo em `.superpowers/sdd/task-5.2-report.md`.
+    **Pendente pra Onda 6:** nenhuma. O motor de reatividade está completo e coberto; a UI
+    (builder React Flow) é trabalho totalmente separado.
 
 - 2026-07-22: **Task 5.2 — fix de review (1 Critical + 1 Important + 2 Minors, todos
   corrigidos).**
@@ -515,7 +516,7 @@
 
 - 2026-07-22: **Task 5.1 ✅ (commits ff97ccc/b164560/502f9ab/51cbfb8) — ponte engine ⇄ job_queue.**
   `lib/followup/turn-bridge.ts` (novo): `completeTurnForEnrollment(db, orgId, enrollmentId,
-  nodeId, result, clock?)` traduz o resultado de um turno em progressão de enrollment — 'sent'
+nodeId, result, clock?)` traduz o resultado de um turno em progressão de enrollment — 'sent'
   avança via `selectEdge('always')`, 'classified' via `class_match` (fallback 'always' embutido),
   'timing' clampa `[min_ms,max_ms]` do wait smart pinado e reagenda sem sair do nó. Idempotente
   por `${node_id}:${steps_taken}` (mesma doutrina de `applyResult`). `TurnBridgeAdminClient`

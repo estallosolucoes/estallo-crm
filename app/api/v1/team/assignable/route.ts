@@ -21,6 +21,12 @@ interface AssignableMember {
   user_id: string;
   role: string;
   full_name: string | null;
+  /** A foto do perfil (Configurações › Perfil). Só http(s): o resto vira null. */
+  avatar_url: string | null;
+}
+
+function fotoValida(url: unknown): string | null {
+  return typeof url === "string" && /^https?:\/\//i.test(url) ? url : null;
 }
 
 export async function GET(_req: NextRequest): Promise<Response> {
@@ -46,7 +52,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const memberships = (rows ?? []) as Array<{ user_id: string; role: string }>;
 
   if (!isServiceRoleConfigured() || memberships.length === 0) {
-    const degraded: AssignableMember[] = memberships.map((m) => ({ ...m, full_name: null }));
+    const degraded: AssignableMember[] = memberships.map((m) => ({
+      ...m,
+      full_name: null,
+      avatar_url: null,
+    }));
     return ok(degraded, { requestId });
   }
 
@@ -57,6 +67,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
       return {
         ...m,
         full_name: (userRes?.user?.user_metadata?.full_name as string | undefined) ?? null,
+        avatar_url: fotoValida(userRes?.user?.user_metadata?.avatar_url),
       };
     }),
   );

@@ -1,11 +1,20 @@
 "use client";
+import { Button } from "@/components/ui/button";
+import { ListChecks, Plus } from "@/lib/ui/icons";
 import { Droppable } from "@hello-pangea/dnd";
-import { useRef, useState, type CSSProperties } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
+import { estiloDoChip } from "@/lib/tags/cor-da-etiqueta";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
-import { buildCardInput } from "@/lib/kanban/card-state";
 import { intervaloDaColuna } from "@/lib/kanban/selecao";
 import { formatSomaPorMoeda, formatValorDoNegocio, MOEDA_PADRAO, somaPorMoeda } from "@/lib/money";
 import { KanbanCard, type GestoDeSelecao } from "./KanbanCard";
@@ -34,12 +43,20 @@ interface StageColumnProps {
   onSelectMany?: (leadIds: string[], marcar: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
+  onAddLead?: (stageId: string) => void;
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
 }
 
-export function StageColumn({
+/**
+ * Quantos cards a coluna desenha de cada vez. Os seguintes entram quando o fim
+ * da lista chega perto da tela — um funil de mil negócios desenhava mil cards
+ * de saída, e o scroll do quadro arrastava.
+ */
+const LOTE_DE_CARDS = 30;
+
+export const StageColumn = memo(function StageColumn({
   stage,
   leads,
   pipelineId,
@@ -51,6 +68,7 @@ export function StageColumn({
   pulses,
   onSelectMany,
   onOpen,
+  onAddLead,
   podeRenomear = false,
   onRenomear,
 }: StageColumnProps) {
@@ -114,164 +132,198 @@ export function StageColumn({
   // inteira — inclusive o `Droppable` — a cada card marcado.
   const ancora = useRef<string | null>(null);
 
-  const aoSelecionar = (leadId: string, gesto: GestoDeSelecao) => {
+  // ESTÁVEL de propósito: é prop de todo card (memoizado). Lê a lista e a
+  // seleção do render mais recente por ref, em vez de nascer de novo a cada um.
+  const atual = useRef({ idsVisiveis, selectedLeadIds, onSelectMany });
+  useLayoutEffect(() => {
+    atual.current = { idsVisiveis, selectedLeadIds, onSelectMany };
+  });
+  const aoSelecionar = useCallback((leadId: string, gesto: GestoDeSelecao) => {
+    const { idsVisiveis: ids, selectedLeadIds: sel, onSelectMany: marcar } = atual.current;
     if (gesto === "intervalo") {
-      const faixa = intervaloDaColuna(idsVisiveis, ancora.current, leadId);
+      const faixa = intervaloDaColuna(ids, ancora.current, leadId);
       ancora.current = leadId;
-      onSelectMany?.(faixa, true);
+      marcar?.(faixa, true);
       return;
     }
     ancora.current = leadId;
-    onSelectMany?.([leadId], !selectedLeadIds?.has(leadId));
-  };
+    marcar?.([leadId], !sel?.has(leadId));
+  }, []);
+
+  // Os cards entram em lotes (LOTE_DE_CARDS). A lista desenhada é sempre um
+  // PREFIXO da lista da etapa, então o índice do arrasto continua apontando o
+  // mesmo vizinho — e o de baixo vem da etapa inteira (`proximoNaEtapaInteira`).
+  // Total, contagem e "selecionar todos" seguem contando a etapa inteira.
+  const [limite, setLimite] = useState(LOTE_DE_CARDS);
+  const fimDaLista = useRef<HTMLDivElement | null>(null);
+  const temMais = leads.length > limite;
+  useEffect(() => {
+    const alvo = fimDaLista.current;
+    if (!temMais || !alvo || typeof IntersectionObserver === "undefined") return;
+    const observador = new IntersectionObserver(
+      (entradas) => {
+        if (entradas.some((e) => e.isIntersecting)) setLimite((n) => n + LOTE_DE_CARDS);
+      },
+      { rootMargin: "800px 0px" },
+    );
+    observador.observe(alvo);
+    return () => observador.disconnect();
+  }, [temMais, limite]);
+  const visiveis = temMais ? leads.slice(0, limite) : leads;
+  const selecionando = (selectedLeadIds?.size ?? 0) > 0;
 
   const alternarEtapa = () => {
     ancora.current = null;
     onSelectMany?.(idsVisiveis, !todosSelecionados);
   };
-  const accentStyle: CSSProperties | undefined = stage.color
-    ? { backgroundColor: stage.color }
-    : undefined;
 
   return (
     <div
       /*
-        `w-[85vw] max-w-80 snap-center md:w-80` — a coluna cabe na tela do
-        celular, e uma por vez.
-
-        Com `w-80` fixo (320px) numa tela de 360px a coluna ocupava 89% da
-        largura útil e a de ao lado aparecia como uma fatia de poucos pixels: um
-        quadro que parece CORTADO em vez de rolável, sem pista de que há mais
-        etapa adiante. 85vw deixa uma sobra, que é onde a coluna seguinte se
-        anuncia — e `snap-center` faz a rolagem parar nela em vez de deixar o
-        dedo no meio de duas.
-
-        `max-w-80` segura o crescimento no tablet: 85% de 1023px seriam 870px, e
-        coluna de etapa não vira painel. De `md` para cima volta o `w-80` de
-        sempre, onde a graça é justamente ver várias etapas ao mesmo tempo.
+        `w-[85vw] max-w-[320px] snap-center md:w-[320px]` — a coluna cabe na tela
+        do celular, e uma por vez; 85vw deixa a sobra onde a coluna seguinte se
+        anuncia, e `snap-center` para a rolagem nela. Do `md` para cima, 320px
+        (era 360): em tela pequena cabia uma etapa e meia.
       */
-      className="bg-surface-muted/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
+      className="flex min-h-full w-[85vw] max-w-[320px] shrink-0 snap-center flex-col md:w-[320px]"
       data-etapa-do-quadro={stage.id}
     >
-      {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
-          uma etapa comprida, é o que diz em que etapa se está olhando. O fundo
-          opaco (`bg-background`) é o que impede os cards de aparecerem por baixo;
-          por dentro, a mesma camada translúcida da coluna, para o tom não mudar. */}
-      <div className="sticky top-0 z-10 rounded-t-lg bg-background" data-cabecalho-da-etapa>
-        <div className="bg-surface-muted/40 rounded-t-lg">
-          <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
-            {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
-            pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
-            trinta cliques com modificador. Fica no cabeçalho porque é ali que a
-            etapa é um objeto — o mesmo lugar onde já se lê a contagem dela.
-            Indeterminado quando a seleção é parcial: "alguns" e "nenhum" não
-            podem ter a mesma aparência num controle que o próximo clique
-            inverte. */}
-            <input
-              type="checkbox"
-              checked={todosSelecionados}
-              ref={(el) => {
-                if (el) el.indeterminate = selecionadosAqui > 0 && !todosSelecionados;
-              }}
-              disabled={idsVisiveis.length === 0}
-              onChange={alternarEtapa}
-              aria-label={
-                todosSelecionados
-                  ? `${t("Desmarcar todos em")} ${stage.name}`
-                  : `${t("Selecionar todos em")} ${stage.name}`
-              }
-              className={cn(
-                "h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
-                "focus:opacity-100 disabled:cursor-default",
-                // `pointer-coarse:opacity-100` pelo mesmo motivo da caixa do
-                // card (ver `components/kanban/KanbanCard.tsx`): no toque o
-                // hover nunca acontece, e "selecionar a etapa inteira" é o gesto
-                // que faz a ação em lote valer a pena. Sem ele, mover trinta
-                // cards no celular eram trinta arrastes.
-                selecionadosAqui > 0
-                  ? "opacity-100"
-                  : "opacity-0 group-hover/etapa:opacity-100 pointer-coarse:opacity-100",
-              )}
-            />
-            <span
-              className={cn("h-2 w-2 rounded-full", !stage.color && "bg-text-muted/40")}
-              style={accentStyle}
-              aria-hidden
-            />
+      {/*
+        O TÍTULO SOLTO, ACIMA DA MOLDURA (modelo do dono, 17/10/2026): a pílula
+        com a cor da etapa (Configurações › Funis) e, à direita, o total e a
+        contagem. Preso no alto enquanto os cards rolam — com uma etapa
+        comprida, é o que diz em que etapa se está olhando. O fundo opaco é o da
+        página, para os cards não aparecerem por baixo.
+
+        O texto da pílula sai de `estiloDoChip`, a mesma régua das etiquetas:
+        preto ou branco pelo contraste com a cor, nunca branco fixo.
+      */}
+      <div className="sticky top-0 z-10 bg-background pb-2" data-cabecalho-da-etapa>
+        <div className="group/etapa flex items-center gap-2 px-0.5 pt-0.5">
+          {/* "Selecionar a etapa inteira": fica no cabeçalho porque é ali que a
+              etapa é um objeto. Indeterminado quando a seleção é parcial. */}
+          <input
+            type="checkbox"
+            checked={todosSelecionados}
+            ref={(el) => {
+              if (el) el.indeterminate = selecionadosAqui > 0 && !todosSelecionados;
+            }}
+            disabled={idsVisiveis.length === 0}
+            onChange={alternarEtapa}
+            aria-label={
+              todosSelecionados
+                ? `${t("Desmarcar todos em")} ${stage.name}`
+                : `${t("Selecionar todos em")} ${stage.name}`
+            }
+            className={cn(
+              "h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
+              "focus:opacity-100 disabled:cursor-default",
+              // No toque o hover nunca acontece (ver KanbanCard).
+              selecionadosAqui > 0
+                ? "opacity-100"
+                : "opacity-0 group-hover/etapa:opacity-100 pointer-coarse:opacity-100",
+            )}
+          />
+          <h2
+            className={cn(
+              "flex min-w-0 max-w-[70%] items-center rounded-full border px-3 py-1 text-sm font-semibold",
+              !estiloDoChip(stage.color) && "border-border bg-surface-elevated text-text",
+            )}
+            style={estiloDoChip(stage.color)}
+          >
             {podeRenomear && onRenomear ? (
               // `key` pelo nome: remonta (e descarta o rascunho) quando o nome
-              // GRAVADO muda — mesmo contrato de `NomeDaEtapa` em Configurações,
-              // para uma edição feita em outra aba não ficar escondida atrás de
-              // um rascunho velho aqui.
-              // Dentro do <h2>: a coluna segue sendo título para quem navega
-              // por leitor de tela, com ou sem permissão de renomear.
-              <h2 className="flex min-w-0 flex-1">
-                <NomeDaEtapaNoQuadro key={stage.name} nome={stage.name} onConfirmar={onRenomear} />
-              </h2>
+              // GRAVADO muda — mesmo contrato de `NomeDaEtapa` em Configurações.
+              <NomeDaEtapaNoQuadro key={stage.name} nome={stage.name} onConfirmar={onRenomear} />
             ) : (
-              <h2 className="flex-1 truncate text-sm font-semibold text-text">{stage.name}</h2>
+              <span className="truncate">{stage.name}</span>
             )}
-            <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-text-muted tabular-nums">
-              {selecionadosAqui > 0 ? `${selecionadosAqui}/${leads.length}` : leads.length}
+          </h2>
+          <span className="ml-auto flex min-w-0 flex-col items-end text-right leading-tight tabular-nums">
+            {temTotal && (
+              <span className="truncate text-xs font-semibold text-text">
+                {formatSomaPorMoeda(totais, formatValorDoNegocio, { primeira })}
+              </span>
+            )}
+            <span className="text-[11px] text-text-muted">
+              ({selecionadosAqui > 0 ? `${selecionadosAqui}/${leads.length}` : leads.length})
             </span>
-          </div>
-
-          {temTotal && (
-            <div className="border-b border-border px-3 py-1.5 text-[11px] text-text-muted tabular-nums">
-              {formatSomaPorMoeda(totais, formatValorDoNegocio, { primeira })}
-              {ponderados !== null && (
-                <span className="ml-2">
-                  · {t("ponderado")}{" "}
-                  {formatSomaPorMoeda(ponderados, formatValorDoNegocio, { primeira })}
-                </span>
-              )}
-            </div>
-          )}
+            {temTotal && ponderados !== null && (
+              <span className="truncate text-[11px] text-text-muted">
+                {t("ponderado")} {formatSomaPorMoeda(ponderados, formatValorDoNegocio, { primeira })}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
+      {/* A MOLDURA da etapa — neutra; a cor mora no título. */}
+      <div className="flex flex-1 flex-col rounded-2xl border border-border bg-background">
       <Droppable droppableId={stage.id} type="LEAD">
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              "flex flex-1 flex-col gap-2 p-2 transition-colors",
+              "flex flex-1 flex-col gap-2.5 p-2 transition-colors",
               snapshot.isDraggingOver && "bg-accent/5",
             )}
           >
-            {leads.map((lead, idx) => (
+            {visiveis.map((lead, idx) => (
               <KanbanCard
                 key={lead.id}
-                card={buildCardInput(lead, {
-                  stageName: stage.name,
-                  ownerNames,
-                  coolingIds,
-                  reactivations,
-                  canonicalTags,
-                })}
                 lead={lead}
+                stageName={stage.name}
+                ownerNames={ownerNames}
+                coolingIds={coolingIds}
+                reactivations={reactivations}
+                canonicalTags={canonicalTags}
                 index={idx}
                 pipelineId={pipelineId}
-                isSelected={selectedLeadIds?.has(lead.id)}
-                isSelecting={(selectedLeadIds?.size ?? 0) > 0}
+                isSelected={selectedLeadIds?.has(lead.id) ?? false}
+                isSelecting={selecionando}
                 pulseCount={pulses?.get(lead.id) ?? 0}
                 onSelect={aoSelecionar}
                 onOpen={onOpen}
               />
             ))}
             {provided.placeholder}
+            {temMais && (
+              <div
+                ref={fimDaLista}
+                className="flex h-8 items-center justify-center text-xs text-text-muted"
+                data-testid="coluna-carrega-mais"
+              >
+                {t("Carregando…")}
+              </div>
+            )}
             {leads.length === 0 && !snapshot.isDraggingOver && (
-              <div className="flex h-20 items-center justify-center text-[11px] text-text-muted">
-                {t("vazio")}
+              <div className="flex min-h-64 flex-1 flex-col items-center justify-center px-4 py-8 text-center">
+                <span className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+                  <ListChecks size={28} aria-hidden />
+                </span>
+                <p className="text-base font-bold text-text">{t("Nenhum lead nesta etapa")}</p>
+                <p className="mt-2 max-w-60 text-sm leading-relaxed text-text-muted">
+                  {t("Quando um lead avançar para esta etapa, ele aparecerá aqui.")}
+                </p>
+                {onAddLead && (
+                  <Button
+                    className="mt-5 rounded-lg px-4 shadow-md"
+                    onClick={() => onAddLead(stage.id)}
+                  >
+                    <Plus size={16} aria-hidden />
+                    {t("Adicionar lead")}
+                  </Button>
+                )}
               </div>
             )}
           </div>
         )}
       </Droppable>
+      </div>
     </div>
   );
-}
+});
 
 /**
  * O nome da etapa, editado no lugar — direto no cabeçalho da coluna.
@@ -323,7 +375,11 @@ function NomeDaEtapaNoQuadro({
           e.currentTarget.blur();
         }
       }}
-      className="min-w-0 flex-1 truncate rounded-sm bg-transparent px-1 py-0.5 text-sm font-semibold text-text outline-hidden hover:bg-surface focus:bg-surface"
+      // O campo herda a cor da pílula (texto escolhido pelo contraste) e se
+      // mede pelo próprio nome (`size` + `field-sizing`), para a pílula
+      // abraçar o título em vez de esticar.
+      size={Math.max(rascunho.length, 3)}
+      className="min-w-0 max-w-full truncate rounded-sm bg-transparent px-0.5 text-[inherit] font-semibold text-inherit outline-hidden [field-sizing:content] hover:bg-black/10 focus:bg-black/10"
     />
   );
 }

@@ -59,7 +59,9 @@ export async function updatePipelineConfig(
 
   const currentSettings = (row.settings as Record<string, unknown> | null) ?? {};
   const nextSettings: Record<string, unknown> = { ...currentSettings };
-  if (parsed.data.fields !== undefined) nextSettings.fields = parsed.data.fields;
+  // `fields` NÃO se grava mais aqui: os campos são do cadastro central
+  // (`custom_field_definitions`, migration 0657) e `settings.fields` é a
+  // projeção que o banco mantém. Gravar aqui seria apagado na próxima projeção.
   if (parsed.data.lost_reasons !== undefined) nextSettings.lost_reasons = parsed.data.lost_reasons;
   if (parsed.data.won_reasons !== undefined) nextSettings.won_reasons = parsed.data.won_reasons;
   if (parsed.data.won_reason_required !== undefined) {

@@ -81,10 +81,13 @@ export async function gerarIconeDoApp(
             width={Math.round(lado * 0.78)}
             height={Math.round(lado * 0.78)}
           >
-            <g fill={CORES_DA_MARCA.claro.simbolo} transform={SIMBOLO.transform}>
-              <path d={SIMBOLO.d} />
-              <rect {...SIMBOLO.modulo} />
-            </g>
+            {SIMBOLO.paths.map((traco, indice) => (
+              <path
+                key={indice}
+                d={traco.d}
+                fill={traco.papel === "verde" ? "#10ba84" : CORES_DA_MARCA.claro.simbolo}
+              />
+            ))}
           </svg>
         ) : (
           (letraDoIcone(marca.nome) ?? "")

@@ -60,7 +60,6 @@ function args(pool: pg.Pool, extras: Partial<RunBeforeSendArgs> = {}): RunBefore
     channelSessionId: '00000000-0000-4000-8000-000000000004',
     body: 'Consigo te dar 50% de desconto hoje.',
     optedOutThisTurn: false,
-    crmDailyLimit: null,
     now: new Date('2026-09-17T12:00:00.000Z'),
     rng: () => 0,
     sleep: async () => {},

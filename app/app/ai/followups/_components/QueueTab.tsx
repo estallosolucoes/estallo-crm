@@ -8,6 +8,7 @@ import { format, formatDistanceToNowStrict } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -36,6 +37,7 @@ import {
 import { Clock, MagnifyingGlass, Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
+import { duracaoCurta } from "@/lib/followup/duracao-curta";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import {
@@ -43,11 +45,14 @@ import {
   useCancelFollowupPromise,
   useFollowupQueue,
   type FollowupEnrollmentStatus,
+  type FollowupExecutionMode,
   type FollowupQueueRow,
 } from "@/hooks/followup/useFollowupQueue";
 
 interface Props {
   canWrite: boolean;
+  /** Fluxo já escolhido no filtro (`?fluxo=` da URL): o histórico de UM fluxo. */
+  fluxoInicial?: string | undefined;
 }
 
 /**
@@ -100,6 +105,16 @@ function QueueStatusBadge({ status }: { status: string }) {
   );
 }
 
+/** Os modos de execução, na linguagem de quem opera (o valor é o do banco). */
+const MODOS: { valor: FollowupExecutionMode; rotulo: string }[] = [
+  { valor: "production", rotulo: "Produção" },
+  { valor: "simulation", rotulo: "Simulação" },
+  { valor: "test", rotulo: "Teste" },
+];
+
+/** Atualização automática do histórico: curta o bastante para acompanhar um fluxo rodando. */
+const ATUALIZACAO_AUTOMATICA_MS = 10_000;
+
 function NextFireCell({ iso }: { iso: string | null }) {
   const localeDaData = useLocaleDeData();
   if (!iso) return <span className="text-text-muted">—</span>;
@@ -114,12 +129,16 @@ function NextFireCell({ iso }: { iso: string | null }) {
   );
 }
 
-export function QueueTab({ canWrite }: Props) {
+export function QueueTab({ canWrite, fluxoInicial }: Props) {
   const t = useT();
   const [status, setStatus] = useState<FollowupEnrollmentStatus | "all">("all");
-  const [pointerId, setPointerId] = useState<string>("all");
+  const [pointerId, setPointerId] = useState<string>(fluxoInicial ?? "all");
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
+  const [desde, setDesde] = useState("");
+  const [ate, setAte] = useState("");
+  const [modo, setModo] = useState<FollowupExecutionMode | "all">("all");
+  const [automatica, setAutomatica] = useState(false);
   const [pendingCancel, setPendingCancel] = useState<FollowupQueueRow | null>(null);
 
   useEffect(() => {
@@ -135,10 +154,15 @@ export function QueueTab({ canWrite }: Props) {
       status: status === "all" ? undefined : status,
       pointer_id: pointerId === "all" ? undefined : pointerId,
       q: q || undefined,
+      desde: desde || undefined,
+      ate: ate || undefined,
+      modo: modo === "all" ? undefined : modo,
     }),
-    [status, pointerId, q],
+    [status, pointerId, q, desde, ate, modo],
   );
-  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useFollowupQueue(filters);
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useFollowupQueue(filters, {
+    refetchMs: automatica ? ATUALIZACAO_AUTOMATICA_MS : false,
+  });
   const cancelEnrollment = useCancelFollowupEnrollment();
   const cancelPromise = useCancelFollowupPromise();
 
@@ -189,6 +213,48 @@ export function QueueTab({ canWrite }: Props) {
             ))}
           </SelectContent>
         </Select>
+
+        <Select value={modo} onValueChange={(v) => setModo(v as FollowupExecutionMode | "all")}>
+          <SelectTrigger className="h-9 w-40 text-sm" aria-label={t("Filtrar por modo")}>
+            <SelectValue placeholder={t("Todos os modos")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("Todos os modos")}</SelectItem>
+            {MODOS.map((m) => (
+              <SelectItem key={m.valor} value={m.valor}>
+                {t(m.rotulo)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <label className="flex items-center gap-1.5 text-sm text-text-muted">
+          {t("De")}
+          <Input
+            type="date"
+            value={desde}
+            max={ate || undefined}
+            onChange={(e) => setDesde(e.target.value)}
+            className="h-9 w-36 text-sm"
+            aria-label={t("Execuções iniciadas a partir de")}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-text-muted">
+          {t("Até")}
+          <Input
+            type="date"
+            value={ate}
+            min={desde || undefined}
+            onChange={(e) => setAte(e.target.value)}
+            className="h-9 w-36 text-sm"
+            aria-label={t("Execuções iniciadas até")}
+          />
+        </label>
+
+        <label className="ml-auto flex items-center gap-2 text-sm text-text-muted">
+          <Switch checked={automatica} onCheckedChange={setAutomatica} aria-label={t("Atualizar automaticamente")} />
+          {t("Atualizar automaticamente")}
+        </label>
       </div>
 
       {!isLoading && rows.length === 0 ? (
@@ -208,6 +274,7 @@ export function QueueTab({ canWrite }: Props) {
                 <TableHead>{t("Fluxo / Promessa")}</TableHead>
                 <TableHead>{t("Nó atual / Motivo")}</TableHead>
                 <TableHead>{t("Próximo disparo")}</TableHead>
+                <TableHead>{t("Início / duração")}</TableHead>
                 <TableHead>{t("Status")}</TableHead>
                 {canWrite && <TableHead className="w-[100px]" />}
               </TableRow>
@@ -226,7 +293,11 @@ export function QueueTab({ canWrite }: Props) {
                       */}
                       {row.source === "enrollment" ? (
                         <Link
-                          href={`/app/ai/followups/enrollments/${row.id}`}
+                          href={
+                            row.flow_id
+                              ? `/app/ai/followups/${row.flow_id}?painel=execucoes&exec=${row.id}`
+                              : `/app/ai/followups/enrollments/${row.id}`
+                          }
                           className="underline-offset-2 hover:underline"
                           data-testid="queue-abrir-dossie"
                         >
@@ -249,6 +320,19 @@ export function QueueTab({ canWrite }: Props) {
                     </TableCell>
                     <TableCell>
                       <NextFireCell iso={row.next_fire_at} />
+                    </TableCell>
+                    <TableCell>
+                      {row.started_at ? (
+                        <div className="flex flex-col text-xs text-text-muted" data-testid="queue-inicio-duracao">
+                          <span>{format(new Date(row.started_at), "dd/MM HH:mm")}</span>
+                          <span>
+                            {duracaoCurta(row.started_at, row.completed_at, new Date())}
+                            {row.attempts && row.attempts > 1 ? ` · ${row.attempts} ${t("tentativas")}` : ""}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-text-muted">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <QueueStatusBadge status={row.status} />

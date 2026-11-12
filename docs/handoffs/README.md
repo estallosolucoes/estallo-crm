@@ -42,6 +42,7 @@ que vieram da raiz estão igualmente indexados.
 
 | Documento | Assunto |
 |---|---|
+| [`HANDOFF-automacoes-crm.md`](HANDOFF-automacoes-crm.md) | Automações do CRM — progresso de implementação |
 | [`HANDOFF-canais-oficial.md`](HANDOFF-canais-oficial.md) | HANDOFF — WhatsApp API Oficial (seam de canais) |
 | [`HANDOFF-casos-humanos.md`](HANDOFF-casos-humanos.md) | HANDOFF — Casos Humanos |
 | [`HANDOFF-conversa-vira-lead.md`](HANDOFF-conversa-vira-lead.md) | HANDOFF — A conversa vira lead (spec 17) |

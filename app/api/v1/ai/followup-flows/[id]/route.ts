@@ -78,6 +78,12 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       draft_graph,
       versions_count: versionRows?.length ?? 0,
       previous_version_id: versionRows?.[1]?.id ?? null,
+      // Mais nova primeiro; `numero` é a ordem de publicação (1 = a primeira), para o filtro do histórico.
+      versions: (versionRows ?? []).map((v, i, todas) => ({
+        id: v.id as string,
+        created_at: v.created_at as string,
+        numero: todas.length - i,
+      })),
     },
     { requestId },
   );

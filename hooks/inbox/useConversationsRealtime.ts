@@ -3,7 +3,11 @@ import { hashKey, useInfiniteQuery, useQueryClient } from "@tanstack/react-query
 import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
-import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
+import {
+  agendarRecargaDasConversas,
+  alinharFioComAPrevia,
+  gravarNaConversaDaLista,
+} from "@/hooks/inbox/recargaDasConversas";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
@@ -86,6 +90,10 @@ export interface ConversationsFilters {
   status?: StatusDeConversa | readonly StatusDeConversa[];
   /** Esconde fechadas/arquivadas — ver `exclude_finished` no schema da rota. */
   exclude_finished?: boolean;
+  /** A aba "Pendentes" — ver `pendentes` no schema da rota. */
+  pendentes?: boolean;
+  status_chat?: "em_espera" | "em_aberto";
+  ordem?: "antigo" | "recente";
   assigned_to?: "me" | "unassigned" | string;
   /**
    * QUEM MANDA na conversa — o filtro que as abas Fila e Automático passaram a
@@ -161,6 +169,9 @@ export function useConversationsRealtime(
         qs.set("comando", filters.comando.join(","));
       }
       if (filters.exclude_finished) qs.set("exclude_finished", "true");
+      if (filters.status_chat) qs.set("status_chat", filters.status_chat);
+      if (filters.ordem) qs.set("ordem", filters.ordem);
+      if (filters.pendentes) qs.set("pendentes", "true");
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);
       if (filters.unread) qs.set("unread", "true");
@@ -210,7 +221,18 @@ export function useConversationsRealtime(
         : undefined,
   });
 
-  const onChange = useCallback(() => agendarRecargaDasConversas(qc), [qc]);
+  const onChange = useCallback(
+    (payload: unknown) => {
+      alinharFioComAPrevia(qc, payload);
+      // Prévia, horários e não-lidas na hora; a recarga agrupada reordena depois.
+      const nova = (payload as { eventType?: string; new?: Record<string, unknown> } | null) ?? null;
+      if (nova?.eventType === "UPDATE" && typeof nova.new?.id === "string") {
+        gravarNaConversaDaLista(qc, nova.new.id, nova.new);
+      }
+      agendarRecargaDasConversas(qc);
+    },
+    [qc],
+  );
 
   // G4-01 (visibility_mode): a subscription postgres_changes HERDA a RLS de
   // SELECT de `conversations` — o Supabase Realtime avalia as policies do usuário

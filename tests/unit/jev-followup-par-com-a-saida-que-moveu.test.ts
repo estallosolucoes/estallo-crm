@@ -70,7 +70,7 @@ const pool = {
     if (sql.includes("'action_sent'")) return { rows: [{ fechado_em: null }] };
     if (/from conversations c/.test(sql)) return { rows: [{ channel_session_id: "canal-1", archived_at: null }] };
     // A inscrição viva que o handler consulta ANTES do envio (guard da #1913).
-    if (sql.includes("select current_node_id, status from followup_enrollments")) {
+    if (sql.includes("select e.current_node_id, e.status, e.execution_contract")) {
       return { rows: [{ current_node_id: "c1", status: "active" }] };
     }
     return { rows: [] };

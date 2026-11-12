@@ -75,6 +75,7 @@ import * as path from "node:path";
 import * as zlib from "node:zlib";
 
 import { test, expect, type Page, type Locator } from "./helpers/test";
+import { DEFAULT_APP_NAME } from "@/lib/branding";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 
@@ -530,7 +531,7 @@ test.describe("a moldura do logo no tema escuro", () => {
       "ainda há um <img> na barra — o logo enviado não foi removido, e o caso mediria outra coisa",
     ).toHaveCount(0, { timeout: 15_000 });
 
-    const marca = barra.getByRole("img", { name: "DeskcommCRM" });
+    const marca = barra.getByRole("img", { name: DEFAULT_APP_NAME });
     await expect(
       marca,
       "a barra não caiu no ramo `marcaDoProduto` — sem ele não há fronteira para medir",

@@ -130,7 +130,7 @@ test("o dono cria o plano, os limites valem pela tela, e prazo e desligar a chav
     // ── 1. O dono acha a porta e cria o plano ───────────────────────────────
     await entrar(page, dono.email);
     await page.goto("/admin/dashboard");
-    await page.getByRole("link", { name: "Cobrança" }).first().click();
+    await page.getByRole("link", { name: "Planos e assinatura" }).first().click();
     await page.waitForURL("**/admin/cobranca");
     // PR 3a: /admin/cobranca em abas; a inicial é a Visão geral.
     await page.getByRole("tab", { name: "Planos" }).click();

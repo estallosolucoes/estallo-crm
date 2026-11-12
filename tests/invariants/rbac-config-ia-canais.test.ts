@@ -181,7 +181,7 @@ describe("0150 — o segredo cifrado some da superfície do browser", () => {
 const DIVIDA_RBAC_CONHECIDA = new Set([
   "agent_cases", "agent_inbox_items", "ai_agent_runs",
   "ai_invocations", "ai_router_decisions",
-  "before_send_traces", "channel_knobs", "channel_session_health", "channel_session_warmup",
+  "before_send_traces", "channel_knobs", "channel_session_health",
   "contact_field_proposals", "contacts", "crm_lead_reactivations", "crm_lead_risk_states",
   "crm_lead_scores", "cron_jobs", "demanda_conversas", "demandas",
   "disclosure_template_pointers", "disclosure_template_versions",
@@ -190,8 +190,7 @@ const DIVIDA_RBAC_CONHECIDA = new Set([
   "idempotency_keys", "incidents", "job_queue", "judge_alignment_pool", "knowledge_searches",
   "lead_checkpoints", "lead_notes", "lead_state", "lead_state_transitions", "llm_calls",
   "meta_templates", "metrics", "nuvemshop_products", "orders", "org_memory_entries",
-  "org_memory_pointers", "org_memory_versions", "organizations", "outbound_copies",
-  "pacing_ledger",
+  "org_memory_pointers", "org_memory_versions", "organizations",
   // phone_numbers (SIP module, #677): a leitura/escrita e org-scoped, mas o
   // segundo eixo (so agent+ resolve numero, so manager+ configura roteamento)
   // ainda nao tem par de casos provando papel de baixo barrado. Divida

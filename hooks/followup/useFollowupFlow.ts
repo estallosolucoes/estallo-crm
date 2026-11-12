@@ -23,6 +23,8 @@ export interface FollowupFlowDetailRow {
   updated_at: string;
   versions_count: number;
   previous_version_id: string | null;
+  /** Versões publicadas, da mais nova para a mais antiga; `numero` 1 = a primeira publicação. */
+  versions?: { id: string; created_at: string; numero: number }[];
 }
 
 interface SingleResponse {

@@ -114,7 +114,11 @@ function sitesDeAviso(sf: ts.SourceFile): ts.Node[] {
   const achados: ts.Node[] = [];
   const visitar = (node: ts.Node): void => {
     // Formato SQL: o próprio literal carrega a escrita.
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)) {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateExpression(node)
+    ) {
       if (ehAvisoDeCompromisso(node.getText(sf))) achados.push(node);
     }
     // Formato PostgREST: `.from("agent_inbox_items").insert({ … })`.
@@ -141,7 +145,8 @@ export function produtores(fontes: Map<string, string>): Produtor[] {
     for (const site of sitesDeAviso(sf)) {
       const corpo = funcaoEnvolvente(site);
       const guardado =
-        site.getText(sf).includes("is_anonymized") || (corpo?.getText(sf).includes("is_anonymized") ?? false);
+        site.getText(sf).includes("is_anonymized") ||
+        (corpo?.getText(sf).includes("is_anonymized") ?? false);
       saida.push({
         arquivo,
         linha: sf.getLineAndCharacterOfPosition(site.getStart(sf)).line + 1,
@@ -169,7 +174,10 @@ describe("produtor de aviso de compromisso checa anonimização", () => {
     // guarda, e o modo de falha que ela existe para não ter.
     expect(reais.length, "a sonda não reconheceu produtor nenhum").toBeGreaterThanOrEqual(2);
     expect(reais.map((p) => p.arquivo)).toEqual(
-      expect.arrayContaining(["lib/followup/engine.ts", "lib/followup/turn-bridge.ts"]),
+      expect.arrayContaining([
+        "lib/followup/engine.ts",
+        "lib/followup/no-show-recuperacao-esgotada.ts",
+      ]),
     );
     // Os dois formatos aparecem: o do PostgREST e o do SQL.
     expect(reais.some((p) => p.trecho.includes("insert into"))).toBe(true);
@@ -178,7 +186,10 @@ describe("produtor de aviso de compromisso checa anonimização", () => {
 
   it("⭐ nenhum deles escreve sem checar `is_anonymized`", () => {
     const soltos = semGuarda(reais);
-    expect(soltos.map(DESCRICAO), "aviso de compromisso escrito sem olhar se o contato é anonimizado").toEqual([]);
+    expect(
+      soltos.map(DESCRICAO),
+      "aviso de compromisso escrito sem olhar se o contato é anonimizado",
+    ).toEqual([]);
   });
 
   it("⭐ controle positivo: um produtor sem guarda REPROVA", () => {

@@ -229,7 +229,7 @@ describe("crm_get_conversation — governança + shape", () => {
     expect(res.assignee_kind).toBe("user");
     expect(res.assigned_to_user_id).toBe(USER_A);
     expect(res.assigned_to_user_name).toBe("Alice");
-    expect(res.tags).toEqual(["prioridade"]);
+    expect(res).not.toHaveProperty("tags"); // 0659: conversa não tem etiqueta
     expect(res.queue_position).toBeNull(); // tem dono ⇒ fora da fila
     // shape antigo intacto:
     expect(res.id).toBe(CONV_OLD);
@@ -338,7 +338,7 @@ describe("crm_list_conversations — coerência queue_position ↔ inbox", () =>
     // novos:
     expect(c.assignee_kind).toBe("user");
     expect(c.assigned_to_user_name).toBe("Bob");
-    expect(c.tags).toEqual(["x"]);
+    expect(c).not.toHaveProperty("tags"); // 0659: conversa não tem etiqueta
     expect(c).toHaveProperty("queue_position");
   });
 });

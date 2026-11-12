@@ -9,37 +9,33 @@
  * passa a mentir sobre quantos clientes VIP ele tem. A cura é a LISTA, não um
  * segundo escritor.
  *
- * ⚠️ NÃO HÁ ESCRITA NO VOCABULÁRIO CANÔNICO, E É DECISÃO. Os marcadores
- * "oficiais" moram em `organizations.settings.canonical_conversation_tags`, que
- * hoje tem rota de LEITURA (`/api/v1/conversation-tags`) e **nenhuma tela para
- * ver ou mudar**. Deixar o agente escrever ali criaria configuração alterável só
- * por quem lê o banco — exatamente o invariante 6 da doutrina do sistema vivo
- * ("toda configuração tem superfície"). Registrado no HANDOFF: a superfície vem
- * antes do escritor.
+ * Estallo (0659): o marcador é do CONTATO ou do NEGÓCIO (conversa não tem
+ * mais), e o vocabulário oficial é o cadastro da tela Tags (`settings.tags`,
+ * uma entrada por entidade). O agente lê aqui; quem cadastra é a tela.
  */
 import { ApiError } from "@/lib/api/types";
-import { canonicalConversationTagsSchema } from "@/lib/schemas/settings";
 import type { DepsDaOperacao } from "@/lib/operacao/entradas-automaticas";
+
+export type EntidadeDoMarcador = "lead" | "contact";
 
 export interface MarcadorEmUso {
   marcador: string;
-  /** Quantas conversas o carregam agora. */
-  conversas: number;
-  /** `true` = está no vocabulário oficial da empresa; `false` = nasceu no uso. */
+  /** `lead` = etiqueta de oportunidade; `contact` = etiqueta de contato. */
+  entidade: EntidadeDoMarcador;
+  /** Quantos registros (contatos ou negócios) o carregam agora. */
+  uso: number;
+  /** `true` = está no cadastro da tela Tags; `false` = nasceu no uso. */
   oficial: boolean;
 }
 
 /**
- * O vocabulário oficial mais o que de fato está em uso, num só lugar.
+ * O cadastro oficial mais o que de fato está em uso, por entidade.
  *
  * ⚠️ AS DUAS FONTES JUNTAS, DE PROPÓSITO. Só o oficial esconderia os marcadores
- * que a operação inventou e usa todo dia (que são justamente os que o agente
- * precisa reaproveitar); só os em uso esconderia o vocabulário que a empresa
- * declarou e ninguém aplicou ainda. Quem lê precisa das duas respostas para não
- * criar a quarta variação de "urgente".
+ * que a operação inventou e usa todo dia; só os em uso esconderia o cadastro que
+ * a empresa declarou e ninguém aplicou ainda.
  *
- * O teto existe porque isto entra no contexto de um modelo: uma organização com
- * mil marcadores gastaria o contexto inteiro numa lista que ninguém lê até o fim.
+ * O teto existe porque isto entra no contexto de um modelo.
  */
 export async function listarMarcadores(
   deps: DepsDaOperacao,
@@ -54,42 +50,45 @@ export async function listarMarcadores(
     .maybeSingle();
   if (orgErr) throw new ApiError(500, "internal_error", undefined, deps.requestId, orgErr.message);
 
-  const oficiais = new Set<string>(
-    canonicalConversationTagsSchema.parse(
-      (org?.settings as Record<string, unknown> | null)?.["canonical_conversation_tags"] ?? [],
-    ),
-  );
-
-  // ⚠️ CONTAGEM EM JS, e não com um `unnest` no banco: `tags` é `text[]` e o
-  // PostgREST não agrega. Uma RPC nova só para isto seria mais schema para o
-  // clone atualizar; a leitura é limitada e a org tem conversas na casa dos
-  // milhares, não dos milhões. Se um dia doer, vira índice GIN + RPC — e o
-  // contrato desta função não muda.
-  const { data: conversas, error: convErr } = await deps.supabase
-    .from("conversations")
-    .select("tags")
-    .eq("organization_id", deps.organizationId)
-    .limit(2000);
-  if (convErr) {
-    throw new ApiError(500, "internal_error", undefined, deps.requestId, convErr.message);
+  const contagem = new Map<string, MarcadorEmUso>();
+  const chave = (entidade: EntidadeDoMarcador, nome: string) => `${entidade}:${nome.toLowerCase()}`;
+  const cadastro = (org?.settings as Record<string, unknown> | null)?.["tags"];
+  for (const entrada of Array.isArray(cadastro) ? cadastro : []) {
+    const obj = typeof entrada === "string" ? { tag: entrada } : (entrada as { tag?: unknown; entidade?: unknown });
+    const nome = typeof obj?.tag === "string" ? obj.tag.trim() : "";
+    if (!nome) continue;
+    const entidades: EntidadeDoMarcador[] =
+      obj.entidade === "lead" || obj.entidade === "contact" ? [obj.entidade] : ["lead", "contact"];
+    for (const entidade of entidades) {
+      contagem.set(chave(entidade, nome), { marcador: nome, entidade, uso: 0, oficial: true });
+    }
   }
 
-  const contagem = new Map<string, number>();
-  for (const c of (conversas ?? []) as unknown as Array<{ tags: string[] | null }>) {
-    for (const t of c.tags ?? []) contagem.set(t, (contagem.get(t) ?? 0) + 1);
-  }
-  for (const oficial of oficiais) {
-    if (!contagem.has(oficial)) contagem.set(oficial, 0);
+  // ⚠️ CONTAGEM EM JS: `tags` é `text[]` e o PostgREST não agrega. A leitura é
+  // limitada; se um dia doer, vira RPC — e o contrato desta função não muda.
+  for (const [tabela, entidade] of [
+    ["contacts", "contact"],
+    ["crm_leads", "lead"],
+  ] as const) {
+    const { data, error } = await deps.supabase
+      .from(tabela)
+      .select("tags")
+      .eq("organization_id", deps.organizationId)
+      .limit(2000);
+    if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
+    for (const linha of (data ?? []) as unknown as Array<{ tags: string[] | null }>) {
+      for (const nome of linha.tags ?? []) {
+        const k = chave(entidade, nome);
+        const atual = contagem.get(k) ?? { marcador: nome, entidade, uso: 0, oficial: false };
+        atual.uso += 1;
+        contagem.set(k, atual);
+      }
+    }
   }
 
-  return [...contagem.entries()]
-    .map(([marcador, conversas_]) => ({
-      marcador,
-      conversas: conversas_,
-      oficial: oficiais.has(marcador),
-    }))
+  return [...contagem.values()]
     // Os mais usados primeiro: é a ordem em que alguém decidiria reaproveitar.
-    .sort((a, b) => b.conversas - a.conversas || a.marcador.localeCompare(b.marcador))
+    .sort((a, b) => b.uso - a.uso || a.marcador.localeCompare(b.marcador))
     .slice(0, limite);
 }
 

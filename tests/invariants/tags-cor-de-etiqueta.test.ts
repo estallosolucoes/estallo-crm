@@ -67,8 +67,9 @@ async function actor(user: string | null, sql: string, args: unknown[] = []) {
 function operar(org: string, acao: string, tag: string, destino: string | null, cor: string | null) {
   return actor(
     GOV_MANAGER,
-    "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5) as r",
-    [org, acao, tag, destino, cor],
+    "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5,$6) as r",
+    // Desde a 0659 toda operação é de UMA entidade; estes casos falam do contato.
+    [org, acao, tag, destino, cor, "contact"],
   );
 }
 
@@ -108,11 +109,11 @@ describe("fatia S6 — a cor da etiqueta", () => {
     const r = await operar(GOV_ORG, "definir_cor", "reclamacao", null, "#e54d2e");
     expect((r.rows[0].r as { alterou: boolean }).alterou).toBe(true);
     // A ação NÃO toca linha nenhuma: os laços saem antes, e os contadores vêm zerados.
-    const contadores = r.rows[0].r as { contatos: number; leads: number; conversas: number; cor: string };
-    expect([contadores.contatos, contadores.leads, contadores.conversas]).toEqual([0, 0, 0]);
+    const contadores = r.rows[0].r as { contatos: number; leads: number; registros: number; cor: string };
+    expect([contadores.contatos, contadores.leads, contadores.registros]).toEqual([0, 0, 0]);
     expect(contadores.cor).toBe("#e54d2e");
 
-    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "reclamacao", cor: "#e54d2e" }]);
+    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "reclamacao", cor: "#e54d2e", entidade: "contact" }]);
 
     const linha = (await ler(GOV_ORG)).find((l) => l.tag === "reclamacao");
     expect(linha?.cor).toBe("#e54d2e");
@@ -138,26 +139,27 @@ describe("fatia S6 — a cor da etiqueta", () => {
   it("'sem cor' é `cor null`: limpa a cor e MANTÉM a etiqueta no vocabulário", async () => {
     await limparVocabulario(GOV_ORG);
     await operar(GOV_ORG, "definir_cor", "obra", null, "#12a594");
-    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "obra", cor: "#12a594" }]);
+    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "obra", cor: "#12a594", entidade: "contact" }]);
 
     const r = await operar(GOV_ORG, "definir_cor", "obra", null, null);
     expect((r.rows[0].r as { cor: string | null }).cor).toBeNull();
     // A entrada continua lá (sem a chave `cor`): limpar cor não é excluir etiqueta
     // — isso é a ação `excluir`, que tira a etiqueta dos registros.
     const depois = await vocabulario(GOV_ORG);
-    expect(depois).toEqual([{ tag: "obra" }]);
+    expect(depois).toEqual([{ tag: "obra", entidade: "contact" }]);
     expect((await ler(GOV_ORG)).find((l) => l.tag === "obra")?.cor).toBeNull();
   });
 
   it("viewer é recusado antes de qualquer escrita", async () => {
     await limparVocabulario(GOV_ORG);
     await expect(
-      actor(GOV_VIEWER, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5)", [
+      actor(GOV_VIEWER, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5,$6)", [
         GOV_ORG,
         "definir_cor",
         "vip",
         null,
         "#0091ff",
+        "contact",
       ]),
     ).rejects.toThrow(/insufficient_role/);
     expect(await vocabulario(GOV_ORG)).toEqual([]);
@@ -177,7 +179,7 @@ describe("fatia S6 — a cor da etiqueta", () => {
 
     await operar(GOV_ORG, "definir_cor", "reclamacao", null, "#e54d2e");
 
-    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "reclamacao", cor: "#e54d2e" }]);
+    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "reclamacao", cor: "#e54d2e", entidade: "contact" }]);
     // O `where o.id = p_org` da função é o que separa os tenants: pedir a
     // organização de outro (mesmo sendo gerente da SUA) não devolve nada — a
     // leitura é `security invoker` e a RLS de `organizations` recorta junto.
@@ -193,7 +195,7 @@ describe("fatia S6 — a cor da etiqueta", () => {
     await operar(GOV_ORG, "definir_cor", "promo", null, "#ab4aba");
     await operar(GOV_ORG, "renomear", "promo", "Promoção", null);
 
-    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "Promoção", cor: "#ab4aba" }]);
+    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "Promoção", cor: "#ab4aba", entidade: "contact" }]);
   });
 
   it("redar a mesma cor não reporta alteração", async () => {
@@ -231,7 +233,7 @@ describe("fatia S6 — a cor da etiqueta", () => {
     // `alterou` para dizer se algo mudou). Aqui o `true` também prova que a
     // guarda não só evitou o erro: a escrita ACONTECEU e consertou o dado.
     expect((r.rows[0].r as { alterou: boolean }).alterou).toBe(true);
-    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "reclamacao", cor: "#e54d2e" }]);
+    expect(await vocabulario(GOV_ORG)).toEqual([{ tag: "reclamacao", cor: "#e54d2e", entidade: "contact" }]);
   });
 
   it("existe UMA assinatura só da função — a antiga fica para trás", async () => {
@@ -247,6 +249,6 @@ describe("fatia S6 — a cor da etiqueta", () => {
     expect(assinaturas).toHaveLength(1);
     // `oid::regprocedure::text` escreve SEM espaço depois da vírgula:
     // `fn_vocabulario_de_tags_operar(uuid,text,text,text,text)`.
-    expect(assinaturas[0]).toMatch(/\(uuid,\s*text,\s*text,\s*text,\s*text\)$/);
+    expect(assinaturas[0]).toMatch(/\(uuid,\s*text,\s*text,\s*text,\s*text,\s*text\)$/);
   });
 });

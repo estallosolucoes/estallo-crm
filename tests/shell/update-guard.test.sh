@@ -189,7 +189,7 @@ export FAKE_CRONTAB="$WORK/crontab.txt"
 export PATH="$WORK/bin:$PATH"
 
 # ── Instalação de mentira: repo git + kit + .env ─────────────────────────────
-PROJ="$WORK/deskcommcrm"
+PROJ="$WORK/estallo-crm"
 mkdir -p "$PROJ/hostgator-setup-kit" "$PROJ/supabase"
 cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/_i18n.sh" \
    "$REPO_ROOT/hostgator-setup-kit/update.sh" \
@@ -216,7 +216,7 @@ printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$PROJ/docker-compos
 printf 'services:\n  app:\n    pull_policy: never\n    build:\n      context: .\n' > "$PROJ/docker-compose.build.yml"
 printf 'select 1;\n' > "$PROJ/supabase/baseline.sql"
 cat > "$PROJ/.env" <<ENV
-APP_IMAGE=${NS}/deskcommcrm:latest
+APP_IMAGE=${NS}/estallo-crm:latest
 APP_PULL_POLICY=always
 SUPABASE_DB_URL=postgresql://x/y
 NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br
@@ -273,7 +273,7 @@ echo nova > nova.txt; git add -A; git commit --quiet -m "v1.1.0"; git tag v1.1.0
 git checkout --quiet v0.9.0
 run_update --to v1.1.0
 check "a atualização termina com sucesso" test "$RC" -eq 0
-check ".env aponta para a imagem da versão instalada" grep -q "^APP_IMAGE=${NS}/deskcommcrm:1.1.0$" .env
+check ".env aponta para a imagem da versão instalada" grep -q "^APP_IMAGE=${NS}/estallo-crm:1.1.0$" .env
 check "a chave APP_IMAGE não duplicou" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
 run_update --to v1.1.0 --force
 check "segunda execução também não duplica" test "$(grep -c '^APP_IMAGE=' .env)" -eq 1
@@ -303,9 +303,9 @@ echo "── 4b. As três imagens sobem juntas, na mesma versão"
 # runtime do agente de IA — ficava congelado no código do dia da instalação.
 # Se estas três linhas voltarem a divergir, o defeito voltou.
 check "o worker é pinado na MESMA versão do app" \
-  grep -q "^WORKER_IMAGE=${NS}/deskcomm-worker:1.1.0$" .env
+  grep -q "^WORKER_IMAGE=${NS}/estallo-crm-worker:1.1.0$" .env
 check "o scheduler é pinado na MESMA versão do app" \
-  grep -q "^SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.1.0$" .env
+  grep -q "^SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:1.1.0$" .env
 check "o worker herda a política da tag imutável" \
   grep -q '^WORKER_PULL_POLICY=missing$' .env
 check "o scheduler herda a política da tag imutável" \
@@ -433,7 +433,7 @@ echo topo > topo.txt; git add -A; git commit --quiet -m "main, depois da release
 clona_raso() {  # clona_raso <destino> — igual ao install.sh: --depth 1
   git clone --depth 1 --quiet "file://$SRC" "$1"
   cat > "$1/.env" <<ENV
-APP_IMAGE=${NS}/deskcommcrm:latest
+APP_IMAGE=${NS}/estallo-crm:latest
 APP_PULL_POLICY=always
 SUPABASE_DB_URL=postgresql://x/y
 NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br
@@ -455,7 +455,7 @@ check "aborta com o código de recusa (3), não com falha genérica" test "$RC" 
 check "explica em português que é retrocesso" grep -q "ANTERIOR à que já está instalada" "$OUTFILE"
 check "não chegou a rodar o backup" test ! -f "$BACKUP_MARK"
 check "NÃO rebobinou: o HEAD é o mesmo de antes" test "$(git rev-parse HEAD)" = "$HEAD_ANTES"
-check "a imagem do .env continua intacta" grep -q "^APP_IMAGE=${NS}/deskcommcrm:latest$" .env
+check "a imagem do .env continua intacta" grep -q "^APP_IMAGE=${NS}/estallo-crm:latest$" .env
 check "completou a história para poder decidir (deixou de ser raso)" \
   test "$(git rev-parse --is-shallow-repository)" = "false"
 
@@ -484,7 +484,7 @@ bash hostgator-setup-kit/agent.sh > "$WORK/agente.out" 2>&1
 check "o agente chegou a executar o update (o app de mentira pediu)" \
   grep -q '"kind":"run_progress"\|"kind":"run_result"' "$CURL_LOG"
 check "NÃO reiniciou o container" test -z "$(grep -F 'up -d app' "$DOCKER_LOG" || true)"
-check "NÃO reescreveu a imagem do .env" grep -q "^APP_IMAGE=${NS}/deskcommcrm:latest$" .env
+check "NÃO reescreveu a imagem do .env" grep -q "^APP_IMAGE=${NS}/estallo-crm:latest$" .env
 check "reportou 'failed', não 'failed_rolled_back'" \
   test -n "$(grep -F '"status":"failed"' "$CURL_LOG" || true)"
 check "não reportou rollback nenhum" test -z "$(grep -F 'failed_rolled_back' "$CURL_LOG" || true)"
@@ -555,26 +555,26 @@ pin_caso() {  # pin_caso <descrição> <conteúdo do .env> <esperado>
   check "$d" test "$r" = "$esperado"
 }
 pin_caso "app pinado + worker/scheduler AUSENTES → acusa os dois" \
-  "APP_IMAGE=${NS}/deskcommcrm:1.3.0" "worker scheduler"
+  "APP_IMAGE=${NS}/estallo-crm:1.3.0" "worker scheduler"
 pin_caso "app pinado + worker em canal móvel → acusa" \
-  "APP_IMAGE=${NS}/deskcommcrm:1.3.0
-WORKER_IMAGE=${NS}/deskcomm-worker:stable
-SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.3.0" "worker"
+  "APP_IMAGE=${NS}/estallo-crm:1.3.0
+WORKER_IMAGE=${NS}/estallo-crm-worker:stable
+SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:1.3.0" "worker"
 pin_caso "as três na mesma versão → silêncio" \
-  "APP_IMAGE=${NS}/deskcommcrm:1.3.0
-WORKER_IMAGE=${NS}/deskcomm-worker:1.3.0
-SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.3.0" ""
+  "APP_IMAGE=${NS}/estallo-crm:1.3.0
+WORKER_IMAGE=${NS}/estallo-crm-worker:1.3.0
+SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:1.3.0" ""
 pin_caso "app num canal deliberado (:latest) → não é 'metade', silêncio" \
-  "APP_IMAGE=${NS}/deskcommcrm:latest" ""
+  "APP_IMAGE=${NS}/estallo-crm:latest" ""
 # As aspas SIMPLES são o objeto deste caso — o `install.sh` grava assim. Elas
 # ficam literais porque estão DENTRO da string de aspas duplas; trocá-las por
 # duplas FECHA a string, e o conteúdo sai sem aspa nenhuma. Medido: nessa forma
 # o caso vira byte-a-byte igual ao "as três na mesma versão" logo acima, e o
 # rótulo passa a mentir sobre o que está sendo exercitado.
 pin_caso "valores entre aspas, como o install grava → silêncio" \
-  "APP_IMAGE='${NS}/deskcommcrm:1.3.0'
-WORKER_IMAGE='${NS}/deskcomm-worker:1.3.0'
-SCHEDULER_IMAGE='${NS}/deskcomm-scheduler:1.3.0'" ""
+  "APP_IMAGE='${NS}/estallo-crm:1.3.0'
+WORKER_IMAGE='${NS}/estallo-crm-worker:1.3.0'
+SCHEDULER_IMAGE='${NS}/estallo-crm-scheduler:1.3.0'" ""
 rm -f "$PROJ/.env.pin"
 
 
@@ -596,10 +596,10 @@ case "$*" in
   # O heredoc é quoted ('STUBDOCKER') para proteger $* e $DUBLE_VERSION, então
   # $NS NÃO é expandido na escrita: ele chega literal aqui e é resolvido quando o
   # dublê RODA, lendo do ambiente (por isso o `export NS` lá em cima). Sem essa
-  # resolução o dublê devolvia a string `${NS}/deskcomm-worker:stable` — uma
+  # resolução o dublê devolvia a string `${NS}/estallo-crm-worker:stable` — uma
   # fixture que não representa instalação nenhuma. O `:?` faz o dublê morrer alto
   # se a variável não vier, em vez de devolver um nome começando em "/".
-  *"Config.Image"*)  printf '%s/deskcomm-worker:stable\n' "${NS:?dublê de docker sem NS no ambiente}" ;;
+  *"Config.Image"*)  printf '%s/estallo-crm-worker:stable\n' "${NS:?dublê de docker sem NS no ambiente}" ;;
   *"image.version"*) printf '%s
 ' "${DUBLE_VERSION:-1.3.0}" ;;
   *) exit 1 ;;
@@ -614,10 +614,10 @@ autopin() {  # autopin <conteúdo do .env> → ecoa o que a função corrigiu
       ". '$KIT_DIR_TESTE/_common.sh'; completar_pin_ausente .env" 2>/dev/null ) || true
 }
 
-R="$(autopin "APP_IMAGE=${NS}/deskcommcrm:1.3.0")"
+R="$(autopin "APP_IMAGE=${NS}/estallo-crm:1.3.0")"
 check "chave AUSENTE → preenche os dois" test "$R" = "worker scheduler"
 check "  e grava a versão da imagem em execução, não um canal" \
-  grep -q "^WORKER_IMAGE=${NS}/deskcomm-worker:1.3.0$" "$PIN_DIR/.env"
+  grep -q "^WORKER_IMAGE=${NS}/estallo-crm-worker:1.3.0$" "$PIN_DIR/.env"
 check "  com pull_policy de tag imutável" \
   grep -q "^WORKER_PULL_POLICY=missing$" "$PIN_DIR/.env"
 
@@ -629,21 +629,21 @@ check "  e não altera um byte do .env" test "$ANTES_MD5" = "$(md5sum "$PIN_DIR/
 
 # A REGRA QUE PROTEGE O OPERADOR. Se esta cair, o cron passa a sobrescrever
 # escolha explícita — e a decisão de implementar a autocorreção deixa de valer.
-R="$(autopin "APP_IMAGE=${NS}/deskcommcrm:1.3.0
-WORKER_IMAGE=${NS}/deskcomm-worker:stable
-SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:stable")"
+R="$(autopin "APP_IMAGE=${NS}/estallo-crm:1.3.0
+WORKER_IMAGE=${NS}/estallo-crm-worker:stable
+SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:stable")"
 check "canal móvel EXPLÍCITO → não toca (é decisão de quem opera)" test -z "$R"
 check "  o :stable escolhido continua lá, intacto" \
-  grep -q "^WORKER_IMAGE=${NS}/deskcomm-worker:stable$" "$PIN_DIR/.env"
+  grep -q "^WORKER_IMAGE=${NS}/estallo-crm-worker:stable$" "$PIN_DIR/.env"
 
-R="$(autopin "APP_IMAGE=${NS}/deskcommcrm:1.3.0
-WORKER_IMAGE=${NS}/deskcomm-worker:1.3.0
-SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:1.3.0")"
+R="$(autopin "APP_IMAGE=${NS}/estallo-crm:1.3.0
+WORKER_IMAGE=${NS}/estallo-crm-worker:1.3.0
+SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:1.3.0")"
 check "já pinada → silêncio" test -z "$R"
 
 # Imagem sem o label (build local): não há versão para gravar, e inventar uma
 # seria pior que não fazer nada.
-R="$( printf "APP_IMAGE=${NS}/deskcommcrm:1.3.0\n" > "$PIN_DIR/.env"
+R="$( printf "APP_IMAGE=${NS}/estallo-crm:1.3.0\n" > "$PIN_DIR/.env"
       cd "$PIN_DIR" && PATH="$PIN_DIR/bin:$PATH" DUBLE_VERSION="<no value>" bash -c \
         ". '$KIT_DIR_TESTE/_common.sh'; completar_pin_ausente .env" 2>/dev/null || true )"
 check "imagem sem label de versão → não inventa pin" test -z "$R"
@@ -723,7 +723,7 @@ export DOCKER_BUILD_FEITO="$WORK/build-feito"
 rm -f "$DOCKER_BUILD_FEITO"
 # Instalado numa versão anterior à alvo: sem isto a guarda de retrocesso
 # recusaria antes de chegar ao `up -d`.
-sed -i.bak "s|^APP_IMAGE=.*|APP_IMAGE=${NS}/deskcommcrm:0.9.0|" .env && rm -f .env.bak
+sed -i.bak "s|^APP_IMAGE=.*|APP_IMAGE=${NS}/estallo-crm:0.9.0|" .env && rm -f .env.bak
 : > "$DOCKER_LOG"
 export ARQ_DIFERENTE=1
 run_update --to v1.1.0
@@ -744,7 +744,7 @@ check "e diz no FIM, que é o que o agente manda para a tela" \
 
 # O caminho feliz NÃO muda de comportamento: imagem disponível, nada de build
 # local e nenhuma menção a arquitetura.
-sed -i.bak "s|^APP_IMAGE=.*|APP_IMAGE=${NS}/deskcommcrm:0.9.0|" .env && rm -f .env.bak
+sed -i.bak "s|^APP_IMAGE=.*|APP_IMAGE=${NS}/estallo-crm:0.9.0|" .env && rm -f .env.bak
 : > "$DOCKER_LOG"
 run_update --to v1.1.0
 check "caminho feliz: conclui normalmente" test "$RC" -eq 0

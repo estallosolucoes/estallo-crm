@@ -32,7 +32,7 @@ import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
-import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
+import { cartaoDoAnuncio, extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
 import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
@@ -421,6 +421,9 @@ const NOWEB_MESSAGE_KEY_TYPE: Record<string, string> = {
   documentMessage: "document",
   documentWithCaptionMessage: "document",
   contactMessage: "contact",
+  // Vários contatos numa mensagem só. Sem esta chave o tipo caía em "text" sem
+  // corpo e a mensagem era descartada (Prática Biomed, 29/10/2026).
+  contactsArrayMessage: "contact",
 };
 
 export function resolveMessageType(p: WahaPayload): string {
@@ -460,6 +463,20 @@ function bodyOf(p: WahaPayload): string | null {
     const o = cm as { vcard?: string; displayName?: string };
     if (o.vcard) return o.vcard;
     if (o.displayName) return o.displayName;
+  }
+  // Vários contatos: um vCard por contato, concatenados — a tela os separa
+  // (`resolveSharedContacts`, lib/messaging/contact-card.ts).
+  const ca = (msg as { contactsArrayMessage?: unknown }).contactsArrayMessage;
+  if (ca && typeof ca === "object") {
+    const lista = (ca as { contacts?: unknown }).contacts;
+    const vcards = Array.isArray(lista)
+      ? lista
+          .map((c) => (c && typeof c === "object" ? (c as { vcard?: unknown }).vcard : null))
+          .filter((v): v is string => typeof v === "string" && v.includes("BEGIN:VCARD"))
+      : [];
+    if (vcards.length > 0) return vcards.join("\n");
+    const nome = (ca as { displayName?: unknown }).displayName;
+    if (typeof nome === "string" && nome.trim()) return nome;
   }
   return null;
 }
@@ -904,7 +921,23 @@ async function handleInbound(
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   const texto = bodyOf(p);
-  if (!texto && !mediaUrlOf(p) && !p.hasMedia) return;
+  if (!texto && !mediaUrlOf(p) && !p.hasMedia) {
+    // Recibo/presença chegam sem `_data.message` e saem calados. Mensagem com
+    // conteúdo de um tipo que não sabemos ler (foi o caso dos vários contatos,
+    // 29/10/2026) não pode sumir sem rastro: o log nomeia o tipo cru.
+    const msg = p._data?.message;
+    if (msg && typeof msg === "object") {
+      const tipos = Object.keys(msg).filter((k) => k !== "messageContextInfo");
+      if (tipos.length > 0) {
+        logger.warn("waha.ingest: mensagem de tipo nao suportado descartada", {
+          organization_id: session.organization_id,
+          external_id: p.id,
+          tipos,
+        });
+      }
+    }
+    return;
+  }
   // Daqui para baixo era para ser uma mensagem de verdade: se o chat não é
   // endereçável, PERDEMOS uma — e isso precisa ser contável. O aviso fica depois
   // das guardas acima de propósito; antes delas, todo evento de presença viraria
@@ -996,6 +1029,9 @@ async function handleInbound(
         // gravada vazia, e gravação é de linha NOVA (o INSERT é o único caminho
         // que escreve `metadata` aqui), então nada do que já está é sobrescrito.
         ...(nomeDoArquivo ? { media_filename: nomeDoArquivo } : {}),
+        // Cartão do anúncio de "Clique para o WhatsApp" na bolha (thumb + link),
+        // como no app. Chaves documentadas em `cartaoDoAnuncio`.
+        ...(atribuicao ? { anuncio: cartaoDoAnuncio(atribuicao) } : {}),
       },
     })
     .select("id")
@@ -1286,7 +1322,10 @@ async function handleOutboundFromUserPhone(
   // como `fromMe`, e só o dedup por `external_id` a reconhece como nossa.
   const grupo = grupoDoEnvio(p, chatId);
   if (!p.id) return;
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  // `bodyOf`, não `p.body`: cartão de contato NOWEB chega sem `body` (o vCard
+  // mora em `_data.message`), e a guarda antiga o descartava — o insert abaixo
+  // já gravava `bodyOf(p)`.
+  if (!bodyOf(p) && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
   // defeito do #108 — mensagem que o dono digitou no celular sem `to`, sem id
   // composto e sem `from`. Se voltar a acontecer por um formato novo, agora sai
@@ -1605,11 +1644,14 @@ async function handleOutboundFromUserPhone(
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
   if (!p.id) return;
   const ack = p.ack ?? 0;
+  // 0 é "pendente no servidor": o envio já gravou ack 0, não há o que subir.
+  if (ack === 0) return;
   const status = ackToStatus(ack);
   const now = new Date().toISOString();
 
   const update: Record<string, unknown> = { ack, status };
-  if (ack >= 2) update.delivered_at = now;
+  // `delivered_at` só no próprio ack 2: o 3 (lido) não reescreve a hora da entrega.
+  if (ack === 2) update.delivered_at = now;
   if (ack >= 3) update.read_at = now;
 
   // O ack do WAHA 2026.x vem como `{fromMe}_{chatId}_{bareId}`. O NOWEB grava
@@ -1618,11 +1660,26 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
   // inbound (que é full e sustenta o dedup 23505).
   const bare = bareWaMessageId(p.id);
   const candidates = bare === p.id ? [p.id] : [p.id, bare];
-  await admin
-    .from("messages")
-    .update(update)
-    .eq("organization_id", session.organization_id)
-    .in("external_id", candidates);
+  const aplicar = async () => {
+    let q = admin
+      .from("messages")
+      .update(update)
+      .eq("organization_id", session.organization_id)
+      .in("external_id", candidates);
+    // MONOTÔNICO: ack atrasado (1 depois do 3) não rebaixa "lida" para
+    // "enviada". O erro (-1) só vale enquanto a mensagem não foi entregue.
+    q = ack < 0 ? q.or("ack.is.null,ack.lt.2") : q.or(`ack.is.null,ack.lt.${ack}`);
+    const { data } = await q.select("id");
+    return data?.length ?? 0;
+  };
+  if ((await aplicar()) > 0) return;
+  // O ack pode chegar ANTES de o envio gravar o `external_id` (a linha nasce
+  // sem id e só o recebe quando o sendText responde). Uma segunda tentativa
+  // cobre a corrida comum.
+  // ponytail: uma tentativa após 1,5 s; ack mais adiantado que isso se perde —
+  // o upgrade é guardar o ack pendente e aplicá-lo quando o id for gravado.
+  await new Promise((r) => setTimeout(r, 1_500));
+  await aplicar();
 }
 
 interface SessionStatusRow extends Session {

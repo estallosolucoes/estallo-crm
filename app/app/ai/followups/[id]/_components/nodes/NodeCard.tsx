@@ -8,6 +8,7 @@ import type { NomesDeValor } from "@/lib/followup/vocabulario";
 import { Warning } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
+import { useSaidaDeErroHabilitada } from "../SaidaDeErro";
 import { useEtapasDoFluxo } from "../EtapasDoFluxo";
 import type { NodeVisual } from "./nodeVisuals";
 
@@ -67,15 +68,24 @@ export function NodeCard({
   errors,
   showTarget = true,
   showSource = true,
-  branches,
+  branches: todasAsSaidas,
 }: Props) {
   const t = useT();
+  const saidaDeErroHabilitada = useSaidaDeErroHabilitada();
+  const branches = saidaDeErroHabilitada
+    ? todasAsSaidas
+    : todasAsSaidas?.filter((b) => b.kind !== "error");
   const { nomes } = useEtapasDoFluxo();
   const Icon = visual.icon;
   const hasError = (errors?.length ?? 0) > 0;
   // Uma saída só continua sendo a bolinha de sempre no rodapé: não há o que
   // rotular, e mexer nisso quebraria o arrasto de todo nó não-ramificado.
-  const branchRows = branches !== undefined && branches.length > 1 ? branches : null;
+  // Exceção: bloco de saída única com "Fallback erro" continua com a bolinha de sempre no rodapé e
+  // ganha só uma bolinha vermelha ao lado — o cartão não vira uma lista de saídas.
+  const saidaDeErro =
+    branches?.length === 2 && branches[0]?.kind === "error" ? branches[0] : null;
+  const branchRows =
+    branches !== undefined && branches.length > 1 && saidaDeErro === null ? branches : null;
 
   return (
     <div
@@ -128,6 +138,7 @@ export function NodeCard({
                   // A saída de escape é a única que não veio de uma regra do usuário:
                   // fica em itálico e apagada para se ler como "o resto cai aqui".
                   branch.kind === "fallback" && "italic text-text-muted",
+                  branch.kind === "error" && "text-error-fg",
                   semEtapa && "text-warning-fg",
                 )}
                 data-testid={`node-branch-${id}-${branch.id}`}
@@ -145,7 +156,11 @@ export function NodeCard({
                     aria-hidden
                     className={cn(
                       "h-1.5 w-1.5 shrink-0 rounded-full",
-                      branch.kind === "fallback" ? "bg-text-muted/50" : "bg-accent-500",
+                      branch.kind === "fallback"
+                        ? "bg-text-muted/50"
+                        : branch.kind === "error"
+                          ? "bg-error"
+                          : "bg-accent-500",
                     )}
                   />
                 )}
@@ -168,6 +183,25 @@ export function NodeCard({
         </ul>
       )}
       {showSource && branchRows === null && <Handle type="source" position={Position.Bottom} />}
+      {showSource && saidaDeErro !== null && (
+        <>
+          <Handle
+            type="source"
+            id={saidaDeErro.id}
+            position={Position.Right}
+            style={{ top: "50%" }}
+            className="!bg-error"
+            title={t("Fallback erro")}
+            data-testid={`node-error-handle-${id}`}
+          />
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 whitespace-nowrap pl-3 text-[10px] leading-none text-error-fg"
+          >
+            {t("Fallback erro")}
+          </span>
+        </>
+      )}
     </div>
   );
 }

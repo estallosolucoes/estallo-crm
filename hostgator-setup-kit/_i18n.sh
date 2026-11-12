@@ -33,9 +33,9 @@ _I18N_TABELA=0
 if [ $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1])) -ge "${I18N_BASH_MINIMO:-404}" ]; then
 _I18N_TABELA=1
 declare -A _ES=(
-  ["Este servidor usa arquitetura '{1}', mas o DeskcommCRM não publica imagens para ela (linux/amd64 e linux/arm64 estão disponíveis)."]="Este servidor usa arquitectura '{1}', pero DeskcommCRM no publica imágenes para ella (linux/amd64 y linux/arm64 están disponibles)."
+  ["Este servidor usa arquitetura '{1}', mas o Estallo CRM não publica imagens para ela (linux/amd64 e linux/arm64 estão disponíveis)."]="Este servidor usa arquitectura '{1}', pero Estallo CRM no publica imágenes para ella (linux/amd64 y linux/arm64 están disponibles)."
   ["  Use uma VPS x86_64/amd64 ou ARM64/aarch64. Repetir o download não resolve."]="  Usa una VPS x86_64/amd64 o ARM64/aarch64. Repetir la descarga no soluciona nada."
-  ["Este servidor usa arquitetura '{1}', e as imagens publicadas do DeskcommCRM são linux/amd64 e linux/arm64."]="Este servidor usa arquitectura '{1}', y las imágenes publicadas de DeskcommCRM son linux/amd64 y linux/arm64."
+  ["Este servidor usa arquitetura '{1}', e as imagens publicadas do Estallo CRM são linux/amd64 e linux/arm64."]="Este servidor usa arquitectura '{1}', y las imágenes publicadas de Estallo CRM son linux/amd64 y linux/arm64."
   ["  (WAHA trocado para a variante oficial ARM64: {1})"]="  (WAHA cambiado a la variante oficial ARM64: {1})"
   ["Como esta instalação JÁ EXISTE, sigo em frente: as imagens da versão alvo serão construídas nesta própria VPS."]="Como esta instalación YA EXISTE, sigo adelante: las imágenes de la versión destino se construirán en esta misma VPS."
   ["Leva de 15 a 25 minutos. Uma instalação NOVA exige x86_64/amd64 ou ARM64/aarch64 com imagens publicadas."]="Tarda de 15 a 25 minutos. Una instalación NUEVA requiere x86_64/amd64 o ARM64/aarch64 con imágenes publicadas."
@@ -229,22 +229,22 @@ y, si de verdad es un Traefik, pon REVERSE_PROXY=traefik en el .env y vuelve a e
   ["⚠ Detectei um Traefik já rodando neste VPS (contêiner '{1}', ocupando 80/443)."]="⚠ Detecté un Traefik ya corriendo en esta VPS (contenedor '{1}', ocupando 80/443)."
   ["  Vou publicar o CRM através dele em vez de subir um proxy próprio —"]="  Voy a publicar el CRM a través de él en vez de levantar un proxy propio —"
   ["  desligar o Traefik quebraria o que a sua hospedagem instalou."]="  apagar el Traefik rompería lo que tu hosting instaló."
-  ["✖ Já existe um DeskcommCRM NO AR nesta VPS, instalado em {1}."]="✖ Ya existe un DeskcommCRM ACTIVO en esta VPS, instalado en {1}."
+  ["✖ Já existe um Estallo CRM NO AR nesta VPS, instalado em {1}."]="✖ Ya existe un Estallo CRM ACTIVO en esta VPS, instalado en {1}."
   ["  Esta pasta ({1}) é outra cópia do repo. As duas se chamam"]="  Esta carpeta ({1}) es otra copia del repo. Las dos se llaman"
-  ["  DeskcommCRM, então o Docker dá às duas o MESMO nome de projeto"]="  DeskcommCRM, así que Docker les da a ambas el MISMO nombre de proyecto"
+  ["  Estallo CRM, então o Docker dá às duas o MESMO nome de projeto"]="  Estallo CRM, así que Docker les da a ambas el MISMO nombre de proyecto"
   ["  ('{1}') — e instalar aqui recriaria os contêineres daquela."]="  ('{1}') — e instalar aquí recrearía los contenedores de aquella."
   ["  Na prática: o CRM que está no ar passaria a rodar com o .env DESTA pasta"]="  En la práctica: el CRM que está activo pasaría a correr con el .env de ESTA carpeta"
   ["  (outro banco, outras chaves), e as conexões de WhatsApp cairiam."]="  (otra base de datos, otras claves), y las conexiones de WhatsApp se caerían."
   ["  Quer atualizar o que já existe? Use aquela pasta:"]="  ¿Quieres actualizar lo que ya existe? Usa aquella carpeta:"
   ["  Quer mesmo uma SEGUNDA instalação nesta VPS? Ela precisa de nome de"]="  ¿De verdad quieres una SEGUNDA instalación en esta VPS? Necesita nombre de"
   ["  projeto e domínio próprios — ponha no .env desta pasta, antes de rodar:"]="  proyecto y dominio propios — ponlos en el .env de esta carpeta, antes de ejecutar:"
-  ["Instalação interrompida para não derrubar o DeskcommCRM que está no ar em {1}."]="Instalación interrumpida para no derribar el DeskcommCRM que está activo en {1}."
+  ["Instalação interrompida para não derrubar o Estallo CRM que está no ar em {1}."]="Instalación interrumpida para no derribar el Estallo CRM que está activo en {1}."
   ["✖ As portas {1} já estão ocupadas {2}."]="✖ Los puertos {1} ya están ocupados {2}."
   ["✖ A porta {1} já está ocupada {2}."]="✖ El puerto {1} ya está ocupado {2}."
   ["  O CRM precisa dessas duas portas para publicar o site com HTTPS. Subir um"]="  El CRM necesita esos dos puertos para publicar el sitio con HTTPS. Levantar un"
   ["  segundo proxy nelas não funciona: o Docker recusa e a instalação para."]="  segundo proxy en ellos no funciona: Docker lo rechaza y la instalación se detiene."
   ["  Como resolver, na ordem do mais provável:"]="  Cómo resolverlo, en orden de lo más probable:"
-  ["  1. Já é outro DeskcommCRM neste servidor? Então use aquele — entre na"]="  1. ¿Ya es otro DeskcommCRM en este servidor? Entonces usa aquel — entra en"
+  ["  1. Já é outro Estallo CRM neste servidor? Então use aquele — entre na"]="  1. ¿Ya es otro Estallo CRM en este servidor? Entonces usa aquel — entra en"
   ["     pasta dele e rode: bash hostgator-setup-kit/update.sh"]="     su carpeta y ejecuta: bash hostgator-setup-kit/update.sh"
   ["  2. Não usa mais o que está ocupando? Desligue e rode este instalador de novo:"]="  2. ¿Ya no usas lo que lo está ocupando? Apágalo y vuelve a ejecutar este instalador:"
   ["       docker stop {1}"]="       docker stop {1}"
@@ -567,7 +567,7 @@ _i18n_idioma_do_env() {
 _i18n_avisar_bash_antigo() {
   local pediu=0
   [ "${DESKCOMM_IDIOMA_CLI:-}" = "es" ] && pediu=1
-  [ "$(_i18n_idioma_do_env ./.env || _i18n_idioma_do_env "${REPO_DIR:-deskcommcrm}/.env" || true)" = "es" ] && pediu=1
+  [ "$(_i18n_idioma_do_env ./.env || _i18n_idioma_do_env "${REPO_DIR:-estallo-crm}/.env" || true)" = "es" ] && pediu=1
   if [ "${NONINTERACTIVE:-0}" != "1" ] && [ -t 0 ]; then pediu=1; fi
   [ "$pediu" = "1" ] || return 0
   printf '%s\n' "Aviso: bash ${BASH_VERSION%%[( ]*} — o espanhol exige bash 4.4 ou superior; a instalação segue em português." >&2
@@ -593,7 +593,7 @@ perguntar_idioma_cli() {
   case "${DESKCOMM_IDIOMA_CLI:-}" in
     pt-BR | es) IDIOMA_CLI="$DESKCOMM_IDIOMA_CLI"; return 0 ;;
   esac
-  salvo="$(_i18n_idioma_do_env ./.env || _i18n_idioma_do_env "${REPO_DIR:-deskcommcrm}/.env" || true)"
+  salvo="$(_i18n_idioma_do_env ./.env || _i18n_idioma_do_env "${REPO_DIR:-estallo-crm}/.env" || true)"
   if [ -n "$salvo" ]; then
     IDIOMA_CLI="$salvo"; export DESKCOMM_IDIOMA_CLI="$salvo"; return 0
   fi

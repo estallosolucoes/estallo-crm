@@ -117,7 +117,7 @@ describe("ProposalEditorClient — drift de preço do catálogo (N4)", () => {
     render(<ProposalEditorClient id="p1" podeEditar={true} />);
     fireEvent.click(await screen.findByRole("button", { name: /atualizar preços/i }));
     // 6000/100 = 60 no input de preço (desabilitado para item de catálogo, mas exibe o valor).
-    expect(screen.getByDisplayValue("60")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("60,00")).toBeInTheDocument();
     // local: não chamou PATCH sozinho.
     expect(vi.mocked(apiClient.patch)).not.toHaveBeenCalled();
   });
@@ -372,7 +372,7 @@ describe("ProposalEditorClient — Enviar envia o que está NA TELA", () => {
     });
 
     render(<ProposalEditorClient id="p1" podeEditar={true} />);
-    fireEvent.change(await screen.findByPlaceholderText("A definir"), { target: { value: "1200" } });
+    fireEvent.change(await screen.findByPlaceholderText("A definir"), { target: { value: "1.200,00" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar ao cliente" }));
 
     await waitFor(() => expect(post).toHaveBeenCalled());
@@ -406,7 +406,7 @@ describe("ProposalEditorClient — Enviar envia o que está NA TELA", () => {
     const post = vi.mocked(apiClient.post);
 
     render(<ProposalEditorClient id="p1" podeEditar={true} />);
-    fireEvent.change(await screen.findByPlaceholderText("A definir"), { target: { value: "1200" } });
+    fireEvent.change(await screen.findByPlaceholderText("A definir"), { target: { value: "1.200,00" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar ao cliente" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/recarregue antes de editar/i);

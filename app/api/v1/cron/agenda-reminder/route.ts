@@ -137,8 +137,7 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ensureConversation } from "@/lib/automation/start-conversation";
-import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
-import { espacarEnvio } from "@/lib/automation/throttle";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
@@ -674,12 +673,6 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     const canal = escolha.canal;
 
-    const foraDaJanela = await adiarAteAJanelaAbrir(admin, org, canal.id);
-    if (foraDaJanela) {
-      pular("fora_da_janela");
-      continue;
-    }
-
     const organizacao = await organizacaoDe(org);
 
     let molde = moldeDoDegrau(tipo, Math.min(...pendentes));
@@ -712,7 +705,7 @@ async function handle(req: NextRequest): Promise<Response> {
     // mesma mensagem de novo.
     //
     // E carimba ANTES de enviar. Com o carimbo depois do envio, qualquer
-    // exceção do caminho — `espacarEnvio`, `ensureConversation`,
+    // exceção do caminho — `esperarRitmo`, `ensureConversation`,
     // `sendMessageHandler` — caía no `catch` abaixo SEM escrever o carimbo, e a
     // mensagem já saída voltava na varredura seguinte: é o mecanismo que a
     // issue #2223 mediu (18:35:01 e de novo 18:40:01, idênticas) e o motivo de
@@ -746,7 +739,7 @@ async function handle(req: NextRequest): Promise<Response> {
     }
 
     try {
-      await espacarEnvio(canal.id);
+      await esperarRitmo(canal.id);
       const conversaId = await ensureConversation(admin, org, contato.id, canal.id);
       // `webhook_source` é o ator que esta base dá a envio nascido de worker —
       // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é

@@ -3,6 +3,8 @@ import { marcaEhADoProduto } from "@/lib/branding";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { createClient } from "@/lib/supabase/server";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
 
 /**
  * A casca das telas de acesso — login, cadastro, recuperação, MFA, confirmar acesso.
@@ -53,14 +55,38 @@ export default async function PublicLayout({ children }: { children: React.React
     data: { user },
   } = await supabase.auth.getUser();
   const locale = (user?.user_metadata?.locale as string | undefined) ?? null;
+  const idioma = await idiomaDoVisitante(locale);
+  const t = (texto: string) => traduzir(texto, idioma);
 
   return (
     <IdiomaProvider locale={locale}>
-      <div className="flex min-h-screen items-center justify-center bg-background p-6">
-        <div className="w-full max-w-sm space-y-6">
-          {marca.logoUrl || marca.logoDarkUrl ? (
-            <div className="flex justify-center">
-              {/*
+      <div className="flex min-h-dvh items-center justify-center bg-background p-4 md:p-8">
+        <div className="grid w-full max-w-5xl overflow-hidden rounded-xl border border-border bg-surface shadow-md md:grid-cols-2">
+          <aside className="estallo-navigation hidden flex-col justify-between gap-12 p-10 md:flex">
+            <LogotipoDoProduto nome={marca.nome} className="h-12 w-auto self-start" />
+            <div>
+              <p className="mb-4 text-xs font-semibold tracking-widest text-[#8fd9f5] uppercase">
+                {t("Sua operação, conectada")}
+              </p>
+              <h1 className="text-3xl leading-tight font-semibold">
+                {t("Mais tempo para vender.")}
+                <br />
+                {t("Mais clareza para crescer.")}
+              </h1>
+              <p className="mt-5 text-sm leading-relaxed text-[#c4cdd4]">
+                {t(
+                  "Atendimento, clientes e próximos passos no mesmo lugar. Sua equipe trabalha com contexto, e cada conversa continua.",
+                )}
+              </p>
+            </div>
+            <p className="text-xs text-[#c4cdd4]">
+              {t("Tecnologia de empresa grande, no tamanho da sua.")}
+            </p>
+          </aside>
+          <div className="mx-auto w-full max-w-md space-y-6 p-6 md:p-10">
+            {marca.logoUrl || marca.logoDarkUrl ? (
+              <div className="flex justify-center">
+                {/*
                 <img> em vez de next/image pelo mesmo motivo da barra lateral: a URL
                 é de quem hospeda e o `next/image` exige allowlist de domínios
                 fechada em BUILD — a imagem pré-buildada do self-host recusaria o
@@ -76,45 +102,46 @@ export default async function PublicLayout({ children }: { children: React.React
                 "primeira <img> da página", e uma asserção de negação com seletor
                 largo passa sozinha assim que outra imagem entra na tela.
               */}
-              <div
-                className={
-                  marca.logoDarkUrl
-                    ? "rounded-md"
-                    : "rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm"
-                }
-              >
-                {marca.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    data-testid="logo-da-fachada"
-                    src={marca.logoUrl}
-                    alt={marca.nome}
-                    className={
-                      marca.logoDarkUrl
-                        ? "h-auto max-h-20 w-auto max-w-[12rem] object-contain dark:hidden"
-                        : "h-auto max-h-20 w-auto max-w-[12rem] object-contain"
-                    }
-                  />
-                ) : (
-                  <span className="dark:hidden">{marca.nome}</span>
-                )}
-                {marca.logoDarkUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    data-testid="logo-escuro-da-fachada"
-                    src={marca.logoDarkUrl}
-                    alt={marca.nome}
-                    className="hidden h-auto max-h-20 w-auto max-w-[12rem] object-contain dark:block"
-                  />
-                ) : null}
+                <div
+                  className={
+                    marca.logoDarkUrl
+                      ? "rounded-md"
+                      : "rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm"
+                  }
+                >
+                  {marca.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      data-testid="logo-da-fachada"
+                      src={marca.logoUrl}
+                      alt={marca.nome}
+                      className={
+                        marca.logoDarkUrl
+                          ? "h-auto max-h-20 w-auto max-w-[12rem] object-contain dark:hidden"
+                          : "h-auto max-h-20 w-auto max-w-[12rem] object-contain"
+                      }
+                    />
+                  ) : (
+                    <span className="dark:hidden">{marca.nome}</span>
+                  )}
+                  {marca.logoDarkUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      data-testid="logo-escuro-da-fachada"
+                      src={marca.logoDarkUrl}
+                      alt={marca.nome}
+                      className="hidden h-auto max-h-20 w-auto max-w-[12rem] object-contain dark:block"
+                    />
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ) : marcaEhADoProduto({ name: marca.nome, logoUrl: null }) ? (
-            <div className="flex justify-center">
-              <LogotipoDoProduto nome={marca.nome} className="h-12 w-auto" />
-            </div>
-          ) : null}
-          {children}
+            ) : marcaEhADoProduto({ name: marca.nome, logoUrl: null }) ? (
+              <div className="flex justify-center md:hidden">
+                <LogotipoDoProduto nome={marca.nome} className="h-12 w-auto" />
+              </div>
+            ) : null}
+            {children}
+          </div>
         </div>
       </div>
     </IdiomaProvider>

@@ -1,5 +1,5 @@
 /**
- * #923 — ARQUIVAR CONVERSA (e não excluir).
+ * #923 — conversa NÃO se arquiva mais (Estallo tirou o Arquivar); o PATCH de status segue.
  *
  * Prova, contra o Route Handler REAL de `PATCH /api/v1/conversations/[id]`
  * (auth, Supabase e auditoria mockados):
@@ -160,8 +160,9 @@ beforeEach(() => {
   vi.mocked(audit).mockResolvedValue(undefined);
 });
 
-describe("PATCH /conversations/[id] — arquivar (#923)", () => {
-  it('arquiva: RPC fn_service_status com p_status="archived" e evento próprio', async () => {
+describe("PATCH /conversations/[id] — status (sem arquivar)", () => {
+  // O Estallo tirou o "Arquivar": a API deixou de aceitar gravar `archived`.
+  it('arquivar não é mais gravável: status "archived" → 422, sem RPC', async () => {
     const state = stubState();
     agentSession(state);
     const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
@@ -171,26 +172,9 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
       params,
     );
 
-    expect(res.status).toBe(200);
-    expect(rpcDoStatus(state)?.args).toMatchObject({
-      p_org: ORG_ID,
-      p_conversation: CONV_ID,
-      p_status: "archived",
-      p_expected: 7,
-    });
-    expect(acoesAuditadas()).toContain("conversation.archived");
-    // Arquivar não é fechar: o evento de fechamento não pode aparecer aqui,
-    // senão a auditoria conta duas histórias para o mesmo clique.
-    expect(acoesAuditadas()).not.toContain("conversation.closed");
-    const evento = vi
-      .mocked(audit)
-      .mock.calls.find(([e]) => (e as { action: string }).action === "conversation.archived");
-    expect(evento?.[0]).toMatchObject({
-      resourceType: "conversation",
-      resourceId: CONV_ID,
-      organizationId: ORG_ID,
-      metadata: { status: "archived" },
-    });
+    expect(res.status).toBe(422);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
   });
 
   it("sem expected_revision usa a revisão lida da conversa (não zero)", async () => {
@@ -198,7 +182,7 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     agentSession(state);
     const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
 
-    const res = await PATCH(patchReq({ status: "archived" }), params);
+    const res = await PATCH(patchReq({ status: "closed" }), params);
 
     expect(res.status).toBe(200);
     expect(rpcDoStatus(state)?.args).toMatchObject({ p_expected: CONV_ROW.service_revision });
@@ -224,7 +208,7 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     agentSession(state);
     const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
 
-    const res = await PATCH(patchReq({ status: "archived", expected_revision: 3 }), params);
+    const res = await PATCH(patchReq({ status: "closed", expected_revision: 3 }), params);
 
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: { code: string } };
@@ -241,7 +225,7 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     agentSession(state);
     const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
 
-    const res = await PATCH(patchReq({ status: "archived", expected_revision: 3 }), params);
+    const res = await PATCH(patchReq({ status: "closed", expected_revision: 3 }), params);
 
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: { code: string; message: string } };
@@ -279,7 +263,7 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     vi.mocked(requireSupportWrite).mockResolvedValue(new Response(null, { status: 403 }) as never);
     const { PATCH } = await import("@/app/api/v1/conversations/[id]/route");
 
-    const res = await PATCH(patchReq({ status: "archived" }), params);
+    const res = await PATCH(patchReq({ status: "closed" }), params);
 
     expect(res.status).toBe(403);
     expect(state.rpcCalls).toHaveLength(0);

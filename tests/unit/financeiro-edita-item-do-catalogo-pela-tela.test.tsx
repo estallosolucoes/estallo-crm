@@ -233,9 +233,10 @@ describe("editar item do catálogo financeiro pela tela (#2641)", () => {
     await editarItem(bloco, "Aluguel ·");
 
     expect(valorDe(bloco, "Nome do lançamento").value).toBe("Aluguel");
-    expect(valorDe(bloco, "Valor").value).toBe("2500,00");
+    // Campo de dinheiro com a máscara única: ponto no milhar.
+    expect(valorDe(bloco, "Valor").value).toBe("2.500,00");
     expect(valorDe(bloco, "Dia do mês").value).toBe("5");
-    fireEvent.change(valorDe(bloco, "Valor"), { target: { value: "3000" } });
+    fireEvent.change(valorDe(bloco, "Valor"), { target: { value: "3.000,00" } });
     fireEvent.change(valorDe(bloco, "Dia do mês"), { target: { value: "10" } });
     fireEvent.click(salvarDe(bloco));
 

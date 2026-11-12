@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Histórico e inspeção das execuções dentro do editor de cada fluxo
+---
+Cada fluxo de follow-up agora tem, no próprio editor, a aba «Execuções»: uma lista só com as execuções daquele fluxo (com filtro por status, busca por contato e atualização automática), o desenho do fluxo exatamente na versão que rodou — blocos coloridos por estado e o caminho percorrido em destaque — e, ao clicar num bloco, a entrada, a saída, o erro, a duração e as tentativas dele. Cada execução mostra por que está esperando e pode ser pausada, retomada ou cancelada ali mesmo; as que terminaram podem ser reexecutadas do início (uma execução nova, na mesma versão do fluxo, ligada à original), com aviso dos blocos que podem repetir mensagens e outros efeitos. A reexecução pode ser feita passo a passo: ela nasce pausada e cada bloco só roda quando a pessoa clica em «Executar próximo bloco» (ou solta a execução em «Continuar automaticamente»); a espera de um bloco de espera não é cumprida nesse modo. Como o registro passo a passo ainda não está ligado, o caminho das execuções atuais é reconstruído dos eventos do motor (sem entrada e saída de cada bloco). A aba é somente leitura e o editor não perde edições não salvas ao alternar. O link «Ver execuções» da lista de fluxos e os links da Fila abrem direto nesse painel.

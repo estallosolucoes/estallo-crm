@@ -18,6 +18,7 @@ import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAssignableAgents } from "@/hooks/kanban/useAssignableAgents";
+import { useCatalogoDeProdutos } from "@/hooks/leads/useProdutosDoNegocio";
 import type { Lead, OwnerKind } from "@/lib/types/leads";
 import { marcadoresDoCard } from "@/lib/kanban/marcadores-do-card";
 import { OwnerBadge } from "./OwnerBadge";
@@ -81,6 +82,22 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
     for (const l of leads) for (const t of marcadoresDoCard(l)) set.add(t);
     return Array.from(set).sort();
   }, [leads]);
+
+  /**
+   * Produtos (0660): só os que algum card do quadro TEM — como as etiquetas, um
+   * produto que nenhum negócio carrega nunca acharia nada. O nome vem do catálogo.
+   */
+  const { data: catalogo } = useCatalogoDeProdutos();
+  const produtoOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of leads) for (const id of l.produtos_ids ?? []) ids.add(id);
+    return (catalogo ?? [])
+      .filter((p) => ids.has(p.id))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [leads, catalogo]);
+  const produtoLabel = filters.produto
+    ? (catalogo?.find((p) => p.id === filters.produto)?.nome ?? t("Produto"))
+    : t("Todos");
 
   const filteredAgentId = parseAgentOwnerFilter(filters.owner);
 
@@ -364,6 +381,30 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={produtoOptions.length === 0 && !filters.produto}
+            data-testid="filtro-produto"
+          >
+            {t("Produto")}: {produtoLabel}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onClick={() => onChange({ ...filters, produto: undefined })}>
+            {t("Todos")}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {produtoOptions.map((p) => (
+            <DropdownMenuItem key={p.id} onClick={() => onChange({ ...filters, produto: p.id })}>
+              {p.nome}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <label
         className={cn(
           "flex cursor-pointer select-none items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm",
@@ -384,6 +425,7 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
         filters.overdueOnly ||
         filters.lostReason ||
         filters.lostCategory ||
+        filters.produto ||
         (filters.status && filters.status !== "all")) && (
         <Button
           variant="ghost"

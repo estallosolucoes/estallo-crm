@@ -70,14 +70,6 @@ describe("marcadoresDoCard — as duas caixas numa lista só", () => {
     expect(marcadoresDoCard(card({ tags: ["vip"], contact_tags: ["vip"] }))).toEqual(["vip"]);
   });
 
-  it("une também os marcadores das CONVERSAS do contato (decisão do dono, 19/09)", () => {
-    expect(
-      marcadoresDoCard(
-        card({ tags: ["recompra"], contact_tags: ["vip"], conversation_tags: ["reclamacao", "vip"] }),
-      ),
-    ).toEqual(["recompra", "vip", "reclamacao"]);
-  });
-
   it("negócio sem contato não quebra — `contact_tags` é opcional", () => {
     expect(marcadoresDoCard(card({ tags: ["recompra"], contact_id: null }))).toEqual(["recompra"]);
   });
@@ -100,14 +92,6 @@ describe("applyFilters — filtro por marcador", () => {
     expect(filtrar(leads, "recompra")).toEqual(["com"]);
   });
 
-  it("acha o card pelo marcador da CONVERSA — a terceira caixa", () => {
-    const leads = [
-      card({ id: "com", conversation_tags: ["reclamacao"] }),
-      card({ id: "sem", conversation_tags: ["outro"] }),
-    ];
-    expect(filtrar(leads, "reclamacao")).toEqual(["com"]);
-  });
-
   it("marcador que não existe em nenhuma das duas não casa", () => {
     const leads = [card({ id: "a", tags: ["recompra"], contact_tags: ["vip"] })];
     expect(filtrar(leads, "inexistente")).toEqual([]);
@@ -123,19 +107,17 @@ describe("os pontos de chamada — a regra só vale se quem a usa a chama", () =
   it("a rota do quadro anexa os marcadores do contato e os devolve", () => {
     const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
     expect(fonte, "withMarcadoresDoContato não é chamada na rota").toMatch(
-      /leadsComMarcadores\s*=\s*await withMarcadoresDoContato\(/,
+      /etapas\s*=\s*await Promise\.all\(\[[\s\S]*?withMarcadoresDoContato\(supabase, organizationId, leadsVisiveis\)/,
     );
     expect(fonte, "o resultado de withMarcadoresDoContato não chega à resposta").toMatch(
-      /leads:\s*leadsComMarcadores\.leads/,
+      /etapas\.map\(\(e\) => e\.leads\[i\]\)[\s\S]*?leads:\s*leadsEnriquecidos/,
     );
   });
 
-  it("a consulta de conversas do quadro traz as `tags` e as devolve no card", () => {
+  it("a consulta de conversas do quadro NÃO traz mais `tags` (0659: conversa sem etiqueta)", () => {
     const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
-    expect(fonte, "withConversas não seleciona `tags` das conversas").toMatch(
-      /from\("conversations"\)\s*\.select\("[^"]*\btags\b[^"]*"\)/,
-    );
-    expect(fonte, "o card não recebe `conversation_tags`").toContain("conversation_tags:");
+    expect(fonte).not.toMatch(/from\("conversations"\)\s*\.select\("[^"]*\btags\b[^"]*"\)/);
+    expect(fonte).not.toContain("conversation_tags:");
   });
 
   it("o seletor OFERECE os marcadores pela mesma regra", () => {

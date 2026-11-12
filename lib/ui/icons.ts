@@ -15,6 +15,7 @@ export {
   PlugsConnected,
   QrCode,
   Kanban,
+  PushPin,
   Users,
   UsersThree,
   Storefront,
@@ -59,7 +60,13 @@ export {
   Checks,
   X,
   Plus,
+  Package,
   Trash,
+  Eraser,
+  PushPinSlash,
+  FadersHorizontal,
+  SidebarSimple,
+  ArrowsLeftRight,
   PencilSimple,
   MagnifyingGlass,
   Pause,
@@ -153,4 +160,11 @@ export {
   ArrowsOutSimple,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
+  // CRM › Tags: oportunidade, contato, nome e salvar (diálogo "Nova Tag")
+  Target,
+  User,
+  TextT,
+  FloppyDisk,
+  // Chat suspenso: minimizar a janela
+  Minus,
 } from "@phosphor-icons/react/dist/ssr";

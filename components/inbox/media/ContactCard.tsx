@@ -1,171 +1,127 @@
 "use client";
 
-
-
 import { useRouter } from "next/navigation";
-
 import { useState } from "react";
-
 import { toast } from "sonner";
 
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
-
+import { apiClient } from "@/lib/api/client";
+import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { parseDialablePhone, resolveSharedContacts, type SharedContact } from "@/lib/messaging/contact-card";
+import type { Message } from "@/lib/types/messaging";
 import { UserCircle } from "@/lib/ui/icons";
 
-import { resolveSharedContact } from "@/lib/messaging/contact-card";
-import { phoneForDisplay } from "@/lib/channels/phone-variants";
-
-import type { Message } from "@/lib/types/messaging";
-
-import { cn } from "@/lib/utils";
-
-
-
 interface Props {
-
   message: Message;
-
 }
 
-
-
-/** Cartão de contato compartilhado — toque abre a conversa no inbox (mesma sessão). */
-
+/**
+ * Cartão(ões) de contato compartilhado. O WhatsApp deixa enviar VÁRIOS contatos
+ * numa mensagem só; cada um vira uma linha com "Enviar mensagem" (abre a conversa
+ * na mesma sessão) e "Salvar contato" (cria o contato no CRM).
+ */
 export function ContactCard({ message }: Props) {
-
   const t = useT();
+  const contatos = resolveSharedContacts(message);
 
-  const router = useRouter();
-
-  const [loading, setLoading] = useState(false);
-
-  const contact = resolveSharedContact(message);
-
-
-
-  if (!contact) {
-
+  if (contatos.length === 0) {
     return (
-
       <div className="rounded-lg border border-current/20 bg-background/10 px-3 py-2 text-xs opacity-80">
-
         {t("Contato")}
-
       </div>
-
     );
-
   }
-
-
-
-  const canOpen = !!(contact.contact_id || contact.phone_number?.trim());
-
-
-
-  async function handleOpen() {
-
-    if (!canOpen || loading) return;
-
-    setLoading(true);
-
-    try {
-
-      const res = await fetch("/api/v1/conversations/open-with-contact", {
-
-        method: "POST",
-
-        headers: { "Content-Type": "application/json" },
-
-        body: JSON.stringify({
-
-          channel_session_id: message.channel_session_id,
-
-          contact_id: contact!.contact_id,
-
-          phone_number: contact!.phone_number?.trim() || undefined,
-
-          name: contact!.name,
-
-        }),
-
-      });
-
-      const json = (await res.json()) as {
-
-        data?: { conversation_id: string };
-
-        error?: { message?: string };
-
-      };
-
-      if (!res.ok || !json.data?.conversation_id) {
-
-        throw new Error(json.error?.message ?? t("Não foi possível abrir a conversa."));
-
-      }
-
-      router.push(`/app/inbox?id=${json.data.conversation_id}`);
-
-    } catch (err) {
-
-      toast.error(err instanceof Error ? t(err.message) : t("Não foi possível abrir a conversa."));
-
-    } finally {
-
-      setLoading(false);
-
-    }
-
-  }
-
-
 
   return (
-
-    <button
-
-      type="button"
-
-      disabled={!canOpen || loading}
-
-      onClick={handleOpen}
-
-      title={canOpen ? t("Abrir conversa com este contato") : undefined}
-
-      className={cn(
-
-        "flex max-w-[220px] items-center gap-2 rounded-lg border border-current/20 bg-background/10 px-2 py-2 text-left transition-colors",
-
-        canOpen && "cursor-pointer hover:bg-background/20 disabled:cursor-wait disabled:opacity-70",
-
-        !canOpen && "cursor-default opacity-90",
-
-      )}
-
-    >
-
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-background/20">
-
-        <UserCircle size={28} weight="duotone" aria-hidden />
-
-      </span>
-
-      <span className="min-w-0 flex-1">
-
-        <span className="block truncate font-medium">{contact.name}</span>
-
-        {contact.phone_number ? (
-
-          <span className="block truncate text-xs opacity-80">{phoneForDisplay(contact.phone_number)}</span>
-
-        ) : null}
-
-      </span>
-
-    </button>
-
+    <div className="flex max-w-[260px] flex-col gap-1.5">
+      {contatos.map((c, i) => (
+        <LinhaDeContato key={`${c.phone_number}-${i}`} contato={c} channelSessionId={message.channel_session_id} />
+      ))}
+    </div>
   );
-
 }
 
+function LinhaDeContato({ contato, channelSessionId }: { contato: SharedContact; channelSessionId: string }) {
+  const t = useT();
+  const router = useRouter();
+  const [ocupado, setOcupado] = useState<"abrir" | "salvar" | null>(null);
+  const [salvo, setSalvo] = useState(false);
+  const telefone = contato.phone_number?.trim() ?? "";
+  const podeAbrir = !!(contato.contact_id || telefone);
+  const e164 = telefone ? parseDialablePhone(telefone) : null;
+  const podeSalvar = !contato.contact_id && !!e164 && !salvo;
+
+  async function abrir() {
+    if (!podeAbrir || ocupado) return;
+    setOcupado("abrir");
+    try {
+      const res = await apiClient.post<{ data: { conversation_id: string } }>(
+        "/api/v1/conversations/open-with-contact",
+        {
+          channel_session_id: channelSessionId,
+          contact_id: contato.contact_id,
+          phone_number: telefone || undefined,
+          name: contato.name,
+        },
+      );
+      router.push(`/app/inbox?id=${res.data.conversation_id}`);
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function salvar() {
+    if (!podeSalvar || ocupado) return;
+    setOcupado("salvar");
+    try {
+      await apiClient.post("/api/v1/contacts", {
+        display_name: contato.name,
+        phone_number: e164!.replace(/[^\d+]/g, ""),
+        source: "contato_compartilhado",
+      });
+      setSalvo(true);
+      toast.success(t("Contato salvo."));
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-current/20 bg-background/10 p-2">
+      <div className="flex items-center gap-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background/20">
+          <UserCircle size={26} weight="duotone" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1 text-left">
+          <span className="block truncate font-medium">{contato.name}</span>
+          {telefone ? <span className="block truncate text-xs opacity-80">{phoneForDisplay(telefone)}</span> : null}
+        </span>
+      </div>
+      <div className="mt-2 flex gap-1.5 border-t border-current/15 pt-2 text-xs font-medium">
+        <button
+          type="button"
+          onClick={abrir}
+          disabled={!podeAbrir || ocupado !== null}
+          className="flex-1 rounded-md px-2 py-1 hover:bg-background/20 disabled:opacity-60"
+        >
+          {ocupado === "abrir" ? t("Abrindo…") : t("Enviar mensagem")}
+        </button>
+        {podeSalvar || salvo ? (
+          <button
+            type="button"
+            onClick={salvar}
+            disabled={!podeSalvar || ocupado !== null}
+            className="flex-1 rounded-md px-2 py-1 hover:bg-background/20 disabled:opacity-60"
+          >
+            {salvo ? t("Salvo") : ocupado === "salvar" ? t("Salvando…") : t("Salvar contato")}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

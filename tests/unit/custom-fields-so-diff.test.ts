@@ -67,10 +67,11 @@ describe("soChavesAlteradas — só o que a pessoa alterou", () => {
   });
 });
 
-describe("fiação — os dois componentes montam o patch pelo diff", () => {
+describe("fiação — o formulário do dossiê monta o patch pelo diff", () => {
   const ARQUIVOS = [
     "components/kanban/LeadFieldsForm.tsx",
-    "components/inbox/CRMSidePanel.tsx",
+    // O painel do inbox não edita mais campos (o clique no lead abre o dossiê,
+    // que usa o LeadFieldsForm acima).
   ];
 
   for (const arquivo of ARQUIVOS) {

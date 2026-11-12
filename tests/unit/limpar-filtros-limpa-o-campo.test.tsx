@@ -40,9 +40,6 @@ vi.mock("@/hooks/channels/useChannelSessions", () => ({
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ activeOrg: { orgId: "org-1", role: "admin", visibility_mode: "all" } }),
 }));
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useConversationTagVocabulary: () => ({ data: [] }),
-}));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
   useContactTagVocabulary: () => ({ data: [] }),
 }));

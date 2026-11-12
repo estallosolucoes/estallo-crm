@@ -98,8 +98,8 @@ describe("a paleta de etiquetas", () => {
   });
 
   it("a fileira da tela usa a paleta da lib, não uma cópia própria", () => {
-    const painel = readFileSync(join(raiz, "app/app/settings/tags/_painel.tsx"), "utf8");
-    expect(painel).toContain("PALETA_DE_ETIQUETAS.map");
+    const painel = readFileSync(join(raiz, "app/app/crm/tags/_dialogo.tsx"), "utf8");
+    expect(painel).toContain("cores={PALETA_DE_ETIQUETAS}");
     expect(painel).toContain('from "@/lib/tags/cor-da-etiqueta"');
   });
 });
@@ -143,7 +143,15 @@ describe("etiquetasComCor / coresDoVocabulario", () => {
   it("o mapa usa a MESMA chave canônica do filtro (minúscula, sem espaço)", () => {
     // "Obra" na conversa e "obra" no vocabulário são a mesma etiqueta: sem a
     // chave canônica uma delas sairia cinza.
-    expect(coresDoVocabulario(SETTINGS)).toEqual({ vip: "#0091ff", obra: "#e35537" });
+    // Entrada sem entidade (anterior à 0659) vale para as duas entidades.
+    expect(coresDoVocabulario(SETTINGS)).toEqual({
+      vip: "#0091ff",
+      "lead:vip": "#0091ff",
+      "contact:vip": "#0091ff",
+      obra: "#e35537",
+      "lead:obra": "#e35537",
+      "contact:obra": "#e35537",
+    });
     expect(chaveDaEtiqueta("  VIP  ")).toBe("vip");
   });
 

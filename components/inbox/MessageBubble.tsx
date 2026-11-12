@@ -1,9 +1,12 @@
 "use client";
 
+import { FormatacaoWhatsApp } from "@/lib/mensagens/formatacao-whatsapp";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, CaretDown, Check, Checks, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, CaretDown, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { AckIndicator } from "@/components/inbox/AckIndicator";
+import { CartaoDeAnuncio, anuncioDaMensagem } from "@/components/inbox/media/CartaoDeAnuncio";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -46,23 +49,12 @@ interface Props {
    * "Atendente", que é verdadeiro para todo mundo.
    */
   viewerUserId?: string | null;
+  /** Nome cadastrado de quem enviou (`sent_by_user_id`), quando a equipe é conhecida. */
+  nomeDoAutor?: string | null;
   onEditar?: (text: string) => Promise<void>;
   onApagar?: () => Promise<void>;
   onOcultar?: () => Promise<void>;
   onRestaurar?: () => Promise<void>;
-}
-
-function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
-  if (status === "read") {
-    return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
-  }
-  if (status === "delivered") {
-    return <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />;
-  }
-  if (status === "sent") {
-    return <Check size={12} weight="bold" className="text-current/70" aria-label={t("Enviada")} />;
-  }
-  return null;
 }
 
 export function MessageBubble({
@@ -72,6 +64,7 @@ export function MessageBubble({
   onResponder,
   citada,
   viewerUserId,
+  nomeDoAutor,
   onEditar,
   onApagar,
   onOcultar,
@@ -84,7 +77,23 @@ export function MessageBubble({
   const [ocupado, setOcupado] = useState(false);
   const salvandoEdicao = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * A LARGURA DA BOLHA AO ENTRAR NA EDIÇÃO. A bolha é item flex sem largura e
+   * se mede pelo conteúdo: trocado o texto pelo textarea (`w-full` sobre um pai
+   * sem largura), ela encolhia ao tamanho default do textarea (~20 colunas). A
+   * largura medida no clique fica fixa enquanto se edita — o teto de max-width
+   * da régua continua valendo.
+   */
+  const bolhaRef = useRef<HTMLDivElement | null>(null);
+  const [larguraNaEdicao, setLarguraNaEdicao] = useState<number | null>(null);
   const abrindoEdicao = useRef(false);
+  /**
+   * "Responder" só vale depois que o menu FECHA. Ao fechar, o Radix devolve o
+   * foco à setinha — e isso tirava o cursor do campo de mensagem que o
+   * composer acabava de focar. Escolhida a resposta, o menu fecha sem devolver
+   * o foco e só então a citação sobe; o composer foca o campo na sequência.
+   */
+  const respondendoAoFechar = useRef(false);
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setAgora(Date.now()), 60_000);
@@ -122,6 +131,7 @@ export function MessageBubble({
   const isContact = message.type === "contact";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
+  const anuncio = anuncioDaMensagem(message.metadata);
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
@@ -178,7 +188,7 @@ export function MessageBubble({
     // A REGRA falou, e não a IA: texto fixo de automação, follow-up ou lembrete
     // de agenda (#652). O ramo passou a existir porque o valor passou a ser
     // gravado — antes dele, um rótulo aqui seria promessa sem dado atrás.
-    if (message.sent_via === "automation") return "Automação";
+    if (message.sent_via === "automation") return "Robô";
     // A integração falou, a IA não. Sem este ramo a bolha omite a autoria e o
     // dono lê a conversa como se tudo tivesse saído do CRM — que é o defeito do
     // #866 visto de dentro da tela.
@@ -189,9 +199,10 @@ export function MessageBubble({
       // qualquer uma, o rótulo cai para "Atendente" — que continua dizendo o
       // que `sent_via` de fato garante (um humano, pelo CRM) sem afirmar uma
       // identidade que o dado não sustenta.
-      return viewerUserId != null && message.sent_by_user_id === viewerUserId
-        ? "Você"
-        : "Atendente";
+      if (viewerUserId != null && message.sent_by_user_id === viewerUserId) return "Você";
+      // O colega pelo NOME — o autor real desta linha, não o dono atual da
+      // conversa. Sem nome conhecido, "Atendente" segue verdadeiro.
+      return nomeDoAutor?.trim() || "Atendente";
     }
     return null;
   })();
@@ -218,7 +229,7 @@ export function MessageBubble({
     <div
       data-search-match={searchMatch || undefined}
       className={cn(
-        "group flex w-full min-w-0 items-center gap-1 px-4 py-1",
+        "group flex w-full min-w-0 items-center gap-1",
         isOutbound ? "justify-end" : "justify-start",
       )}
     >
@@ -228,21 +239,24 @@ export function MessageBubble({
         // classe utilitária entrava na conta — foi assim que o painel flutuante
         // fez a spec achar que havia mensagem onde não havia (issue #1318).
         data-testid="message-bubble"
+        ref={bolhaRef}
+        style={editando && larguraNaEdicao ? { width: larguraNaEdicao } : undefined}
         className={cn(
           "relative max-w-[75%] min-w-0 text-sm",
           isBareSticker
             ? "px-0 py-0"
             : cn(
-                "rounded-2xl px-3 py-2 shadow-sm",
-                temMenu && "pr-8",
-                isOutbound
-                  ? "rounded-br-sm bg-primary text-primary-foreground"
-                  : "rounded-bl-sm bg-muted text-foreground",
+                // A bolha do modelo do Inbox (16/10/2026): recebida branca com
+                // borda e "cauda" em cima à esquerda; enviada na cor da marca,
+                // cauda em cima à direita. Régua em `components/inbox/inbox.css`.
+                "ibx-bubble",
+                temMenu && "ibx-com-menu",
+                isOutbound && "ibx-outgoing",
               ),
-          isFailed && "border border-destructive",
+          isFailed && "ibx-falhou border border-destructive",
           // A marca da busca é ANEL, não cor de fundo: o fundo já diz de quem é
           // a mensagem, e trocá-lo apagaria essa leitura justo na bolha achada.
-          searchMatch && "ring-2 ring-foreground ring-offset-2 ring-offset-background",
+          searchMatch && "ibx-achada ring-2 ring-foreground ring-offset-2 ring-offset-background",
           apagada && "opacity-70",
         )}
       >
@@ -260,6 +274,12 @@ export function MessageBubble({
             </DropdownMenuTrigger>
             <DropdownMenuContent align={isOutbound ? "end" : "start"} sideOffset={4}
               onCloseAutoFocus={(event) => {
+                if (respondendoAoFechar.current) {
+                  respondendoAoFechar.current = false;
+                  event.preventDefault();
+                  onResponder?.(message);
+                  return;
+                }
                 if (!abrindoEdicao.current) return;
                 // O Radix devolve o foco à setinha ao fechar o menu. Isso rola o
                 // fio de volta e esconde o Salvar logo depois de abrir o editor.
@@ -269,7 +289,7 @@ export function MessageBubble({
                 editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
               }}>
               {onResponder && (
-                <DropdownMenuItem onSelect={() => onResponder(message)}>
+                <DropdownMenuItem onSelect={() => { respondendoAoFechar.current = true; }}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
                 </DropdownMenuItem>
               )}
@@ -277,6 +297,9 @@ export function MessageBubble({
                 <DropdownMenuItem onSelect={() => {
                   abrindoEdicao.current = true;
                   setTexto(message.body ?? "");
+                  // ponytail: piso de 240px só para Cancelar/Salvar caberem numa bolha de "ok".
+                  const largura = bolhaRef.current?.getBoundingClientRect().width ?? 0;
+                  setLarguraNaEdicao(largura > 0 ? Math.max(largura, 240) : null);
                   setEditando(true);
                 }}>
                   <PencilSimple size={16} aria-hidden />{t("Editar mensagem")}
@@ -310,14 +333,9 @@ export function MessageBubble({
         */}
         {citada && (
           <div
-            className={cn(
-              "mb-1 rounded-md border-l-2 px-2 py-1 text-xs",
-              isOutbound
-                ? "border-primary-foreground/50 bg-primary-foreground/10"
-                : "border-primary bg-background/60",
-            )}
+            className="ibx-quoted-message"
           >
-            <div className="font-medium opacity-80">
+            <div className={cn("font-medium", isOutbound ? "text-primary-foreground" : "opacity-80")}>
               {citada.direction === "outbound" ? t("Você") : t("Cliente")}
             </div>
             {/*
@@ -330,14 +348,16 @@ export function MessageBubble({
               continuava legível dentro de cada resposta que a citou. O fio
               permanece (a citação some, não a resposta); o conteúdo, não.
             */}
-            <div className={cn("line-clamp-2 wrap-anywhere opacity-70", Boolean(citada.revoked_at || citada.metadata?.crm_hidden_at) && "italic")}>
+            <div className={cn("line-clamp-2 wrap-anywhere", isOutbound ? "text-primary-foreground" : "opacity-70", Boolean(citada.revoked_at || citada.metadata?.crm_hidden_at) && "italic")}>
               {citada.revoked_at
                 ? t("Esta mensagem foi apagada")
                 : citada.metadata?.crm_hidden_at
                 ? t("Mensagem ocultada no CRM")
                 : citada.type === "contact"
                 ? resolveSharedContact(citada)?.name || t("Contato")
-                : citada.body?.trim() || t("(sem texto)")}
+                : citada.body?.trim()
+                ? <FormatacaoWhatsApp texto={citada.body.trim()} modo="linha" />
+                : t("(sem texto)")}
             </div>
           </div>
         )}
@@ -347,8 +367,8 @@ export function MessageBubble({
           </p>
         )}
         {senderLabel && (
-          <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
-            {senderLabel === "IA" ? (
+          <div className="ibx-bubble-label flex items-center gap-1">
+            {senderLabel === "IA" || senderLabel === "Robô" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
             {senderLabel && t(senderLabel)}
@@ -368,11 +388,21 @@ export function MessageBubble({
                 }
               }}
               maxLength={4096}
-              className="min-h-20 w-full rounded-md border border-border bg-background p-2 text-foreground"
+              className="block max-h-[50vh] min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 leading-snug text-foreground [field-sizing:content]"
             />
             <div className="flex justify-end gap-2">
-              <Button size="sm" variant="ghost" disabled={ocupado} onClick={() => setEditando(false)}>{t("Cancelar")}</Button>
-              <Button size="sm" disabled={ocupado || !texto.trim()} onClick={() => void salvarEdicao()}>{t("Salvar")}</Button>
+              {/* Dentro da bolha enviada o fundo JÁ É o azul de ação: o `ghost`
+                  (tinta + hover accent-soft) e o `primary` (azul) somem nela.
+                  Mesma régua da setinha do menu: frente branca, hover branco
+                  translúcido, e o Salvar invertido para ser a ação principal. */}
+              <Button size="sm" variant="ghost" disabled={ocupado} onClick={() => setEditando(false)}
+                className={cn(isOutbound && "text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground")}>
+                {t("Cancelar")}
+              </Button>
+              <Button size="sm" disabled={ocupado || !texto.trim()} onClick={() => void salvarEdicao()}
+                className={cn(isOutbound && "bg-primary-foreground text-accent shadow-none hover:bg-primary-foreground/90 dark:bg-primary-foreground dark:hover:bg-primary-foreground/90")}>
+                {t("Salvar")}
+              </Button>
             </div>
           </div>
         ) : apagada ? (
@@ -393,6 +423,8 @@ export function MessageBubble({
           </p>
         ) : (
           <>
+            {anuncio && <CartaoDeAnuncio anuncio={anuncio} />}
+
             {hasMedia && (
               <div className={cn(message.body && "mb-1")}>
                 <MediaRenderer message={message} agora={agora} />
@@ -414,16 +446,17 @@ export function MessageBubble({
             {localizacao && <LocationCard localizacao={localizacao} />}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+              // `div`, não `p`: a formatação do WhatsApp pode trazer lista e
+              // citação, que são blocos e não cabem num parágrafo.
+              <div className="whitespace-pre-wrap wrap-anywhere leading-snug">
+                <FormatacaoWhatsApp texto={message.body} />
+              </div>
             )}
           </>
         )}
 
         <div
-          className={cn(
-            "mt-1 flex items-center justify-end gap-1 text-[10px]",
-            isOutbound ? "text-primary-foreground" : "text-muted-foreground",
-          )}
+          className="ibx-bubble-time"
         >
           {editada && (
             // Ao lado da hora, não no corpo: o texto mostrado JÁ é o novo, e o

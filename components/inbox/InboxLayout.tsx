@@ -1,10 +1,10 @@
 "use client";
+import "./inbox.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
-import { estadoDaJanela } from "@/lib/channels/janela";
-import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
+import { useEstadoDoEnvio } from "@/hooks/inbox/useEstadoDoEnvio";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { NumeroForaDoAr } from "@/components/inbox/NumeroForaDoAr";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -15,7 +15,10 @@ import {
   type ConversationsFilters,
   type ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
-import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
+import { useConversation, isNotFound, buscarConversa } from "@/hooks/inbox/useConversation";
+import { useMutationState, useQueries } from "@tanstack/react-query";
+import { CHAVE_DO_ENVIO } from "@/hooks/inbox/useSendMessage";
+import type { Retida } from "@/lib/inbox/lista-com-retidas";
 import { ConversationList } from "./ConversationList";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
@@ -29,15 +32,17 @@ import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
 import { OpenConversationProvider } from "@/hooks/notifications/OpenConversationContext";
 // ADR-05: ícone de feature sai do mapa canônico, nunca do pacote direto.
-import { CaretLeft, ChatCircle, IdentificationCard, MagnifyingGlass, X } from "@/lib/ui/icons";
+import { CaretLeft, ChatCircle, MagnifyingGlass, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import type { AvisoDeRascunho } from "@/lib/inbox/rascunho-sugerido";
 import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
-import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   LIMITES_FICHA,
   LIMITES_LISTA,
@@ -70,9 +75,11 @@ import {
  * `md:flex` em ambas: no desktop as duas colunas convivem e a regra não vale.
  */
 export function colunasDoCelular(temSelecao: boolean): { lista: string; conversa: string } {
+  // 851px, e não o `md` (768): é o corte do modelo do Inbox (16/10/2026) — o
+  // tablet em pé também vê uma coluna por vez, com a seta de voltar no chat.
   return {
-    lista: temSelecao ? "hidden md:flex" : "flex",
-    conversa: temSelecao ? "flex" : "hidden md:flex",
+    lista: temSelecao ? "hidden min-[851px]:flex" : "flex",
+    conversa: temSelecao ? "flex" : "hidden min-[851px]:flex",
   };
 }
 
@@ -83,56 +90,35 @@ export function colunasDoCelular(temSelecao: boolean): { lista: string; conversa
  */
 export function tabToFilter(
   tab: InboxFiltersValue["tab"],
-  automaticoDaOrg?: boolean,
+  _automaticoDaOrg?: boolean,
 ): Partial<ConversationsFilters> {
   switch (tab) {
-    case "unassigned":
-      // A FILA PERGUNTA POR QUEM MANDA, NÃO POR STATUS.
-      //
-      // Antes ela pedia `assigned_to=unassigned` + os dois estados de espera. Só
-      // que "sem dono e aberta" é também a conversa que o robô está atendendo
-      // agora — medido na VPS em 2026-08-30, a aba dizia 83 e 47 daquelas tinham
-      // o automático no comando. O atendente abria a Fila e via como trabalho
-      // dele quase tudo que já estava sendo respondido.
-      //
-      // `comandosDaFila` é quem cruza isso com o fato org-wide: numa instalação
-      // sem nenhum agente no ar, `automatico` também é "esperando gente".
-      return { comando: comandosDaFila(automaticoDaOrg) };
-    case "mine":
-      // Sem `exclude_finished` a aba mostra tudo que o atendente JÁ atendeu —
-      // `Fechar` muda o status mas não solta o dono (de propósito: quem atendeu
-      // é histórico). O lugar de "minhas fechadas" é a aba Fechadas.
-      return { assigned_to: "me", exclude_finished: true };
+    case "pending":
+      // O cliente escreveu e ninguém respondeu ainda — régua em `lib/inbox/pendentes.ts`.
+      return { pendentes: true };
     case "closed":
-      return { status: "closed" };
-    case "archived":
-      // O ARQUIVO É UM ESTADO SÓ ELE, não `in(terminais)`.
-      //
-      // `CONVERSATION_TERMINAL_STATUSES` responde outra pergunta ("o que sai do
-      // fluxo vivo", usada pelo `exclude_finished` de Minhas). Reaproveitá-la
-      // aqui faria a aba Arquivadas listar também as fechadas — duas abas com a
-      // mesma lista e badges diferentes, que é a mentira de tela que o mapa
-      // abaixo existe para impedir.
-      return { status: "archived" };
-    case "ai":
-      // `ai_handling` é escrito por UM caminho só em produção (a volta pelo botão
-      // "Devolver ao automático"), então a aba vivia mostrando 2 enquanto o robô
-      // atendia 47. Agora ela pergunta a régua do MOTOR.
-      return { comando: ["automatico"] };
+      // Sem "Arquivar" no Estallo: as arquivadas de antes moram aqui, junto
+      // com as fechadas. O badge (`counts`) conta o mesmo par.
+      return { status: ["closed", "archived"] };
+    case "waiting":
+      return { status_chat: "em_espera" };
+    case "open":
+      return { status_chat: "em_aberto" };
     case "all":
     default:
       return {};
   }
 }
 
-const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai"];
+const FILTER_TABS: InboxTab[] = ["all", "pending", "waiting", "open", "closed"];
 
 /**
- * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
- * lista volta RLS-scoped (a tab só some cosmeticamente); default: fila.
+ * Lê ?filter= (G4-02, deep-link); default: Todas. `?filter=mine` é link de antes
+ * de "Minhas" virar filtro: abre em Todas com o filtro "Minhas" ligado.
  */
 function parseFilterParam(v: string | null): InboxTab {
-  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "unassigned";
+  if (v === "mine") return "all";
+  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "all";
 }
 
 /**
@@ -160,10 +146,10 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
 
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = parseFilterParam(searchParams.get("filter"));
+  const filterNaUrl = searchParams.get("filter");
+  const tab = parseFilterParam(filterNaUrl);
   const idNaUrl = searchParams.get("id");
   /**
    * `?tag=` é o destino do link de cada linha do relatório Por etiqueta
@@ -182,6 +168,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     search: "",
     onlyUnread: false,
     onlyGroups: false,
+    onlyMine: filterNaUrl === "mine",
     ...(tagNaUrl ? { tag: tagNaUrl } : {}),
   });
   const filterValue: InboxFiltersValue = { tab, ...aux };
@@ -190,26 +177,39 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
       if (next.tab !== tab) {
         const params = new URLSearchParams(searchParams);
         params.set("filter", next.tab);
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+        // History API, e não `router.replace`: a página é `force-dynamic`, e o
+        // `router.replace` refazia a renderização no SERVIDOR a cada clique de
+        // aba (auth + org) — a aba só trocava quando essa ida voltava, e a tela
+        // parecia travada. O Next sincroniza `useSearchParams` com o
+        // `replaceState` sem pedir nada ao servidor (mesmo caminho da troca de
+        // conversa, mais abaixo, com `pushState`).
+        window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
       }
       const { tab: _t, ...rest } = next;
       setAux(rest);
     },
-    [tab, searchParams, router, pathname],
+    [tab, searchParams, pathname],
   );
 
   // Desliga só os AUXILIARES e mantém a aba: a aba é onde a pessoa está, e
   // limpá-la junto a tiraria do lugar sem ela ter pedido.
   const limparFiltrosAuxiliares = useCallback(() => {
-    setFilterValue({ tab, search: "", onlyUnread: false, onlyGroups: false });
+    setFilterValue({ tab, search: "", onlyUnread: false, onlyGroups: false, onlyMine: false });
   }, [tab, setFilterValue]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? idNaUrl);
   const ultimoIdNaUrl = useRef(idNaUrl);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
-  /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
+  /** A ficha do contato como gaveta — quando a faixa não a comporta como coluna. */
   const [fichaAberta, setFichaAberta] = useState(false);
+  /**
+   * A ficha como COLUNA, por escolha de quem usa (o botão da ficha no chat).
+   * `null` = o padrão da faixa: aberta a partir de 1600px, fechada entre 1280 e
+   * 1599 (o modelo do Inbox, 16/10/2026). O CSS pinta o padrão na primeira
+   * pintura; a escolha entra como classe por cima.
+   */
+  const [fichaEscolhida, setFichaEscolhida] = useState<boolean | null>(null);
   /**
    * A busca dentro da conversa (#1793) pertence à CONVERSA em que foi aberta.
    * Guardar o id junto fecha a busca em qualquer troca — clique, atalho j/k,
@@ -247,47 +247,36 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     setRespondendo(null);
   }, [idNaUrl]);
 
-  /**
-   * A ORG tem automático de pé? Sobe para cá porque agora é a ABA que precisa —
-   * `ConversationList` e `ConversationHeader` continuam lendo o mesmo hook, e o
-   * react-query dedupa: segue sendo uma requisição só.
-   *
-   * `undefined` enquanto carrega, e `comandosDaFila` trata isso como "assume que
-   * há" — a mesma convenção da regra. Numa org SEM automático a Fila nasce menor
-   * e completa quando a resposta chega; a janela é de ~200ms e o rótulo nunca
-   * discorda do filtro, porque os dois usam a mesma convenção.
-   */
-  const { data: automaticoDaOrg } = useAutomaticoAtivo();
   const composerRef = useRef<ComposerHandle | null>(null);
 
   const filters: ConversationsFilters = useMemo(
     () => ({
-      ...tabToFilter(filterValue.tab, automaticoDaOrg),
+      ...tabToFilter(filterValue.tab),
       // A tela NÃO pede o que a rota recusa: o hook trata falha com
       // `showApiError`, então digitar a primeira letra de qualquer busca faria
       // piscar um erro na cara de quem digita. A regra é a MESMA que o schema
       // usa (`lib/inbox/termo-de-busca.ts`) — nunca repetida aqui.
-      search: buscaValeConsulta(filterValue.search)
-        ? filterValue.search
-        : undefined,
+      search: buscaValeConsulta(filterValue.search) ? filterValue.search : undefined,
       channel_session_id: filterValue.channel_session_id,
+      ordem: filterValue.ordem,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
       is_group: filterValue.onlyGroups || undefined,
+      ...(filterValue.onlyMine ? { assigned_to: "me" } : {}),
     }),
     [
       filterValue.tab,
-      automaticoDaOrg,
       filterValue.search,
       filterValue.channel_session_id,
+      filterValue.ordem,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,
       filterValue.onlyGroups,
+      filterValue.onlyMine,
     ],
   );
-
 
   // We need the selected conversation object for header / composer / side panel.
   // Source it from the same query the list uses to avoid an extra request.
@@ -330,7 +319,74 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
   // aí `inList` já a tem no primeiro render.
   const needsFetch = !!selectedId && !inList;
   const single = useConversation(selectedId, needsFetch);
-  const selectedConversation: ConversationWithContact | null = inList ?? single.data ?? null;
+  /**
+   * O PAINEL NÃO DESMONTA QUANDO A CONVERSA SAI DA LISTA.
+   *
+   * Responder em "Em espera" (ou receber em "Em aberto") muda o status do chat,
+   * e a lista relida deixa de trazê-la. Entre esse instante e a busca única
+   * responder, `inList` e `single.data` eram os dois nulos: o painel virava
+   * "Selecione uma conversa" e desmontava cabeçalho, fio e composer — piscava,
+   * o rascunho digitado se perdia e o canal de mensagens era recriado, perdendo
+   * o que chegasse no intervalo (a prévia da lista mostrava a mensagem nova e o
+   * fio não). O último objeto conhecido da MESMA conversa segura o painel até a
+   * fonte nova responder.
+   */
+  const vivo = inList ?? single.data ?? null;
+  const [ultimaConhecida, setUltimaConhecida] = useState<ConversationWithContact | null>(null);
+  if (vivo && vivo !== ultimaConhecida) setUltimaConhecida(vivo);
+  const selectedConversation: ConversationWithContact | null =
+    vivo ?? (ultimaConhecida?.id === selectedId ? ultimaConhecida : null);
+
+  /**
+   * AS CONVERSAS EM QUE O USUÁRIO RESPONDEU FICAM NA LISTA (ver
+   * `lib/inbox/lista-com-retidas.ts`). A retenção pertence aos filtros em que
+   * nasceu: trocar de aba ou de filtro (ou recarregar) devolve a lista do
+   * servidor. O dado da retida vem fresco de `["conversation", id]`.
+   */
+  const chaveDosFiltros = JSON.stringify(filters);
+  const [retencao, setRetencao] = useState<{ chave: string; itens: Retida<ConversationWithContact>[] }>(
+    { chave: chaveDosFiltros, itens: [] },
+  );
+  if (retencao.chave !== chaveDosFiltros) setRetencao({ chave: chaveDosFiltros, itens: [] });
+  const envios = useMutationState({
+    filters: { mutationKey: CHAVE_DO_ENVIO },
+    select: (m) => `${(m.state.variables as { conversation_id?: string } | undefined)?.conversation_id ?? ""}|${m.state.submittedAt}`,
+  });
+  const ultimoEnvio = envios.at(-1) ?? null;
+  const [envioVisto, setEnvioVisto] = useState(ultimoEnvio);
+  if (ultimoEnvio !== envioVisto) {
+    setEnvioVisto(ultimoEnvio);
+    const id = ultimoEnvio?.split("|")[0];
+    const lista = listQ.data?.pages.flatMap((p) => p.data) ?? [];
+    const indice = lista.findIndex((c) => c.id === id);
+    if (id && indice >= 0 && !retencao.itens.some((r) => r.conversa.id === id)) {
+      setRetencao({
+        chave: chaveDosFiltros,
+        itens: [...retencao.itens, { conversa: lista[indice]!, indice }],
+      });
+    }
+  }
+  const frescas = useQueries({
+    queries: retencao.itens.map((r) => ({
+      queryKey: ["conversation", r.conversa.id],
+      queryFn: () => buscarConversa(r.conversa.id),
+      retry: false,
+      enabled: !(listQ.data?.pages.some((p) => p.data.some((c) => c.id === r.conversa.id)) ?? false),
+    })),
+    // `combine` é memoizado pelo react-query: o array só muda quando um dado muda
+    // (sem isso `retidas` nasceria nova a cada render e a lista, que avisa o pai
+    // das linhas visíveis por efeito, entraria em laço).
+    combine: (resultados) => resultados.map((r) => r.data),
+  });
+  const retidas = useMemo<Retida<ConversationWithContact>[]>(
+    () =>
+      retencao.itens.map((r, i) => ({
+        indice: r.indice,
+        conversa:
+          (r.conversa.id === selectedId ? selectedConversation : null) ?? frescas[i] ?? r.conversa,
+      })),
+    [retencao.itens, selectedId, selectedConversation, frescas],
+  );
   const selectionNotFound =
     needsFetch && !single.isPending && !single.data && isNotFound(single.error);
 
@@ -350,7 +406,8 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
   // É um SUPERCONJUNTO do `handleSelect` do upstream — o tipo dele não aceita
   // `null`, e sem isso o botão de voltar não teria o que chamar.
   //
-  const handleSelect = useCallback((id: string | null) => {
+  const handleSelect = useCallback(
+    (id: string | null) => {
     if (id === selectedId) return;
     setSelectedId(id);
     // Sem isto, escolher "responder" numa conversa e trocar para outra levaria
@@ -365,7 +422,9 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     params.delete("rascunho");
     const query = params.toString();
     window.history.pushState(null, "", query ? `${pathname}?${query}` : pathname);
-  }, [selectedId, searchParams, pathname]);
+    },
+    [selectedId, searchParams, pathname],
+  );
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -380,38 +439,9 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     close.mutate({ conversation_id: selectedConversation.id });
   }, [close, selectedConversation]);
 
-  // A janela vence SOZINHA com a aba aberta. Sem este relógio, quem deixa o
-  // inbox aberto a tarde inteira seguiria com o composer liberado numa conversa
-  // que já venceu — e o bloqueio só apareceria no próximo recarregamento.
-  const [agoraJanela, setAgoraJanela] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setAgoraJanela(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, []);
-
-  // A janela de 24h fecha o composer, e o motivo DIZ há quanto tempo fechou.
-  //
-  // Antes disto o texto livre saía, o CRM marcava `failed` e o operador via um
-  // `131047` — descobrindo a regra pelo erro, uma mensagem por vez. Barrar aqui
-  // é o pedido explícito do dono: se não dá para enviar, que não deixe tentar.
-  //
-  // Reusa o `blockedReason` que já existe (contato bloqueado/anonimizado) em vez
-  // de um segundo mecanismo de bloqueio: dois caminhos para desabilitar o mesmo
-  // composer divergem, e o segundo esquece de cobrir o áudio ou o anexo.
-  const janela = estadoDaJanela(
-    selectedConversation?.channel_sessions?.provider ?? null,
-    selectedConversation?.last_inbound_at ?? null,
-    agoraJanela,
-  );
-  // Os textos moram em lib/inbox/motivo-do-envio-bloqueado.ts: o "Enviar link"
-  // da videochamada desabilita na mesma conversa e mostra o MESMO motivo.
-  const motivoDaJanela = motivoDaJanelaFechada(
-    janela,
-    selectedConversation?.channel_sessions?.provider,
-    t,
-  );
-
-  const blockedReason = motivoDoContato(selectedConversation?.contacts, t);
+  // Janela de 24h, contato bloqueado e suporte só-leitura: a MESMA regra do
+  // chat suspenso (`hooks/inbox/useEstadoDoEnvio.ts`).
+  const { motivoDaJanela, blockedReason } = useEstadoDoEnvio(selectedConversation);
 
   /* ─── DIVISÓRIAS ARRASTÁVEIS (#2579) ────────────────────────────────────
    *
@@ -470,11 +500,17 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
 
   /** O que vale AGORA na tela: o ajuste salvo, ou o padrão da faixa. */
   const efetivas: LargurasDoInbox | null = larguras ?? (faixa ? largurasPadrao(faixa) : null);
+  /** A ficha está de pé como COLUNA agora (a faixa comporta e quem usa quer). */
+  const fichaNaColuna = Boolean(faixa?.temFicha) && (fichaEscolhida ?? faixa?.id === "2xl");
+  const alternarFicha = useCallback(() => {
+    if (faixa?.temFicha) setFichaEscolhida(!fichaNaColuna);
+    else setFichaAberta((aberta) => !aberta);
+  }, [faixa, fichaNaColuna]);
 
   const estiloDaGrade: CSSProperties | undefined =
     faixa && larguras
       ? {
-          gridTemplateColumns: faixa.temFicha
+          gridTemplateColumns: fichaNaColuna
             ? `${larguras.lista}px minmax(0,1fr) ${larguras.ficha}px`
             : `${larguras.lista}px minmax(0,1fr)`,
         }
@@ -497,7 +533,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     evento.stopPropagation();
     evento.currentTarget.setPointerCapture?.(evento.pointerId);
     const base = largurasRef.current ?? efetivas;
-    const temFicha = faixa.temFicha;
+    const temFicha = fichaNaColuna;
     const faixaAtual = faixa;
 
     const aoMover = (movimento: PointerEvent) => {
@@ -505,9 +541,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
         coluna === "lista"
           ? { ...base, lista: movimento.clientX - retangulo.left }
           : { ...base, ficha: retangulo.right - movimento.clientX };
-      aplicarLarguras(
-        resolverLarguras({ ...pedido, larguraContainer: retangulo.width, temFicha }),
-      );
+      aplicarLarguras(resolverLarguras({ ...pedido, larguraContainer: retangulo.width, temFicha }));
     };
     const aoSoltar = () => {
       window.removeEventListener("pointermove", aoMover);
@@ -528,7 +562,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     evento.preventDefault();
     const base = { ...(largurasRef.current ?? efetivas), [coluna]: proximo };
     aplicarLarguras(
-      resolverLarguras({ ...base, larguraContainer: larguraDaGrade(), temFicha: faixa.temFicha }),
+      resolverLarguras({ ...base, larguraContainer: larguraDaGrade(), temFicha: fichaNaColuna }),
     );
     gravarLarguras(armazenamentoDoNavegador(), faixa.id, largurasRef.current);
   };
@@ -584,7 +618,11 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
     <OpenConversationProvider conversationId={selectedId}>
     <div
       ref={gradeRef}
-      className="grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]"
+      className={cn(
+        "ibx ibx-grade relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full",
+        fichaEscolhida === true && "ibx-ficha-aberta",
+        fichaEscolhida === false && "ibx-ficha-fechada",
+      )}
       style={estiloDaGrade}
       /*
        * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
@@ -622,22 +660,37 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
         classe condicional é resolvida pelo CSS, na primeira pintura, e some no
         `md` — onde as duas colunas cabem juntas e a regra não se aplica.
       */}
-      <div
-        className={cn(
-          "h-full min-h-0 flex-col border-r border-border md:flex",
-          colunas.lista,
-        )}
-      >
-        <InboxFilters value={filterValue} onChange={setFilterValue} />
+      <div className={cn("ibx-list-panel h-full min-h-0 flex-col", colunas.lista)}>
+        <InboxFilters
+          value={filterValue}
+          onChange={setFilterValue}
+          onAbrirAtalhos={() => setHelpOpen(true)}
+        />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
             listQuery={listQ}
+            retidas={retidas}
             filters={filters}
             selectedId={selectedId}
             onSelect={handleSelect}
             onVisibleChange={handleVisibleChange}
             onLimparFiltros={limparFiltrosAuxiliares}
+            onFecharConversa={() => handleSelect(null)}
           />
+        </div>
+        {/* O rodapé do modelo, dizendo a VERDADE: o ponto acompanha o estado
+            do canal de tempo real (o mesmo `data-realtime-status` da grade). */}
+        <div className="ibx-list-footer">
+          <span
+            className="ibx-live-dot"
+            data-status={listQ.realtimeStatus === "subscribed" ? "on" : "off"}
+            aria-hidden
+          />
+          {listQ.realtimeStatus === "subscribed"
+            ? t("Atualização em tempo real")
+            : listQ.realtimeStatus === "connecting"
+              ? t("Conectando o tempo real…")
+              : t("Reconectando o tempo real…")}
         </div>
       </div>
 
@@ -653,20 +706,18 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
         escondido — deixando o dono numa tela vazia, sem sequer o botão de
         voltar, porque ele morava dentro do ramo da conversa carregada.
       */}
-      <div
-        className={cn(
-          "h-full min-h-0 min-w-0 flex-col md:flex",
-          colunas.conversa,
-        )}
-      >
+      <div className={cn("ibx-chat h-full min-h-0 min-w-0 flex-col", colunas.conversa)}>
         {/*
           A barra do celular vive FORA do ramo da conversa carregada: o caminho
           de volta tem de existir inclusive quando não há o que mostrar — é aí
           que ele é a única saída. A porta da ficha, essa sim, depende da
           conversa, e só aparece quando há uma.
         */}
-        {selectedId && (
-          <div className="flex items-center gap-1 border-b border-border px-1 py-1 md:hidden">
+        {/* Sem a conversa carregada (deep-link respondendo, ou fora do acesso)
+            o cabeçalho do chat não existe — e a seta de voltar mora nele. Esta
+            barra é o caminho de volta nesse intervalo, só onde há uma coluna. */}
+        {selectedId && !selectedConversation && (
+          <div className="flex items-center gap-1 border-b border-border px-1 py-1 min-[851px]:hidden">
             <Button
               variant="ghost"
               size="sm"
@@ -676,22 +727,17 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               <CaretLeft size={16} />
               {t("Conversas")}
             </Button>
-            <div className="flex-1" />
-            {selectedConversation && (
-              <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-9 gap-1 px-2 xl:hidden">
-                    <IdentificationCard size={16} />
-                    {t("Ficha")}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
-                  <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
-                  <CRMSidePanel conversation={selectedConversation} />
-                </SheetContent>
-              </Sheet>
-            )}
           </div>
+        )}
+        {/* A ficha como GAVETA: abaixo de 1280px (onde ela não vira coluna),
+            aberta pelo botão da ficha no cabeçalho do chat. */}
+        {selectedConversation && (
+          <Sheet open={fichaAberta && !fichaNaColuna} onOpenChange={setFichaAberta}>
+            <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+              <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
+              <CRMSidePanel conversation={selectedConversation} />
+            </SheetContent>
+          </Sheet>
         )}
         {selectedConversation ? (
           <>
@@ -708,10 +754,17 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
+              fichaVisivel={fichaNaColuna || fichaAberta}
+              onAlternarFicha={alternarFicha}
+              onVoltar={() => handleSelect(null)}
             />
             {buscaAberta && (
-              <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
-                <MagnifyingGlass size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+              <div className="ibx-message-search-bar">
+                  <MagnifyingGlass
+                    size={16}
+                    className="shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
                 <input
                   type="search"
                   autoFocus
@@ -719,7 +772,9 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
                   aria-label={t("Buscar nas mensagens carregadas")}
                   placeholder={t("Buscar nas mensagens carregadas")}
                   value={busca.termo}
-                  onChange={(e) => setBusca({ conversaId: busca.conversaId, termo: e.target.value })}
+                    onChange={(e) =>
+                      setBusca({ conversaId: busca.conversaId, termo: e.target.value })
+                    }
                   onKeyDown={(e) => {
                     if (e.key === "Escape") fecharBusca();
                   }}
@@ -777,9 +832,8 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : "composer"}
               ref={composerRef}
               conversationId={selectedConversation.id}
-              blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
+              blockedReason={blockedReason}
               janelaFechada={motivoDaJanela}
-              disabled={selectedConversation.status === "closed"}
               contactName={selectedConversation.contacts?.name ?? null}
               contactDisplayName={selectedConversation.contacts?.display_name}
               respondendo={respondendo}
@@ -806,7 +860,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
         )}
       </div>
 
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
+      <div className="ibx-coluna-ficha h-full min-h-0 min-w-0">
         <CRMSidePanel conversation={selectedConversation} />
       </div>
 
@@ -836,7 +890,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
             onPointerDown={(evento) => arrastar("lista", evento)}
             onDoubleClick={restaurarPadrao}
             onKeyDown={(evento) => teclarNaDivisoria("lista", evento)}
-            className="group absolute inset-y-0 z-10 flex w-2 -translate-x-1/2 cursor-col-resize touch-none select-none items-stretch justify-center focus-visible:outline-hidden"
+              className="group absolute inset-y-0 z-10 flex w-2 -translate-x-1/2 cursor-col-resize touch-none items-stretch justify-center select-none focus-visible:outline-hidden"
             style={{ left: `${efetivas.lista}px` }}
           >
             <span
@@ -844,7 +898,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               className="w-px bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary"
             />
           </span>
-          {faixa?.temFicha && (
+          {fichaNaColuna && (
             <span
               role="separator"
               aria-orientation="vertical"
@@ -858,7 +912,7 @@ export function InboxLayout({ initialSelectedId = null, rascunho = null }: Inbox
               onPointerDown={(evento) => arrastar("ficha", evento)}
               onDoubleClick={restaurarPadrao}
               onKeyDown={(evento) => teclarNaDivisoria("ficha", evento)}
-              className="group absolute inset-y-0 z-10 flex w-2 translate-x-1/2 cursor-col-resize touch-none select-none items-stretch justify-center focus-visible:outline-hidden"
+                className="group absolute inset-y-0 z-10 flex w-2 translate-x-1/2 cursor-col-resize touch-none items-stretch justify-center select-none focus-visible:outline-hidden"
               style={{ right: `${efetivas.ficha}px` }}
             >
               <span

@@ -1401,7 +1401,7 @@ const CHAVE_DE_RUNTIME_CONGELADA: { arquivo: string; expressao: string; motivo: 
   },
   {
     arquivo: "components/theme/theme-toggle.tsx",
-    expressao: "`Tema: ${theme}. Cmd+Shift+L para alternar.`",
+    expressao: "`Tema: ${resolvedTheme}. Cmd+Shift+L para alternar.`",
     motivo:
       "aria-label do alternador de tema montado com o nome do tema em runtime — tela de produto, e o " +
       "conserto (literal em cada ramo, claro/escuro) é decisão de produto declarada na issue #603",

@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Waves 1 e 2 — DevVivo · 2026-07-24
 
 > Wave 1 (CORE 1 — a IA é dona do negócio) abaixo; **Wave 2 (o slot) no fim do arquivo.**
@@ -10,19 +12,21 @@
 ## O que entrou
 
 **Schema (os 3 artefatos, obrigatórios juntos)**
+
 - `supabase/migrations/20260725000000_0070_crm_lead_owner_kind.sql` — `crm_leads.owner_kind ('user'|'ai')` + `owner_agent_id uuid references ai_agents(id) on delete set null`, no padrão da 0032: backfill **antes** da constraint, CHECK `crm_leads_owner_kind_coherence` em forma de implicação (drop+add, re-aplicável), índice parcial `idx_crm_leads_owner_agent`.
 - `supabase/baseline.sql` — apêndice idempotente `-- ---- crm_leads owner_kind/owner_agent_id (migration 0070) ----`.
 - `supabase/migrations/MANIFEST.md` — linha da 0070. Numeração conferida com `git ls-tree` em **todas** as branches (0068/0069 tomados por `feat/harness-*`).
 - `fn_emit_event_on_lead_change()` re-assentada (`create or replace`, corpo da 0043 + ramo do agente): `lead.assigned` passa a disparar quando `owner_agent_id` muda, com `from_agent_id`/`to_agent_id`/`owner_kind`.
 
 **Código**
+
 - `lib/types/leads.ts` — `OwnerKind` + `owner_kind`/`owner_agent_id` no `Lead`.
 - `lib/database.types.ts` — colunas em Row/Insert/Update + FK `crm_leads_owner_agent_id_fkey → ai_agents`.
 - `lib/schemas/leads.ts` — `owner_agent_id` no `updateLeadSchema`. **`owner_kind` não é aceito do cliente.**
 - `app/api/v1/leads/_handler.ts` — `updateLeadHandler` deriva `owner_kind`, zera o outro dono (exclusividade), 422 se vierem os dois, e valida que o agente é **da mesma org** (a FK garante existência, não tenancy).
-- `app/api/v1/ai/agents/assignable/route.ts` *(nova)* — agentes atribuíveis, role `agent`+, RLS-scoped. Devolve `is_active` e a **versão publicada resolvida na leitura**.
-- `hooks/kanban/useAssignableAgents.ts` *(nova)*.
-- `lib/kanban/owner.ts` + `owner.test.ts` *(novas)* — `resolveLeadOwner()`, função pura e única de "quem é o dono".
+- `app/api/v1/ai/agents/assignable/route.ts` _(nova)_ — agentes atribuíveis, role `agent`+, RLS-scoped. Devolve `is_active` e a **versão publicada resolvida na leitura**.
+- `hooks/kanban/useAssignableAgents.ts` _(nova)_.
+- `lib/kanban/owner.ts` + `owner.test.ts` _(novas)_ — `resolveLeadOwner()`, função pura e única de "quem é o dono".
 - `components/kanban/OwnerBadge.tsx` + teste — agente = círculo vazado com anel, iniciais em mono, **mesmo 24px e mesmo peso** do humano; rótulo/tooltip `Nome · vN`.
 - `KanbanCard` / `StageColumn` / `KanbanBoard` — passam o dono resolvido.
 - `KanbanCardActions` — transferir humano↔agente; submenu só para quem pode escrever (`usePermission("pipeline.move_card")`).
@@ -36,19 +40,19 @@
 4. **Onde apareço na tela:** no card (avatar + nome + tooltip `Nome · vN`), no seletor "Responsável" e no menu de transferência. Provado em screenshot.
 5. **Anti-morte:** o dono agente é o que permite a Wave 5 cobrar próxima ação de um negócio que nenhum humano está olhando — hoje, um lead de bot fica sem dono e ninguém é cobrado. Nesta wave o mecanismo ainda é o do humano (o lead nunca fica sem `owner_kind` coerente; a constraint impede estado ambíguo).
 6. **Continuidade IA↔humano:** transferir agente→humano e humano→agente pelo mesmo menu, com o evento `lead.assigned` carregando **de quem para quem** — o próximo dono sabe que houve troca. O resumo contextual (o que o agente já sabia) entra na Wave 3, quando a timeline existir.
-7. **Mapa vivo:** *não aplicável nesta base* — `docs/architecture/` nesta branch tem só `agent-turn.workflow.json`/`.html`; o mapa do sistema (`deskcomm-system.architecture.json`) **não existe em `origin/main`**, é arquivo ainda não commitado da branch `feat/operacao-visivel`. Não há o que re-renderizar aqui. Quando os dois se encontrarem, as peças a acrescentar estão listadas abaixo.
+7. **Mapa vivo:** _não aplicável nesta base_ — `docs/architecture/` nesta branch tem só `agent-turn.workflow.json`/`.html`; o mapa do sistema (`deskcomm-system.architecture.json`) **não existe em `origin/main`**, é arquivo ainda não commitado da branch `feat/operacao-visivel`. Não há o que re-renderizar aqui. Quando os dois se encontrarem, as peças a acrescentar estão listadas abaixo.
 
 ## Verificação visual (prova do @DevVivo; a oficial é do @QAVivo)
 
 Instância própria do Playwright (o browser MCP estava com o QA), dev server da entrega na **3020**, login real como `e2e-manager`, tudo pela UI.
 
-| # | Cenário | Resultado | Evidência |
-|---|---|---|---|
-| A | Atribuir lead a agente pelo menu do card | Card passa de "Sem responsável" para `LA · Lia — AgendaPlus` | `wave-1-devvivo-dono-agente.png`, `wave-1-devvivo-card-agente.png` |
-| B | Agente é par do humano | avatar **24×24px** (igual ao humano), `font-family: IBM Plex Mono`, `background: rgba(0,0,0,0)` (vazado), `border 1px` + ring; sem emoji, sem badge "AI" | medido por `getComputedStyle`, não a olho |
-| C | Tooltip nome · versão | `Lia — AgendaPlus · v24` (versão **publicada hoje**, resolvida por join) | log da prova |
-| D | Transferência de volta | Volta a "Sem responsável" e persiste | `wave-1-devvivo-revertido.png` |
-| E | Board inteiro | Humanos (`EM`, `EA` preenchidos) e agentes (`LA`, `BE` vazados) lado a lado | `wave-1-devvivo-dono-agente.png` |
+| #   | Cenário                                  | Resultado                                                                                                                                                | Evidência                                                          |
+| --- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| A   | Atribuir lead a agente pelo menu do card | Card passa de "Sem responsável" para `LA · Lia — AgendaPlus`                                                                                             | `wave-1-devvivo-dono-agente.png`, `wave-1-devvivo-card-agente.png` |
+| B   | Agente é par do humano                   | avatar **24×24px** (igual ao humano), `font-family: IBM Plex Mono`, `background: rgba(0,0,0,0)` (vazado), `border 1px` + ring; sem emoji, sem badge "AI" | medido por `getComputedStyle`, não a olho                          |
+| C   | Tooltip nome · versão                    | `Lia — AgendaPlus · v24` (versão **publicada hoje**, resolvida por join)                                                                                 | log da prova                                                       |
+| D   | Transferência de volta                   | Volta a "Sem responsável" e persiste                                                                                                                     | `wave-1-devvivo-revertido.png`                                     |
+| E   | Board inteiro                            | Humanos (`EM`, `EA` preenchidos) e agentes (`LA`, `BE` vazados) lado a lado                                                                              | `wave-1-devvivo-dono-agente.png`                                   |
 
 Screenshots em `/private/tmp/claude-501/-Users-rafaelmelgaco-DeskcommCRM/9579c957-fb23-4342-9df1-c208137c2c03/scratchpad/` (não escrevi em `evidence/`, que é do QA — copiar para lá se quiser referenciar no handoff oficial).
 
@@ -56,19 +60,20 @@ Qualidade: `pnpm typecheck` **0**, `pnpm lint` **0 errors** (151 warnings pré-e
 
 ## Bugs encontrados
 
-| Sintoma | Causa raiz | Correção | Re-testado |
-|---|---|---|---|
-| Card com dono agente aparecia como `?` + rótulo genérico "Agente" (lead do Caio Ribeiro) | A rota `assignable` filtrava `is_active=true`. Ela serve a **dois** propósitos que eu tratei como um: lista de *destinos* (picker) e dicionário de *resolução de nome* (exibição) | **1ª tentativa (minha, substituída):** relaxar o filtro da rota `assignable` e devolver `is_active`. **Correção final (decisão do orquestrador):** ver abaixo | Sim — mas a 1ª correção foi revertida |
+| Sintoma                                                                                  | Causa raiz                                                                                                                                                                        | Correção                                                                                                                                                      | Re-testado                            |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Card com dono agente aparecia como `?` + rótulo genérico "Agente" (lead do Caio Ribeiro) | A rota `assignable` filtrava `is_active=true`. Ela serve a **dois** propósitos que eu tratei como um: lista de _destinos_ (picker) e dicionário de _resolução de nome_ (exibição) | **1ª tentativa (minha, substituída):** relaxar o filtro da rota `assignable` e devolver `is_active`. **Correção final (decisão do orquestrador):** ver abaixo | Sim — mas a 1ª correção foi revertida |
 
 ### Correção definitiva — o dado de exibição viaja com o lead
 
 **Registro antes de mexer.** O orquestrador achou o mesmo sintoma de forma independente e vetou a
 minha correção com razão: relaxar o filtro do `assignable` conserta o sintoma **no lugar errado** —
-a rota é um *picker*, e os filtros dela estão certos. Minha versão ainda deixava o agente
+a rota é um _picker_, e os filtros dela estão certos. Minha versão ainda deixava o agente
 **arquivado** anônimo (eu tinha registrado isso como débito aceito; ele não aceitou, e está certo:
 "peça que perde a identidade do dono é peça que morre sem ninguém ver").
 
 Decisão implementada:
+
 - `GET /api/v1/pipelines/[id]/board` passa a devolver, para cada lead com dono agente, o **nome e a
   versão publicada** — join server-side em `ai_agents`/`ai_agent_versions` **sem** filtro de
   `is_active`/`archived_at`, com `organization_id` filtrado explicitamente (da org do pipeline
@@ -84,11 +89,11 @@ Decisão implementada:
 
 **Registro antes de mexer.** O PATCH estava certo, mas ele não era o único a escrever dono:
 
-| # | Escritor | Defeito | Efeito |
-|---|---|---|---|
-| 1 | `createLeadHandler` (`_handler.ts`) | INSERT grava `owner_user_id` e não grava `owner_kind`/`owner_agent_id` | Lead nasce **com dono e sem `owner_kind`** — o CHECK aceita (3º ramo), então é **drift silencioso**: filtro e métricas por `owner_kind` não enxergam o lead |
-| 2 | `bulk` `case "assign"` | patch só com `owner_user_id` + `assigned_at` | (a) atribuir humano em massa a lead de dono agente → **23514 derruba o lote inteiro**; (b) sem dono anterior → mesmo drift do gap 1, em lote |
-| 3 | MCP (`lib/mcp/tools/leads.ts`) | `crm_create_lead` herda o gap 1 | **A IA corrompendo o próprio registro de posse** — é a superfície pela qual o agente mexe no CRM |
+| #   | Escritor                            | Defeito                                                                | Efeito                                                                                                                                                      |
+| --- | ----------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `createLeadHandler` (`_handler.ts`) | INSERT grava `owner_user_id` e não grava `owner_kind`/`owner_agent_id` | Lead nasce **com dono e sem `owner_kind`** — o CHECK aceita (3º ramo), então é **drift silencioso**: filtro e métricas por `owner_kind` não enxergam o lead |
+| 2   | `bulk` `case "assign"`              | patch só com `owner_user_id` + `assigned_at`                           | (a) atribuir humano em massa a lead de dono agente → **23514 derruba o lote inteiro**; (b) sem dono anterior → mesmo drift do gap 1, em lote                |
+| 3   | MCP (`lib/mcp/tools/leads.ts`)      | `crm_create_lead` herda o gap 1                                        | **A IA corrompendo o próprio registro de posse** — é a superfície pela qual o agente mexe no CRM                                                            |
 
 Correção: **um helper puro compartilhado**, `resolveOwnerPatch()` em `lib/leads/owner-patch.ts`, que
 devolve sempre o trio coerente `{owner_user_id, owner_agent_id, owner_kind}` ou recusa "dois donos".
@@ -100,15 +105,15 @@ Verificado na leitura: `crm_update_lead` (MCP) **não** monta patch próprio, ch
 
 **Prova dos gaps corrigidos**
 
-| Caminho | Como provei | Resultado |
-|---|---|---|
-| create com dono humano | `POST /api/v1/leads` com a sessão do usuário logado (a UI **não** expõe responsável no "Novo Lead" — não há tela para isto) | 201, `owner_kind='user'` (antes: `null` = drift) |
-| create com dono agente | idem | 201, `owner_kind='ai'`, humano zerado |
-| create com os dois donos | idem | **422** com mensagem explicável (não 500 do banco) |
-| create sem dono | idem | 201, trio todo `null` |
-| **bulk assign sobre lead de dono AGENTE** | **pela UI**: criei um lead próprio, atribuí ao agente pelo menu, selecionei e usei "Atribuir a… → Eu" | Card foi de `LA · Lia — AgendaPlus` para `EM · E2E Manager`, **zero erro na tela** (antes: 23514 derrubava o lote) |
-| estado no banco após o bulk | `psql` no lead da prova | `owner_kind='user'`, humano preenchido, **agente zerado**, `assigned_at` setado |
-| constraint + helper contra Postgres real | `pnpm test:db` (container efêmero, baseline aplicado) | `tests/invariants/lead-owner-kind.test.ts` — 6 casos, incluindo os 3 estados que o banco **recusa** |
+| Caminho                                   | Como provei                                                                                                                 | Resultado                                                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| create com dono humano                    | `POST /api/v1/leads` com a sessão do usuário logado (a UI **não** expõe responsável no "Novo Lead" — não há tela para isto) | 201, `owner_kind='user'` (antes: `null` = drift)                                                                   |
+| create com dono agente                    | idem                                                                                                                        | 201, `owner_kind='ai'`, humano zerado                                                                              |
+| create com os dois donos                  | idem                                                                                                                        | **422** com mensagem explicável (não 500 do banco)                                                                 |
+| create sem dono                           | idem                                                                                                                        | 201, trio todo `null`                                                                                              |
+| **bulk assign sobre lead de dono AGENTE** | **pela UI**: criei um lead próprio, atribuí ao agente pelo menu, selecionei e usei "Atribuir a… → Eu"                       | Card foi de `LA · Lia — AgendaPlus` para `EM · E2E Manager`, **zero erro na tela** (antes: 23514 derrubava o lote) |
+| estado no banco após o bulk               | `psql` no lead da prova                                                                                                     | `owner_kind='user'`, humano preenchido, **agente zerado**, `assigned_at` setado                                    |
+| constraint + helper contra Postgres real  | `pnpm test:db` (container efêmero, baseline aplicado)                                                                       | `tests/invariants/lead-owner-kind.test.ts` — 6 casos, incluindo os 3 estados que o banco **recusa**                |
 
 Os leads de prova foram apagados ao final (board de volta a 11 leads); nenhuma fixture do QA foi tocada.
 
@@ -143,7 +148,7 @@ e `update` (re-aplicação) verdes — o gate do item 7 da doutrina de migration
 
 ## O que entrou
 
-- **`lib/kanban/card-state.ts`** *(novo)* — `CardInput` (o card **não** recebe `Lead`),
+- **`lib/kanban/card-state.ts`** _(novo)_ — `CardInput` (o card **não** recebe `Lead`),
   `resolveCardState()` com a precedência estrita **aguardando > esfriando > normal**, e
   `buildCardInput()`, o único lugar onde a linha do banco encosta no card. Testes em
   `card-state.test.ts` (13 casos, incluindo "nunca acumula" e a precedência do cenário 24).
@@ -170,7 +175,7 @@ e `update` (re-aplicação) verdes — o gate do item 7 da doutrina de migration
 3. **Log que emito:** nenhum — é camada de apresentação. Quem registra é o handler por trás
    de cada ação (waves 3 e 4).
 4. **Onde apareço na tela:** o card inteiro. Provado por medição, não a olho.
-5. **Anti-morte:** o estado *esfriando* nasce ligado — um lead parado além da janela do
+5. **Anti-morte:** o estado _esfriando_ nasce ligado — um lead parado além da janela do
    estágio passa a se anunciar no board, não só no radar. Antes, morrer em silêncio era o
    comportamento padrão do Kanban.
 6. **Continuidade IA↔humano:** o slot é o lugar reservado para a IA falar com o humano
@@ -181,14 +186,14 @@ e `update` (re-aplicação) verdes — o gate do item 7 da doutrina de migration
 
 ## Verificação visual — medida por ferramenta
 
-| # | Critério | Antes | Depois |
-|---|---|---|---|
-| Gate | `Set(alturas).size === 1` | 116–154px (**38px** de variação) | **[144]** — `size = 1`, variação **0px** |
-| axe | violações no board | `nested-interactive` + outras | **`[]` — zero violações**, `nested-interactive: 0` |
-| Título 120 caracteres | quebrava o layout | crescia o card | 2 linhas fixas, 144px como os demais |
-| Valor nulo | some | linha some, card encolhe | linha reservada com `—` |
-| 8 tags | 3 tags + "+5" no card | empurrava o rodapé | fora do card, no hover |
-| Tag canônica | — | — | ponto de 6px ao lado do título |
+| #                     | Critério                  | Antes                            | Depois                                             |
+| --------------------- | ------------------------- | -------------------------------- | -------------------------------------------------- |
+| Gate                  | `Set(alturas).size === 1` | 116–154px (**38px** de variação) | **[144]** — `size = 1`, variação **0px**           |
+| axe                   | violações no board        | `nested-interactive` + outras    | **`[]` — zero violações**, `nested-interactive: 0` |
+| Título 120 caracteres | quebrava o layout         | crescia o card                   | 2 linhas fixas, 144px como os demais               |
+| Valor nulo            | some                      | linha some, card encolhe         | linha reservada com `—`                            |
+| 8 tags                | 3 tags + "+5" no card     | empurrava o rodapé               | fora do card, no hover                             |
+| Tag canônica          | —                         | —                                | ponto de 6px ao lado do título                     |
 
 Screenshot: `evidence/wave-2-devvivo-board.png` (11 cards, 4 colunas).
 
@@ -205,11 +210,11 @@ borda de estado, que é gráfica. O ponto da tag ganhou `role="img"` (um `span` 
 
 ## Bugs encontrados
 
-| Sintoma | Causa raiz | Correção | Re-testado |
-|---|---|---|---|
+| Sintoma                                          | Causa raiz                                                                                                                                                                                                                                         | Correção                                           | Re-testado                    |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------- |
 | Board inteiro caiu em "Algo deu errado" ao abrir | Criei `hooks/kanban/useAtRiskLeads.ts` supondo que a rota devolvia array; ela devolve `{items, counts, total}` — `for...of` sobre objeto explodiu no `useMemo`. **E o hook já existia** (`hooks/leads/useAtRiskLeads.ts`, usado pelo `/app/radar`) | Apaguei o meu e passei a consumir o que já existia | Sim, board volta com 11 cards |
-| `aria-prohibited-attr` (3 nós) | `aria-label` em `span` sem role | `role="img"` no ponto da tag | axe zerado |
-| `color-contrast` (4 nós) | `text-warning` em 12px = 3,7:1 | `text-warning-fg` | axe zerado |
+| `aria-prohibited-attr` (3 nós)                   | `aria-label` em `span` sem role                                                                                                                                                                                                                    | `role="img"` no ponto da tag                       | axe zerado                    |
+| `color-contrast` (4 nós)                         | `text-warning` em 12px = 3,7:1                                                                                                                                                                                                                     | `text-warning-fg`                                  | axe zerado                    |
 
 ## O que ficou para trás (e por quê)
 

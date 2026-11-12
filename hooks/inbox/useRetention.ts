@@ -1,7 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
-import type { RetentionContext } from "@/lib/inbox/retention-copy";
 
 export interface RetentionTrace {
   id: string;
@@ -12,7 +11,6 @@ export interface RetentionTrace {
 
 export interface RetentionData {
   retentions: RetentionTrace[];
-  context: RetentionContext;
 }
 
 /**

@@ -16,7 +16,7 @@
  *
  * ## Por que a lista é DUPLICADA aqui, e o que impede a duplicata de mentir
  *
- * `before-send.ts` importa `pg`, os stores de pacing/spinning e o adaptador de
+ * `before-send.ts` importa `pg`, o adaptador de
  * canal. Importá-lo de um componente arrastaria o motor inteiro para o bundle do
  * browser. Então a apresentação vive aqui, pura.
  *
@@ -101,15 +101,6 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
-    nome: "pacing",
-    rotulo: "Segurar o ritmo de envio",
-    oQueProtege:
-      "Espaça as mensagens para o seu número não parecer robô e ser bloqueado pelo WhatsApp.",
-    escolha: null,
-    porQueNaoSeDesliga: "É o que impede seu número de ser bloqueado — e o número é o seu negócio.",
-     camada: null,
-  },
-  {
     nome: "messaging_window",
     rotulo: "Respeitar a janela do WhatsApp",
     oQueProtege:
@@ -117,15 +108,6 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     escolha: null,
     porQueNaoSeDesliga:
       "Quem impõe é o WhatsApp, não nós. Desligar aqui não libera nada: a mensagem seria recusada lá, ou cobrada.",
-     camada: null,
-  },
-  {
-    nome: "spinning",
-    rotulo: "Variar o texto das mensagens iguais",
-    oQueProtege:
-      "Evita mandar a mesma frase idêntica para muita gente, que é o padrão que denuncia disparo em massa.",
-    escolha: null,
-    porQueNaoSeDesliga: "Texto idêntico em massa é o gatilho de spam do WhatsApp — mesmo risco do ritmo de envio.",
      camada: null,
   },
   {

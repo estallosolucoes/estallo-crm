@@ -338,8 +338,9 @@ a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
 - **Notificação e Central** (reconciliação 2026-09): a atribuição continua
   aparecendo ao novo dono pelo par **unread badge + realtime**:
   `fn_conversation_assign` zera `unread_count_for_assignee`, define
-  `assigned_to_user_id` e a subscription RLS-aware faz a conversa surgir em
-  "Minhas". Além desse sinal operacional, o produto possui a Central baseada em
+  `assigned_to_user_id` e a subscription RLS-aware faz a conversa surgir no
+  filtro "Minhas" (desde 2026-10-15 um filtro ao lado de "Não lidos", não mais
+  uma aba). Além desse sinal operacional, o produto possui a Central baseada em
   `agent_inbox_items` para avisos produzidos pelos fluxos que a alimentam.
 - O GET da Central calcula contexto e próximo passo no servidor a partir de um
   catálogo fechado de tipos e referências. A projeção usa a sessão autenticada,

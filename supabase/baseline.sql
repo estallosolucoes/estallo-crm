@@ -5343,19 +5343,10 @@ grant execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, 
 alter table public.conversations
   add column if not exists tags text[] not null default '{}';
 
-create index if not exists idx_conversations_tags_gin
-  on public.conversations using gin (tags);
+-- O índice GIN saiu: a 0659 tirou a etiqueta da conversa (coluna travada vazia),
+-- e criar aqui para a 0659 derrubar adiante seria construir e jogar fora.
 
-update public.organizations
-   set settings = coalesce(settings, '{}'::jsonb)
-       || jsonb_build_object(
-            'canonical_conversation_tags',
-            jsonb_build_array(
-              'dúvida', 'reclamação', 'troca', 'devolução',
-              'elogio', 'orçamento', 'pós-venda', 'urgente'
-            )
-          )
- where not (coalesce(settings, '{}'::jsonb) ? 'canonical_conversation_tags');
+-- A semente `canonical_conversation_tags` também saiu (0659): conversa não tem etiqueta.
 
 
 -- ---- revoke anon EXECUTE em SECURITY DEFINER de escrita (migration 0034) ----
@@ -5421,10 +5412,6 @@ grant execute on function public.fn_can_view_conversation(uuid, uuid)
   to authenticated, service_role;
 
 drop policy if exists "conversations_select" on public.conversations;
-create policy "conversations_select" on public.conversations
-  for select using (
-    public.fn_can_view_conversation(organization_id, assigned_to_user_id)
-  );
 
 drop policy if exists "conversations_agent_write" on public.conversations;
 drop policy if exists "conversations_agent_insert" on public.conversations;
@@ -5460,14 +5447,6 @@ drop policy if exists "messages_insert" on public.messages;
 drop policy if exists "messages_update" on public.messages;
 drop policy if exists "messages_delete" on public.messages;
 
-create policy "messages_select" on public.messages
-  for select using (
-    public.fn_is_platform_admin()
-    or exists (
-      select 1 from public.conversations c
-      where c.id = messages.conversation_id
-    )
-  );
 
 create policy "messages_insert" on public.messages
   for insert with check (
@@ -5610,10 +5589,6 @@ drop policy if exists "crm_leads_insert" on public.crm_leads;
 drop policy if exists "crm_leads_update" on public.crm_leads;
 drop policy if exists "crm_leads_delete" on public.crm_leads;
 
-create policy "crm_leads_select" on public.crm_leads
-  for select using (
-    public.fn_can_view_lead(organization_id, owner_user_id)
-  );
 
 create policy "crm_leads_insert" on public.crm_leads
   for insert with check (
@@ -6237,14 +6212,6 @@ drop policy if exists "tenant_isolation_crm_lead_activities_insert" on public.cr
 drop policy if exists "crm_lead_activities_select" on public.crm_lead_activities;
 drop policy if exists "crm_lead_activities_insert" on public.crm_lead_activities;
 
-create policy "crm_lead_activities_select" on public.crm_lead_activities
-  for select using (
-    exists (
-      select 1 from public.crm_leads l
-      where l.id = crm_lead_activities.lead_id
-        and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
-    )
-  );
 
 create policy "crm_lead_activities_insert" on public.crm_lead_activities
   for insert with check (
@@ -6258,14 +6225,6 @@ drop policy if exists "crm_lead_links_insert" on public.crm_lead_links;
 drop policy if exists "crm_lead_links_update" on public.crm_lead_links;
 drop policy if exists "crm_lead_links_delete" on public.crm_lead_links;
 
-create policy "crm_lead_links_select" on public.crm_lead_links
-  for select using (
-    exists (
-      select 1 from public.crm_leads l
-      where l.id = crm_lead_links.lead_id
-        and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
-    )
-  );
 
 create policy "crm_lead_links_insert" on public.crm_lead_links
   for insert with check (
@@ -7540,14 +7499,6 @@ create index if not exists idx_message_templates_org on message_templates (organ
 alter table message_templates enable row level security;
 
 drop policy if exists "message_templates_select" on message_templates;
-create policy "message_templates_select" on message_templates
-  for select using (
-    (
-      organization_id in (select fn_user_org_ids())
-      and (owner_user_id is null or owner_user_id = auth.uid())
-    )
-    or fn_is_platform_admin()
-  );
 
 drop policy if exists "message_templates_write" on message_templates;
 create policy "message_templates_write" on message_templates
@@ -26518,6 +26469,10 @@ notify pgrst, 'reload schema';
 -- deixa o agente escrevendo a grafia velha e a etiqueta volta como fantasma.
 -- Idempotente por construcao: `create or replace` + `revoke`/`grant` nas duas
 -- origens de EXECUTE.
+-- A 0659 mudou as colunas de saída: re-aplicar este bloco sobre um banco já
+-- atualizado esbarraria em "cannot change return type". O drop deixa o bloco
+-- re-aplicável; a definição vigente é a do apêndice da 0659, mais abaixo.
+drop function if exists public.fn_vocabulario_de_tags(uuid);
 create or replace function public.fn_vocabulario_de_tags(p_org uuid)
 returns table (
   tag text,
@@ -46494,9 +46449,8 @@ notify pgrst, 'reload schema';
 
 -- ---- as tabelas append-only da IA ganham prazo (migration 0587) ----
 -- llm_calls/metrics/skill_activations/ai_router_decisions (400/100),
--- pacing_ledger (2/2, a última linha do número fica), outbound_copies (30/7,
--- as últimas windowSize do número ficam) e lead_checkpoints (180/30, só o
--- superado e sem job vivo). event_log NÃO entra. Corpo IDÊNTICO ao da
+-- e lead_checkpoints (180/30, só o superado e sem job vivo). As funções do
+-- ritmo de envio e das cópias enviadas saíram na migration 0713. event_log NÃO entra. Corpo IDÊNTICO ao da
 -- migration 0587, com o racional inteiro lá. ANTES da varredura anon: cria
 -- função.
 -- Índices de poda: sem eles o DELETE por idade vira seq scan diário. Nenhuma
@@ -46509,10 +46463,6 @@ create index if not exists idx_skill_activations_expurgo_created_at
   on public.skill_activations (created_at);
 create index if not exists idx_ai_router_decisions_expurgo_created_at
   on public.ai_router_decisions (created_at);
-create index if not exists idx_pacing_ledger_expurgo_sent_at
-  on public.pacing_ledger (sent_at);
-create index if not exists idx_outbound_copies_expurgo_sent_at
-  on public.outbound_copies (sent_at);
 create index if not exists idx_lead_checkpoints_expurgo_created_at
   on public.lead_checkpoints (created_at);
 
@@ -46576,95 +46526,6 @@ end;
 $$;
 revoke execute on function public.fn_expurgar_telemetria_de_ia_vencida(int,int) from public, anon, authenticated;
 grant  execute on function public.fn_expurgar_telemetria_de_ia_vencida(int,int) to service_role;
-
--- 2. Ritmo de envio: a última linha de cada número nunca sai.
-create or replace function public.fn_expurgar_ritmo_de_envio_vencido(
-  p_retencao_dias int default null,
-  p_limite int default null
-) returns int
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_dias int := greatest(coalesce(p_retencao_dias, 2), 2);
-  v_limite int := least(greatest(coalesce(p_limite, 1000), 1), 10000);
-  v_apagadas int;
-begin
-  -- O "existe um mais novo" fica no `where`, ANTES do `limit` (a lição da
-  -- 0167): filtrar depois faria um lote só de últimas linhas devolver 0 e o
-  -- cron parar com backlog atrás.
-  with vencidas as (
-    select p.id from public.pacing_ledger p
-     where p.sent_at < now() - make_interval(days => v_dias)
-       and exists (
-         select 1 from public.pacing_ledger n
-          where n.organization_id = p.organization_id
-            and n.channel_session_id = p.channel_session_id
-            and n.sent_at > p.sent_at
-       )
-     order by p.sent_at limit v_limite
-  )
-  delete from public.pacing_ledger p using vencidas v where p.id = v.id;
-  get diagnostics v_apagadas = row_count;
-  return v_apagadas;
-end;
-$$;
-revoke execute on function public.fn_expurgar_ritmo_de_envio_vencido(int,int) from public, anon, authenticated;
-grant  execute on function public.fn_expurgar_ritmo_de_envio_vencido(int,int) to service_role;
-
--- 3. Cópias enviadas: nunca as últimas `windowSize` do número.
-create or replace function public.fn_expurgar_copias_enviadas_vencidas(
-  p_retencao_dias int default null,
-  p_limite int default null
-) returns int
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_dias int := greatest(coalesce(p_retencao_dias, 30), 7);
-  v_limite int := least(greatest(coalesce(p_limite, 1000), 1), 10000);
-  v_apagadas int;
-begin
-  with janelas as (
-    -- A janela de cada número, como `loadSpinningKnobs` a resolveria, nunca
-    -- menor que o padrão de 20 (`SPINNING_DEFAULTS.windowSize`).
-    select ck.organization_id, ck.channel_session_id,
-           -- O `case` repete o filtro de propósito: com a CTE embutida no
-           -- plano, nada garante que o `where` rode antes do cast.
-           greatest(20, case when jsonb_typeof(ck.spinning_knobs->'windowSize') = 'number'
-                             then ceil((ck.spinning_knobs->>'windowSize')::numeric) end) as janela
-      from public.channel_knobs ck
-     where jsonb_typeof(ck.spinning_knobs) = 'object'
-       and jsonb_typeof(ck.spinning_knobs->'windowSize') = 'number'
-  ),
-  vencidas as (
-    select o.id from public.outbound_copies o
-      left join janelas j
-        on j.organization_id = o.organization_id and j.channel_session_id = o.channel_session_id
-     where o.sent_at < now() - make_interval(days => v_dias)
-       and coalesce(j.janela, 20) <= 10000
-       and (
-         select count(*) from (
-           select 1 from public.outbound_copies n
-            where n.organization_id = o.organization_id
-              and n.channel_session_id = o.channel_session_id
-              and n.sent_at > o.sent_at
-            -- `least` ANTES do cast: o Postgres não promete avaliar o `<= 10000`
-            -- acima primeiro, e um knob de 1e20 estouraria o `::int` aqui.
-            limit least(coalesce(j.janela, 20), 10000)::int
-         ) mais_novas
-       ) >= coalesce(j.janela, 20)
-     order by o.sent_at limit v_limite
-  )
-  delete from public.outbound_copies o using vencidas v where o.id = v.id;
-  get diagnostics v_apagadas = row_count;
-  return v_apagadas;
-end;
-$$;
-revoke execute on function public.fn_expurgar_copias_enviadas_vencidas(int,int) from public, anon, authenticated;
-grant  execute on function public.fn_expurgar_copias_enviadas_vencidas(int,int) to service_role;
 
 -- 4. Checkpoints: só o superado, de job morto, passado do prazo.
 create or replace function public.fn_expurgar_checkpoints_superados(
@@ -51913,6 +51774,1851 @@ end;$$;
 revoke all on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) from public,anon,authenticated;
 grant execute on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) to service_role;
 
+-- ---- cor padrão das etapas do funil (migration 0655) ----
+-- Etapa nova sem cor ganha uma da paleta (a mesma de lib/kanban/cor-da-etapa.ts),
+-- diferente da etapa logo antes dela no funil. Trigger e não default no app:
+-- etapa nasce por vários caminhos (rota, MCP, funções de onboarding/funil novo).
+-- Só sorteio local — nenhum HTTP dentro da transação.
+create or replace function public.fn_crm_stages_cor_padrao()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_paleta constant text[] := array[
+    '#3b82f6','#06b6d4','#10b981','#84cc16','#eab308',
+    '#f97316','#ef4444','#ec4899','#8b5cf6','#64748b'
+  ];
+  v_anterior text;
+  v_opcoes text[];
+begin
+  if new.color is not null then
+    return new;
+  end if;
+  -- Linhas anteriores do MESMO insert já são visíveis aqui (BEFORE ROW).
+  select lower(s.color) into v_anterior
+    from public.crm_stages s
+   where s.pipeline_id = new.pipeline_id
+     and s.is_archived = false
+     and s.position < new.position
+   order by s.position desc
+   limit 1;
+  select array_agg(c) into v_opcoes
+    from unnest(v_paleta) as c
+   where c is distinct from v_anterior;
+  new.color := v_opcoes[1 + floor(random() * array_length(v_opcoes, 1))::int];
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_crm_stages_cor_padrao() from public, anon;
+
+drop trigger if exists trg_crm_stages_cor_padrao on public.crm_stages;
+create trigger trg_crm_stages_cor_padrao
+  before insert on public.crm_stages
+  for each row execute function public.fn_crm_stages_cor_padrao();
+
+-- Backfill: etapas que já existiam sem cor recebem a paleta em sequência, pela
+-- ordem do funil — vizinhas nunca repetem. Idempotente (só toca `color is null`).
+with ordenadas as (
+  select s.id,
+         (row_number() over (partition by s.pipeline_id order by s.position, s.id) - 1) % 10 + 1 as i
+    from public.crm_stages s
+   where s.color is null
+)
+update public.crm_stages s
+   set color = (array[
+     '#3b82f6','#06b6d4','#10b981','#84cc16','#eab308',
+     '#f97316','#ef4444','#ec4899','#8b5cf6','#64748b'
+   ])[o.i]
+  from ordenadas o
+ where o.id = s.id;
+
+-- ---- a Agenda vira chave da empresa, desligada por padrão (migration 0656) ----
+-- A chave é `organizations.settings.agenda_habilitada` (lida por
+-- lib/organizacao/capacidades.ts). Fora de `settings.agenda` de propósito:
+-- aquele objeto é reescrito inteiro por `fn_agenda_settings`.
+--
+-- Quem JÁ usa a Agenda (tem tipo de agendamento ou compromisso) não pode
+-- perdê-la na atualização: liga a chave para essas empresas. Só onde a chave
+-- ainda não existe — re-aplicar o baseline nunca religa o que a empresa desligou.
+update public.organizations o
+   set settings = coalesce(o.settings, '{}'::jsonb) || jsonb_build_object('agenda_habilitada', true)
+ where not (coalesce(o.settings, '{}'::jsonb) ? 'agenda_habilitada')
+   and (
+     exists (select 1 from public.calendar_event_types t where t.organization_id = o.id)
+     or exists (select 1 from public.calendar_appointments a where a.organization_id = o.id)
+   );
+
+-- ---- campos personalizados centrais da empresa (migration 0657) ----
+-- A FONTE DA VERDADE dos campos personalizados passa a ser esta tabela: um
+-- cadastro da empresa, para o LEAD e para o CONTATO, com visibilidade (global,
+-- por funil ou por etapa), obrigatoriedade (em toda a empresa ou em etapas) e
+-- a opção de ocultar sem apagar os valores.
+--
+-- `crm_pipelines.settings.fields` continua existindo como PROJEÇÃO dos campos de
+-- lead (função `fn_projetar_campos_do_funil`, disparada por trigger): é o formato
+-- que validação de obrigatórios, captação, regras, IA e telas já leem. Ninguém
+-- escreve mais nele à mão — a tela de configurações e a captação gravam aqui.
+-- Os VALORES não mudam de lugar: `crm_leads.custom_fields` e `contacts.custom_fields`.
+create table if not exists public.custom_field_definitions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  entity text not null check (entity in ('lead', 'contact')),
+  key text not null check (key ~ '^[A-Za-z][A-Za-z0-9_]*$' and length(key) <= 40),
+  label text not null check (length(label) between 1 and 80),
+  type text not null check (type in (
+    'text','textarea','number','currency','date','select','multiselect',
+    'boolean','email','phone','url'
+  )),
+  options jsonb not null default '[]'::jsonb,
+  position numeric not null default 0,
+  hidden boolean not null default false,
+  visivel_global boolean not null default true,
+  funis_visiveis uuid[] not null default '{}',
+  etapas_visiveis uuid[] not null default '{}',
+  obrigatorio text not null default 'nao' check (obrigatorio in ('nao', 'empresa', 'etapas')),
+  etapas_obrigatorias uuid[] not null default '{}',
+  obrigatorio_ao_ganhar boolean not null default false,
+  obrigatorio_ao_perder boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, entity, key)
+);
+
+create index if not exists custom_field_definitions_org_idx
+  on public.custom_field_definitions (organization_id, entity, position);
+
+alter table public.custom_field_definitions enable row level security;
+
+drop policy if exists tenant_isolation_custom_field_definitions_select on public.custom_field_definitions;
+create policy tenant_isolation_custom_field_definitions_select on public.custom_field_definitions
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_custom_field_definitions_all on public.custom_field_definitions;
+create policy tenant_isolation_custom_field_definitions_all on public.custom_field_definitions
+  using (
+    public.fn_is_platform_admin_full()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'admin'))
+  )
+  with check (
+    public.fn_is_platform_admin_full()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'admin'))
+  );
+
+revoke all on public.custom_field_definitions from anon;
+grant select, insert, update, delete on public.custom_field_definitions to authenticated;
+grant all on public.custom_field_definitions to service_role;
+
+drop trigger if exists trg_custom_field_definitions_updated_at on public.custom_field_definitions;
+create trigger trg_custom_field_definitions_updated_at
+  before update on public.custom_field_definitions
+  for each row execute function public.fn_set_updated_at();
+
+-- Backfill: os campos que já viviam em cada funil viram definições da empresa.
+-- A mesma chave em vários funis vira UMA definição, visível nos funis onde
+-- estava (ou global, se estava em todos). Idempotente: `on conflict do nothing`.
+with campos as (
+  select p.organization_id,
+         p.id as pipeline_id,
+         p.position as funil_pos,
+         f.ord,
+         f.campo
+    from public.crm_pipelines p
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(p.settings -> 'fields') = 'array' then p.settings -> 'fields' else '[]'::jsonb end
+    ) with ordinality as f(campo, ord)
+   where (f.campo ->> 'key') ~ '^[A-Za-z][A-Za-z0-9_]*$'
+     and length(f.campo ->> 'key') <= 40
+     and coalesce(f.campo ->> 'label', '') <> ''
+     and (f.campo ->> 'type') in ('text','textarea','number','currency','date','select',
+                                  'multiselect','boolean','email','phone','url')
+),
+agregado as (
+  select c.organization_id,
+         c.campo ->> 'key' as key,
+         (array_agg(c.campo order by c.funil_pos, c.ord))[1] as primeiro,
+         min(c.ord) as ord,
+         array_agg(distinct c.pipeline_id) as funis,
+         bool_or(coalesce((c.campo -> 'obrigatorio_em' ->> 'ao_ganhar')::boolean, false)) as ao_ganhar,
+         bool_or(coalesce((c.campo -> 'obrigatorio_em' ->> 'ao_perder')::boolean, false)) as ao_perder
+    from campos c
+   group by c.organization_id, c.campo ->> 'key'
+),
+etapas_obrig as (
+  select c.organization_id, c.campo ->> 'key' as key, array_agg(distinct e::uuid) as etapas
+    from campos c,
+         jsonb_array_elements_text(
+           case when jsonb_typeof(c.campo -> 'obrigatorio_em' -> 'etapas') = 'array'
+                then c.campo -> 'obrigatorio_em' -> 'etapas' else '[]'::jsonb end) as e
+   where e ~* '^[0-9a-f-]{36}$'
+   group by c.organization_id, c.campo ->> 'key'
+)
+insert into public.custom_field_definitions (
+  organization_id, entity, key, label, type, options, position,
+  visivel_global, funis_visiveis, obrigatorio, etapas_obrigatorias,
+  obrigatorio_ao_ganhar, obrigatorio_ao_perder
+)
+select a.organization_id, 'lead', a.key,
+       left(a.primeiro ->> 'label', 80),
+       a.primeiro ->> 'type',
+       case when jsonb_typeof(a.primeiro -> 'options') = 'array' then a.primeiro -> 'options' else '[]'::jsonb end,
+       a.ord * 1000,
+       cardinality(a.funis) >= (select count(*) from public.crm_pipelines p where p.organization_id = a.organization_id),
+       a.funis,
+       case when cardinality(coalesce(eo.etapas, '{}')) > 0 then 'etapas' else 'nao' end,
+       coalesce(eo.etapas, '{}'),
+       a.ao_ganhar,
+       a.ao_perder
+  from agregado a
+  left join etapas_obrig eo on eo.organization_id = a.organization_id and eo.key = a.key
+on conflict (organization_id, entity, key) do nothing;
+
+-- Uma definição de lead, no formato de `customFieldSchema`, para UM funil.
+create or replace function public.fn_campo_projetado(d public.custom_field_definitions, p_pipeline uuid)
+returns jsonb
+language sql
+stable
+set search_path = public
+as $$
+  select jsonb_strip_nulls(jsonb_build_object(
+    'key', d.key,
+    'label', d.label,
+    'type', d.type,
+    'options', case when jsonb_array_length(d.options) > 0 then d.options end,
+    'required', case when d.obrigatorio <> 'nao' then true end,
+    -- Visível só em algumas etapas DESTE funil: a lista vai junto; funil
+    -- inteiro (ou global) não leva lista, e o formulário mostra sempre.
+    'etapas_visiveis', case
+      when d.visivel_global or p_pipeline = any(d.funis_visiveis) then null
+      else (select jsonb_agg(s.id order by s.position)
+              from public.crm_stages s
+             where s.pipeline_id = p_pipeline and s.id = any(d.etapas_visiveis))
+    end,
+    'obrigatorio_em', case
+      when d.obrigatorio = 'empresa' then jsonb_build_object(
+        -- "Em toda a empresa": exigido ao sair da primeira etapa aberta e ao ganhar.
+        'etapas', coalesce((
+          select jsonb_agg(s.id order by s.position)
+            from public.crm_stages s
+           where s.pipeline_id = p_pipeline and not s.is_archived
+             and not s.is_won and not s.is_lost
+             and s.position > (select min(s2.position) from public.crm_stages s2
+                                where s2.pipeline_id = p_pipeline and not s2.is_archived
+                                  and not s2.is_won and not s2.is_lost)
+        ), '[]'::jsonb),
+        'ao_ganhar', true,
+        'ao_perder', d.obrigatorio_ao_perder)
+      when d.obrigatorio = 'etapas' or d.obrigatorio_ao_ganhar or d.obrigatorio_ao_perder then jsonb_build_object(
+        'etapas', coalesce((
+          select jsonb_agg(s.id order by s.position)
+            from public.crm_stages s
+           where s.pipeline_id = p_pipeline and s.id = any(d.etapas_obrigatorias)
+        ), '[]'::jsonb),
+        'ao_ganhar', d.obrigatorio_ao_ganhar,
+        'ao_perder', d.obrigatorio_ao_perder)
+    end
+  ));
+$$;
+
+revoke execute on function public.fn_campo_projetado(public.custom_field_definitions, uuid) from public, anon;
+
+-- Reescreve `settings.fields` de cada funil da empresa a partir das definições
+-- de LEAD não ocultas que valem para ele. Só grava onde mudou.
+create or replace function public.fn_projetar_campos_do_funil(p_org uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r record;
+  v_fields jsonb;
+begin
+  for r in select p.id, p.settings from public.crm_pipelines p where p.organization_id = p_org loop
+    select coalesce(jsonb_agg(public.fn_campo_projetado(d, r.id) order by d.position, d.created_at), '[]'::jsonb)
+      into v_fields
+      from public.custom_field_definitions d
+     where d.organization_id = p_org
+       and d.entity = 'lead'
+       and not d.hidden
+       and (d.visivel_global
+            or r.id = any(d.funis_visiveis)
+            or exists (select 1 from public.crm_stages s
+                        where s.pipeline_id = r.id and s.id = any(d.etapas_visiveis)));
+    if (r.settings -> 'fields') is distinct from v_fields then
+      update public.crm_pipelines
+         set settings = coalesce(settings, '{}'::jsonb) || jsonb_build_object('fields', v_fields)
+       where id = r.id;
+    end if;
+  end loop;
+end;
+$$;
+
+revoke execute on function public.fn_projetar_campos_do_funil(uuid) from public, anon, authenticated;
+grant execute on function public.fn_projetar_campos_do_funil(uuid) to service_role;
+
+create or replace function public.fn_trg_projetar_campos_do_funil()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid;
+begin
+  if tg_op = 'DELETE' then
+    v_org := old.organization_id;
+  else
+    v_org := new.organization_id;
+  end if;
+  -- Mudou uma definição: projeta sempre (inclusive para LIMPAR a última).
+  -- Mudou funil ou etapa: só projeta se a empresa já usa o cadastro central —
+  -- sem definições, `settings.fields` de quem nunca o usou fica como estava.
+  if tg_table_name = 'custom_field_definitions'
+     or exists (select 1 from public.custom_field_definitions d
+                 where d.organization_id = v_org and d.entity = 'lead') then
+    perform public.fn_projetar_campos_do_funil(v_org);
+  end if;
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_trg_projetar_campos_do_funil() from public, anon, authenticated;
+
+drop trigger if exists trg_custom_field_definitions_projeta on public.custom_field_definitions;
+create trigger trg_custom_field_definitions_projeta
+  after insert or update or delete on public.custom_field_definitions
+  for each row execute function public.fn_trg_projetar_campos_do_funil();
+
+drop trigger if exists trg_crm_pipelines_projeta_campos on public.crm_pipelines;
+create trigger trg_crm_pipelines_projeta_campos
+  after insert on public.crm_pipelines
+  for each row execute function public.fn_trg_projetar_campos_do_funil();
+
+drop trigger if exists trg_crm_stages_projeta_campos on public.crm_stages;
+create trigger trg_crm_stages_projeta_campos
+  after insert or update of position, is_archived, is_won, is_lost on public.crm_stages
+  for each row execute function public.fn_trg_projetar_campos_do_funil();
+
+-- ---- o Estallo não usa Google Meet (migration 0658) ----
+-- O produto deixou de oferecer o local "Google Meet" e a opção "Meet com acesso
+-- aberto". Tipo de agendamento que estava em Google Meet passa a WhatsApp (o
+-- único local online que não pede dado extra na marcação), e a chave da opção
+-- sai das organizações. Idempotente: re-aplicar não acha mais nada.
+-- As colunas e funções `meeting_*`/`fn_meet_*` ficam no banco, sem uso: elas
+-- são lidas por funções do envio de resposta e da sincronização com o Google,
+-- e reescrevê-las é uma mudança à parte.
+update public.calendar_event_types
+   set location_kind = 'whatsapp'
+ where location_kind = 'google_meet';
+
+update public.organizations
+   set settings = settings - 'google_meet_acesso_aberto'
+ where settings ? 'google_meet_acesso_aberto';
+
+-- ---- tags por entidade e fim da tag na conversa (migration 0659) ----
+--
+-- ─── O que muda ─────────────────────────────────────────────────────────────
+-- 1. `fn_tags_normalizar` com remover=true apagava TODAS as etiquetas do
+--    registro (o `case when p_remover then null` não olhava o nome). Excluir
+--    "vip" de um contato `{vip, obra}` deixava `{}`. Agora sai só a pedida.
+-- 2. Cada entrada de `organizations.settings.tags` ganha `entidade`
+--    (`lead` | `contact`). A mesma etiqueta pode existir nas duas, cada uma com
+--    sua cor. Backfill: a entrada antiga vira uma entrada por entidade onde a
+--    etiqueta é USADA (registros, regras `add_tag` pelo destino, nós de
+--    follow-up) — sem uso nenhum, vira as duas. Nada é apagado.
+-- 3. `fn_vocabulario_de_tags` passa a devolver uma linha por (entidade, tag) e
+--    não lê mais conversas. `fn_vocabulario_de_tags_operar` ganha `p_entidade`
+--    e a ação `criar`; renomear/juntar/excluir só tocam a tabela da entidade e
+--    as regras daquele destino (`contato` → contato; `card`/padrão → lead).
+-- 4. Conversa não tem mais tag: os dados são apagados, `canonical_conversation_tags`
+--    sai do settings, `fn_tags_de_conversa_em_uso` e o índice GIN saem. A
+--    COLUNA fica, vazia e travada por CHECK: as funções de LGPD
+--    (`fn_redigir_conversas_ao_anonimizar` e irmãs) ainda escrevem `tags = '{}'`
+--    nela, e reescrever a anonimização para tirar uma coluna sem uso não vale
+--    o risco.
+
+-- ── 1 · normalizar: remover tira só a etiqueta pedida ─────────────────────────
+create or replace function public.fn_tags_normalizar(
+  p_tags text[],
+  p_de text,
+  p_para text,
+  p_remover boolean
+)
+returns text[]
+language sql
+immutable
+security invoker
+set search_path = public
+as $$
+  select coalesce(array_agg(n.tag order by n.ord), '{}'::text[])
+  from (
+    select distinct on (lower(s.tag)) s.tag, s.ord
+    from (
+      select case
+               when lower(btrim(e.valor)) = lower(btrim(coalesce(p_de, '')))
+                 then case when p_remover then null else btrim(p_para) end
+               else btrim(e.valor)
+             end as tag,
+             e.ord
+      from unnest(coalesce(p_tags, '{}'::text[])) with ordinality as e(valor, ord)
+      where btrim(coalesce(e.valor, '')) <> ''
+    ) s
+    where s.tag is not null and s.tag <> ''
+    order by lower(s.tag), s.ord
+  ) as n;
+$$;
+
+-- ── 2 · conversa sem tag ──────────────────────────────────────────────────────
+drop function if exists public.fn_tags_de_conversa_em_uso(uuid);
+drop index if exists public.idx_conversations_tags_gin;
+
+update public.conversations set tags = '{}'::text[] where tags <> '{}'::text[];
+
+update public.organizations
+   set settings = settings - 'canonical_conversation_tags'
+ where settings ? 'canonical_conversation_tags';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'conversations_sem_tags'
+       and conrelid = 'public.conversations'::regclass
+  ) then
+    alter table public.conversations
+      add constraint conversations_sem_tags check (tags = '{}'::text[]);
+  end if;
+end $$;
+
+-- ── 3 · backfill: cada entrada do vocabulário ganha a entidade ────────────────
+do $$
+declare
+  r record;
+  e record;
+  v_obj jsonb;
+  v_chave text;
+  v_ents text[];
+  v_ent text;
+  v_nova jsonb;
+begin
+  for r in
+    select o.id, o.settings -> 'tags' as lista
+      from public.organizations o
+     where jsonb_typeof(o.settings -> 'tags') = 'array'
+  loop
+    v_nova := '[]'::jsonb;
+    for e in
+      select x.valor, x.ord
+        from jsonb_array_elements(r.lista) with ordinality as x(valor, ord)
+       order by x.ord
+    loop
+      v_obj := case
+        when jsonb_typeof(e.valor) = 'string' then jsonb_build_object('tag', btrim(e.valor #>> '{}'))
+        when jsonb_typeof(e.valor) = 'object' then e.valor
+        else null
+      end;
+      continue when v_obj is null or coalesce(btrim(v_obj ->> 'tag'), '') = '';
+
+      if v_obj ->> 'entidade' in ('lead', 'contact') then
+        v_ents := array[v_obj ->> 'entidade'];
+      else
+        v_chave := lower(btrim(v_obj ->> 'tag'));
+        v_ents := array[]::text[];
+        if exists (
+             select 1 from public.contacts c, unnest(coalesce(c.tags, '{}'::text[])) t(valor)
+              where c.organization_id = r.id and lower(btrim(t.valor)) = v_chave)
+           or exists (
+             select 1
+               from public.automation_rules ar
+               cross join lateral jsonb_array_elements(coalesce(ar.actions, '[]'::jsonb)) a(valor)
+               cross join lateral jsonb_array_elements_text(
+                 case when jsonb_typeof(a.valor -> 'config' -> 'tags') = 'array'
+                      then a.valor -> 'config' -> 'tags' else '[]'::jsonb end) t(valor)
+              where ar.organization_id = r.id
+                and a.valor ->> 'type' = 'add_tag'
+                and a.valor -> 'config' ->> 'destino' = 'contato'
+                and lower(btrim(t.valor)) = v_chave)
+        then
+          v_ents := v_ents || 'contact'::text;
+        end if;
+        if exists (
+             select 1 from public.crm_leads l, unnest(coalesce(l.tags, '{}'::text[])) t(valor)
+              where l.organization_id = r.id and lower(btrim(t.valor)) = v_chave)
+           or exists (
+             select 1
+               from public.automation_rules ar
+               cross join lateral jsonb_array_elements(coalesce(ar.actions, '[]'::jsonb)) a(valor)
+               cross join lateral jsonb_array_elements_text(
+                 case when jsonb_typeof(a.valor -> 'config' -> 'tags') = 'array'
+                      then a.valor -> 'config' -> 'tags' else '[]'::jsonb end) t(valor)
+              where ar.organization_id = r.id
+                and a.valor ->> 'type' = 'add_tag'
+                and coalesce(a.valor -> 'config' ->> 'destino', 'card') <> 'contato'
+                and lower(btrim(t.valor)) = v_chave)
+           or exists (
+             select 1
+               from public.followup_flow_versions fv
+               cross join lateral jsonb_path_query(fv.graph, 'lax $.**.config.tags[*]') t(valor)
+              where fv.organization_id = r.id
+                and jsonb_typeof(t.valor) = 'string'
+                and lower(btrim(t.valor #>> '{}')) = v_chave)
+           or exists (
+             select 1
+               from public.followup_flow_pointers fp
+               cross join lateral jsonb_path_query(coalesce(fp.draft_graph, '{}'::jsonb), 'lax $.**.config.tags[*]') t(valor)
+              where fp.organization_id = r.id
+                and jsonb_typeof(t.valor) = 'string'
+                and lower(btrim(t.valor #>> '{}')) = v_chave)
+        then
+          v_ents := v_ents || 'lead'::text;
+        end if;
+        if cardinality(v_ents) = 0 then
+          v_ents := array['lead', 'contact'];
+        end if;
+      end if;
+
+      foreach v_ent in array v_ents loop
+        continue when exists (
+          select 1 from jsonb_array_elements(v_nova) n(valor)
+           where n.valor ->> 'entidade' = v_ent
+             and lower(btrim(n.valor ->> 'tag')) = lower(btrim(v_obj ->> 'tag'))
+        );
+        v_nova := v_nova || jsonb_build_array(v_obj || jsonb_build_object('entidade', v_ent));
+      end loop;
+    end loop;
+
+    if v_nova is distinct from r.lista then
+      update public.organizations
+         set settings = jsonb_set(settings, '{tags}', v_nova)
+       where id = r.id;
+    end if;
+  end loop;
+end $$;
+
+-- ── 4 · leitura do vocabulário, uma linha por (entidade, tag) ─────────────────
+drop function if exists public.fn_vocabulario_de_tags(uuid);
+create function public.fn_vocabulario_de_tags(p_org uuid)
+returns table (
+  tag text,
+  entidade text,
+  uso bigint,
+  em_regras bigint,
+  cor text,
+  descricao text,
+  no_vocabulario boolean
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with vocabulario as (
+    select
+      nullif(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}')), '') as tag,
+      case when e.valor ->> 'entidade' in ('lead', 'contact')
+           then array[e.valor ->> 'entidade'] else array['lead', 'contact'] end as ents,
+      nullif(btrim(coalesce(e.valor ->> 'cor', '')), '') as cor,
+      nullif(btrim(coalesce(e.valor ->> 'descricao', '')), '') as descricao,
+      e.ord
+    from public.organizations o
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(o.settings -> 'tags') = 'array'
+           then o.settings -> 'tags' else '[]'::jsonb end
+    ) with ordinality as e(valor, ord)
+    where o.id = p_org
+  ),
+  voc as (
+    select distinct on (ent.valor, lower(v.tag))
+           v.tag, ent.valor as entidade, v.cor, v.descricao
+    from vocabulario v
+    cross join lateral unnest(v.ents) as ent(valor)
+    where v.tag is not null
+    order by ent.valor, lower(v.tag), (v.cor is not null or v.descricao is not null) desc, v.ord
+  ),
+  uso as (
+    select nullif(btrim(t.valor), '') as tag, 'contact'::text as entidade
+    from public.contacts c, unnest(coalesce(c.tags, '{}'::text[])) as t(valor)
+    where c.organization_id = p_org
+    union all
+    select nullif(btrim(t.valor), ''), 'lead'
+    from public.crm_leads l, unnest(coalesce(l.tags, '{}'::text[])) as t(valor)
+    where l.organization_id = p_org
+  ),
+  regras as (
+    select r.id as regra_id,
+           nullif(btrim(etiqueta.valor #>> '{}'), '') as tag,
+           case when acao.valor -> 'config' ->> 'destino' = 'contato' then 'contact' else 'lead' end as entidade
+    from public.automation_rules r
+    cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb)) as acao(valor)
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(acao.valor -> 'config' -> 'tags') = 'array'
+           then acao.valor -> 'config' -> 'tags' else '[]'::jsonb end
+    ) as etiqueta(valor)
+    where r.organization_id = p_org
+      and acao.valor ->> 'type' = 'add_tag'
+  ),
+  bruto as (
+    select v.tag, v.entidade from voc v
+    union all select u.tag, u.entidade from uso u where u.tag is not null
+    union all select g.tag, g.entidade from regras g where g.tag is not null
+  ),
+  todas as (
+    select min(b.tag) as tag, lower(b.tag) as chave, b.entidade
+    from bruto b
+    group by lower(b.tag), b.entidade
+  )
+  select
+    coalesce(v.tag, t.tag) as tag,
+    t.entidade,
+    (select count(*) from uso u where lower(u.tag) = t.chave and u.entidade = t.entidade) as uso,
+    (select count(distinct g.regra_id) from regras g
+      where lower(g.tag) = t.chave and g.entidade = t.entidade) as em_regras,
+    v.cor,
+    v.descricao,
+    (v.tag is not null) as no_vocabulario
+  from todas t
+  left join voc v on lower(v.tag) = t.chave and v.entidade = t.entidade
+  order by t.entidade, t.chave
+  limit 1000;
+$$;
+
+revoke execute on function public.fn_vocabulario_de_tags(uuid) from public, anon;
+grant  execute on function public.fn_vocabulario_de_tags(uuid) to authenticated, service_role;
+
+-- ── 5 · operar, escopado por entidade ─────────────────────────────────────────
+drop function if exists public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text);
+drop function if exists public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text, text);
+create function public.fn_vocabulario_de_tags_operar(
+  p_org uuid,
+  p_acao text,
+  p_tag text,
+  p_destino text,
+  p_cor text,
+  p_entidade text
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_tag      text := btrim(coalesce(p_tag, ''));
+  v_destino  text := btrim(coalesce(p_destino, ''));
+  v_cor      text := lower(btrim(coalesce(p_cor, '')));
+  v_ent      text := btrim(coalesce(p_entidade, ''));
+  v_registros integer := 0;
+  v_regras   integer := 0;
+  v_settings jsonb;
+  v_lista    jsonb;
+  v_nova     jsonb := '[]'::jsonb;
+  v_obj      jsonb;
+  v_achou    boolean := false;
+  e          record;
+begin
+  -- Portão de papel ANTES de qualquer escrita (definer com p_org da rota).
+  if p_org is null or not public.fn_role_at_least(p_org, 'manager') then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+  if p_acao is null or p_acao not in ('criar', 'renomear', 'juntar', 'excluir', 'definir_cor') then
+    raise exception using errcode = '22023', message = 'acao_invalida';
+  end if;
+  if v_ent not in ('lead', 'contact') then
+    raise exception using errcode = '22023', message = 'entidade_invalida';
+  end if;
+  if v_tag = '' then
+    raise exception using errcode = '22023', message = 'tag_obrigatoria';
+  end if;
+  if p_acao in ('renomear', 'juntar') and v_destino = '' then
+    raise exception using errcode = '22023', message = 'destino_obrigatorio';
+  end if;
+  if v_cor <> '' and v_cor !~ '^#[0-9a-f]{6}$' then
+    raise exception using errcode = '22023', message = 'cor_invalida';
+  end if;
+
+  select coalesce(o.settings, '{}'::jsonb) into v_settings
+    from public.organizations o where o.id = p_org;
+  v_settings := coalesce(v_settings, '{}'::jsonb);
+  v_lista := case when jsonb_typeof(v_settings -> 'tags') = 'array'
+                  then v_settings -> 'tags' else '[]'::jsonb end;
+
+  -- O vocabulário reescrito: entradas de OUTRA entidade passam intactas; as
+  -- desta entidade com o nome pedido recebem a ação. Entrada sem `entidade`
+  -- (escrita fora desta função) vale para as duas.
+  for e in
+    select x.valor, x.ord from jsonb_array_elements(v_lista) with ordinality x(valor, ord) order by x.ord
+  loop
+    v_obj := case
+      when jsonb_typeof(e.valor) = 'string' then jsonb_build_object('tag', btrim(e.valor #>> '{}'))
+      when jsonb_typeof(e.valor) = 'object' then e.valor
+      else null
+    end;
+    continue when v_obj is null or coalesce(btrim(v_obj ->> 'tag'), '') = '';
+
+    if coalesce(v_obj ->> 'entidade', v_ent) = v_ent
+       and lower(btrim(v_obj ->> 'tag')) = lower(v_tag) then
+      v_achou := true;
+      v_obj := v_obj || jsonb_build_object('entidade', v_ent);
+      if p_acao = 'excluir' then
+        continue;
+      elsif p_acao in ('renomear', 'juntar') then
+        v_obj := v_obj || jsonb_build_object('tag', v_destino);
+      elsif p_acao = 'definir_cor' or (p_acao = 'criar' and v_cor <> '') then
+        v_obj := case when v_cor = '' then v_obj - 'cor' else v_obj || jsonb_build_object('cor', v_cor) end;
+      end if;
+    end if;
+
+    -- Uma entrada por (entidade, nome): a que chega depois só empresta a cor.
+    if exists (
+      select 1 from jsonb_array_elements(v_nova) n(valor)
+       where coalesce(n.valor ->> 'entidade', '') = coalesce(v_obj ->> 'entidade', '')
+         and lower(btrim(n.valor ->> 'tag')) = lower(btrim(v_obj ->> 'tag'))
+    ) then
+      if v_obj ? 'cor' then
+        select coalesce(jsonb_agg(
+                 case when coalesce(n.valor ->> 'entidade', '') = coalesce(v_obj ->> 'entidade', '')
+                       and lower(btrim(n.valor ->> 'tag')) = lower(btrim(v_obj ->> 'tag'))
+                       and not (n.valor ? 'cor')
+                      then n.valor || jsonb_build_object('cor', v_obj -> 'cor')
+                      else n.valor end
+                 order by n.ord), '[]'::jsonb)
+          into v_nova
+          from jsonb_array_elements(v_nova) with ordinality n(valor, ord);
+      end if;
+      continue;
+    end if;
+    v_nova := v_nova || jsonb_build_array(v_obj);
+  end loop;
+
+  if p_acao = 'criar' and v_achou then
+    raise exception using errcode = '23505', message = 'tag_ja_existe';
+  end if;
+  if not v_achou and p_acao in ('criar', 'definir_cor') then
+    v_nova := v_nova || jsonb_build_array(
+      jsonb_build_object('tag', v_tag, 'entidade', v_ent)
+        || case when v_cor = '' then '{}'::jsonb else jsonb_build_object('cor', v_cor) end
+    );
+  end if;
+
+  -- Os registros e as regras: só renomear/juntar/excluir, só desta entidade.
+  if p_acao in ('renomear', 'juntar', 'excluir') then
+    if v_ent = 'contact' then
+      with alvo as (
+        select c.id, public.fn_tags_normalizar(c.tags, v_tag, v_destino, p_acao = 'excluir') as novas
+          from public.contacts c
+         where c.organization_id = p_org
+           and exists (select 1 from unnest(coalesce(c.tags, '{}'::text[])) x(valor)
+                        where lower(btrim(x.valor)) = lower(v_tag))
+      ), mudou as (
+        update public.contacts c set tags = a.novas
+          from alvo a where c.id = a.id and c.tags is distinct from a.novas
+        returning c.id
+      )
+      select count(*) into v_registros from mudou;
+    else
+      with alvo as (
+        select l.id, public.fn_tags_normalizar(l.tags, v_tag, v_destino, p_acao = 'excluir') as novas
+          from public.crm_leads l
+         where l.organization_id = p_org
+           and exists (select 1 from unnest(coalesce(l.tags, '{}'::text[])) x(valor)
+                        where lower(btrim(x.valor)) = lower(v_tag))
+      ), mudou as (
+        update public.crm_leads l set tags = a.novas
+          from alvo a where l.id = a.id and l.tags is distinct from a.novas
+        returning l.id
+      )
+      select count(*) into v_registros from mudou;
+    end if;
+
+    if p_acao = 'excluir' then
+      -- A regra NÃO é apagada (decisão de outra tela): só se conta quantas
+      -- continuam escrevendo o nome, para a tela avisar.
+      select count(distinct r.id) into v_regras
+        from public.automation_rules r
+        cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb)) a(valor)
+        cross join lateral jsonb_array_elements_text(
+          case when jsonb_typeof(a.valor -> 'config' -> 'tags') = 'array'
+               then a.valor -> 'config' -> 'tags' else '[]'::jsonb end) t(valor)
+       where r.organization_id = p_org
+         and a.valor ->> 'type' = 'add_tag'
+         and (case when a.valor -> 'config' ->> 'destino' = 'contato' then 'contact' else 'lead' end) = v_ent
+         and lower(btrim(t.valor)) = lower(v_tag);
+    else
+      with alvo as (
+        select r.id,
+               jsonb_agg(
+                 case
+                   when a.valor ->> 'type' = 'add_tag'
+                    and jsonb_typeof(a.valor -> 'config' -> 'tags') = 'array'
+                    and (case when a.valor -> 'config' ->> 'destino' = 'contato' then 'contact' else 'lead' end) = v_ent
+                   then jsonb_set(a.valor, '{config,tags}', to_jsonb(public.fn_tags_normalizar(
+                          array(select jsonb_array_elements_text(a.valor -> 'config' -> 'tags')),
+                          v_tag, v_destino, false)))
+                   else a.valor
+                 end
+                 order by a.ord
+               ) as novas
+          from public.automation_rules r
+          cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb)) with ordinality as a(valor, ord)
+         where r.organization_id = p_org
+         group by r.id
+      ), mudou as (
+        update public.automation_rules r
+           set actions = alvo.novas, updated_at = now()
+          from alvo
+         where r.id = alvo.id and r.actions is distinct from alvo.novas
+        returning r.id
+      )
+      select count(*) into v_regras from mudou;
+    end if;
+  end if;
+
+  if v_nova is distinct from v_lista then
+    update public.organizations o
+       set settings = jsonb_set(v_settings, '{tags}', v_nova), updated_at = now()
+     where o.id = p_org;
+  end if;
+
+  return jsonb_build_object(
+    'acao', p_acao,
+    'entidade', v_ent,
+    'tag', v_tag,
+    'destino', nullif(v_destino, ''),
+    'cor', nullif(v_cor, ''),
+    'registros', v_registros,
+    'contatos', case when v_ent = 'contact' then v_registros else 0 end,
+    'leads', case when v_ent = 'lead' then v_registros else 0 end,
+    'regras', v_regras,
+    'alterou', (v_nova is distinct from v_lista) or v_registros > 0 or (v_regras > 0 and p_acao <> 'excluir')
+  );
+end;
+$$;
+
+revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text, text) from public, anon;
+grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text, text) to authenticated, service_role;
+
+-- ---- Status de resposta do chat (migration 0663) ----
+-- manifest: Categorias do Inbox por última entrada/saída, filtráveis antes da paginação sem mudar o atendimento.
+
+-- Campo calculado, SECURITY INVOKER: só lê a linha já visível pela RLS.
+-- Parâmetro sem nome impede expor um RPC para esta função de apresentação.
+create or replace function public.status_do_chat(public.conversations)
+returns text language sql immutable security invoker set search_path = '' as $$
+  select case
+    when $1.status in ('closed', 'archived') then 'fechadas'
+    when $1.is_group then null
+    when $1.last_inbound_at is not null and $1.last_outbound_at is null then 'sem_resposta'
+    when $1.last_outbound_at is not null and $1.last_inbound_at > $1.last_outbound_at then 'em_espera'
+    when $1.last_outbound_at is not null then 'em_aberto'
+    else null
+  end;
+$$;
+revoke execute on function public.status_do_chat(public.conversations) from public, anon;
+grant execute on function public.status_do_chat(public.conversations) to authenticated, service_role;
+
+-- Organização primeiro: o índice atende os filtros e a ordem nos dois sentidos.
+create index if not exists idx_conversations_org_status_chat_message
+  on public.conversations (organization_id, public.status_do_chat(conversations), last_message_at desc nulls last, id desc);
+
+notify pgrst, 'reload schema';
+
+-- ---- Execuções inspecionáveis de automação (migration 0698) ----
+-- manifest: Registra passagens, tentativas e efeitos de automações para inspeção e recuperação, com alvo explícito de lead e isolamento por organização
+-- Fundação aditiva. Execuções existentes permanecem no contrato 0; nada é ativado por esta migration.
+
+alter table public.followup_enrollments
+  add column if not exists execution_contract smallint not null default 0,
+  add column if not exists execution_mode text not null default 'production',
+  add column if not exists lead_id uuid,
+  add column if not exists source_enrollment_id uuid,
+  add column if not exists recovery_kind text;
+
+create unique index if not exists followup_enrollments_org_id_key
+  on public.followup_enrollments (organization_id, id);
+create unique index if not exists followup_enrollments_org_contact_id_key
+  on public.followup_enrollments (organization_id, contact_id, id);
+create unique index if not exists crm_leads_org_contact_id_key
+  on public.crm_leads (organization_id, contact_id, id);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.followup_enrollments'::regclass and conname = 'followup_execution_contract_check') then
+    alter table public.followup_enrollments add constraint followup_execution_contract_check check (execution_contract in (0, 1));
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.followup_enrollments'::regclass and conname = 'followup_execution_mode_check') then
+    alter table public.followup_enrollments add constraint followup_execution_mode_check check (execution_mode in ('production', 'simulation', 'test'));
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.followup_enrollments'::regclass and conname = 'followup_execution_lead_fk') then
+    alter table public.followup_enrollments add constraint followup_execution_lead_fk
+      foreign key (organization_id, contact_id, lead_id) references public.crm_leads (organization_id, contact_id, id);
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.followup_enrollments'::regclass and conname = 'followup_execution_source_fk') then
+    alter table public.followup_enrollments add constraint followup_execution_source_fk
+      foreign key (organization_id, contact_id, source_enrollment_id) references public.followup_enrollments (organization_id, contact_id, id);
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.followup_enrollments'::regclass and conname = 'followup_execution_recovery_check') then
+    alter table public.followup_enrollments add constraint followup_execution_recovery_check
+      check ((source_enrollment_id is null and recovery_kind is null)
+        or (source_enrollment_id is not null and source_enrollment_id <> id and recovery_kind is not null and recovery_kind in ('retry', 'restart')));
+  end if;
+end;
+$$;
+
+create index if not exists followup_enrollments_flow_history_idx
+  on public.followup_enrollments (organization_id, pointer_id, started_at desc, id desc);
+create index if not exists followup_enrollments_lead_history_idx
+  on public.followup_enrollments (organization_id, lead_id, started_at desc, id desc)
+  where lead_id is not null;
+create index if not exists followup_enrollments_source_idx
+  on public.followup_enrollments (organization_id, source_enrollment_id)
+  where source_enrollment_id is not null;
+create index if not exists followup_enrollments_execution_retention_idx
+  on public.followup_enrollments (completed_at, id)
+  where execution_contract = 1 and status in ('completed', 'cancelled', 'dead');
+create index if not exists followup_enrollments_inspectable_idx
+  on public.followup_enrollments (organization_id, id) where execution_contract = 1;
+
+create table if not exists public.followup_execution_steps (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  enrollment_id uuid not null,
+  node_id text not null check (length(node_id) between 1 and 128),
+  visit integer not null check (visit >= 0),
+  iteration integer not null default 0 check (iteration >= 0),
+  status text not null default 'pending' check (status in ('pending', 'running', 'waiting', 'succeeded', 'skipped', 'failed', 'unknown')),
+  branch_id text,
+  entered_at timestamptz not null default now(),
+  completed_at timestamptz,
+  inherited_from_step_id uuid,
+  unique (organization_id, id),
+  unique (organization_id, enrollment_id, id),
+  unique (organization_id, enrollment_id, node_id, visit),
+  foreign key (organization_id, enrollment_id) references public.followup_enrollments(organization_id, id) on delete cascade,
+  foreign key (organization_id, inherited_from_step_id) references public.followup_execution_steps(organization_id, id),
+  check (completed_at is null or completed_at >= entered_at),
+  check ((status in ('pending', 'running', 'waiting')) = (completed_at is null))
+);
+
+create index if not exists followup_execution_steps_order_idx
+  on public.followup_execution_steps (organization_id, enrollment_id, entered_at, id);
+create index if not exists followup_execution_steps_inherited_idx
+  on public.followup_execution_steps (organization_id, inherited_from_step_id)
+  where inherited_from_step_id is not null;
+
+create table if not exists public.followup_execution_attempts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  step_id uuid not null,
+  attempt_no integer not null check (attempt_no > 0),
+  contract_version smallint not null default 1 check (contract_version = 1),
+  status text not null check (status in ('running', 'waiting', 'succeeded', 'skipped', 'failed', 'unknown')),
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  input_snapshot jsonb,
+  config_snapshot jsonb,
+  output_snapshot jsonb,
+  output_recorded boolean not null default false,
+  error_snapshot jsonb,
+  request_id text,
+  next_eval_at timestamptz,
+  payload_expires_at timestamptz,
+  payload_expired_at timestamptz,
+  unique (organization_id, id),
+  unique (organization_id, step_id, attempt_no),
+  foreign key (organization_id, step_id) references public.followup_execution_steps(organization_id, id) on delete cascade,
+  check (completed_at is null or completed_at >= started_at),
+  check ((status in ('running', 'waiting')) = (completed_at is null)),
+  check (status <> 'succeeded' or output_recorded),
+  check (status not in ('failed', 'unknown') or error_snapshot is not null or payload_expired_at is not null),
+  check (status not in ('succeeded', 'skipped') or error_snapshot is null)
+);
+
+create index if not exists followup_execution_attempts_expiry_idx
+  on public.followup_execution_attempts (payload_expires_at)
+  where payload_expires_at is not null and payload_expired_at is null;
+
+create table if not exists public.followup_execution_effects (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  enrollment_id uuid not null,
+  step_id uuid not null,
+  effect_key text not null check (length(effect_key) between 1 and 2048),
+  operation text not null check (length(operation) between 1 and 100),
+  status text not null default 'pending' check (status in ('pending', 'confirmed', 'failed', 'unknown')),
+  result_snapshot jsonb,
+  external_ref text,
+  payload_expired_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, id),
+  unique (organization_id, effect_key),
+  foreign key (organization_id, enrollment_id) references public.followup_enrollments(organization_id, id) on delete cascade,
+  foreign key (organization_id, enrollment_id, step_id) references public.followup_execution_steps(organization_id, enrollment_id, id) on delete cascade,
+  check (status <> 'confirmed' or result_snapshot is not null or payload_expired_at is not null)
+);
+
+create index if not exists followup_execution_effects_step_idx
+  on public.followup_execution_effects (organization_id, step_id);
+
+-- A sessão só lê. Estado, snapshots e recibos são escritos pelo motor; não pelo browser.
+-- Tentativas e efeitos incluem detalhes técnicos protegidos, portanto exigem manager+.
+alter table public.followup_execution_steps enable row level security;
+alter table public.followup_execution_attempts enable row level security;
+alter table public.followup_execution_effects enable row level security;
+
+revoke all on table public.followup_execution_steps from public, anon, authenticated;
+revoke all on table public.followup_execution_attempts from public, anon, authenticated;
+revoke all on table public.followup_execution_effects from public, anon, authenticated;
+grant select on table public.followup_execution_steps to authenticated;
+grant select on table public.followup_execution_attempts to authenticated;
+grant select on table public.followup_execution_effects to authenticated;
+grant all on table public.followup_execution_steps to service_role;
+grant all on table public.followup_execution_attempts to service_role;
+grant all on table public.followup_execution_effects to service_role;
+
+drop policy if exists followup_execution_steps_select on public.followup_execution_steps;
+create policy followup_execution_steps_select on public.followup_execution_steps for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()) and exists (
+    select 1 from public.followup_enrollments e
+    where e.id = followup_execution_steps.enrollment_id and e.organization_id = followup_execution_steps.organization_id
+      and (e.lead_id is null or exists (select 1 from public.crm_leads l where l.id = e.lead_id and l.organization_id = e.organization_id))
+  ));
+
+drop policy if exists followup_execution_attempts_select on public.followup_execution_attempts;
+create policy followup_execution_attempts_select on public.followup_execution_attempts for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+    and exists (select 1 from public.followup_execution_steps s where s.id = followup_execution_attempts.step_id and s.organization_id = followup_execution_attempts.organization_id));
+
+drop policy if exists followup_execution_effects_select on public.followup_execution_effects;
+create policy followup_execution_effects_select on public.followup_execution_effects for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+    and exists (select 1 from public.followup_execution_steps s where s.id = followup_execution_effects.step_id and s.organization_id = followup_execution_effects.organization_id));
+
+-- A política é da organização, não do ambiente. Valores inválidos recaem no
+-- padrão inteiro, com indicação explícita para a superfície de configuração.
+create or replace function public.fn_followup_retention_policy(
+  p_org uuid, p_payload_default integer default 30, p_metadata_default integer default 180
+)
+returns table (payload_days integer, metadata_days integer, configuration_valid boolean)
+language plpgsql stable set search_path = public
+as $$
+declare
+  config jsonb;
+  payload integer := least(365, greatest(1, coalesce(p_payload_default, 30)));
+  metadata integer := least(1825, greatest(30, coalesce(p_metadata_default, 180)));
+  fallback_payload integer;
+  fallback_metadata integer;
+  valid boolean := true;
+begin
+  metadata := greatest(payload, metadata);
+  fallback_payload := payload;
+  fallback_metadata := metadata;
+  select o.settings #> '{automations,retention}' into config from public.organizations o where o.id = p_org;
+  if config is null then
+    return query select payload, metadata, true;
+    return;
+  end if;
+  if jsonb_typeof(config) <> 'object' then
+    return query select fallback_payload, fallback_metadata, false;
+    return;
+  end if;
+  if exists (select 1 from jsonb_object_keys(config) as k(key) where k.key not in ('payload_days', 'metadata_days')) then
+    valid := false;
+  end if;
+  if config ? 'payload_days' then
+    if jsonb_typeof(config->'payload_days') = 'number' then
+      if (config->>'payload_days')::numeric between 1 and 365
+        and trunc((config->>'payload_days')::numeric) = (config->>'payload_days')::numeric then
+        payload := (config->>'payload_days')::numeric::integer;
+      else
+        valid := false;
+      end if;
+    else
+      valid := false;
+    end if;
+  end if;
+  if config ? 'metadata_days' then
+    if jsonb_typeof(config->'metadata_days') = 'number' then
+      if (config->>'metadata_days')::numeric between 30 and 1825
+        and trunc((config->>'metadata_days')::numeric) = (config->>'metadata_days')::numeric then
+        metadata := (config->>'metadata_days')::numeric::integer;
+      else
+        valid := false;
+      end if;
+    else
+      valid := false;
+    end if;
+  end if;
+  valid := valid and metadata >= payload;
+  if not valid then
+    return query select fallback_payload, fallback_metadata, false;
+  else
+    return query select payload, metadata, true;
+  end if;
+end;
+$$;
+revoke all on function public.fn_followup_retention_policy(uuid, integer, integer) from public, anon, authenticated;
+grant execute on function public.fn_followup_retention_policy(uuid, integer, integer) to service_role;
+
+create or replace function public.fn_set_followup_retention_policy(p_org uuid, p_policy jsonb)
+returns boolean language plpgsql security definer set search_path = public
+as $$
+declare
+  previous_settings jsonb;
+  valid boolean;
+begin
+  select o.settings into previous_settings from public.organizations o where o.id = p_org for update;
+  if not found then return false; end if;
+  if previous_settings is not null and jsonb_typeof(previous_settings) <> 'object' then
+    raise exception 'invalid_organization_settings' using errcode = '22023';
+  end if;
+  update public.organizations
+    set settings = coalesce(previous_settings, '{}'::jsonb) || jsonb_build_object(
+      'automations',
+      (case when jsonb_typeof(previous_settings->'automations') = 'object'
+        then previous_settings->'automations' else '{}'::jsonb end)
+      || jsonb_build_object('retention', p_policy)
+    )
+    where id = p_org;
+  select p.configuration_valid into valid from public.fn_followup_retention_policy(p_org) p;
+  if valid is not true then
+    raise exception 'invalid_followup_retention_policy' using errcode = '22023';
+  end if;
+  return true;
+end;
+$$;
+revoke all on function public.fn_set_followup_retention_policy(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.fn_set_followup_retention_policy(uuid, jsonb) to service_role;
+
+-- Uma execução viva protege toda a sua linhagem e os checkpoints herdados.
+create or replace function public.fn_followup_protected_execution_ids()
+returns setof uuid language sql stable set search_path = public
+as $$
+  with recursive dependencies as (
+    select e.id as child, e.source_enrollment_id as parent
+    from public.followup_enrollments e where e.source_enrollment_id is not null
+    union
+    select child.enrollment_id, parent.enrollment_id
+    from public.followup_execution_steps child
+    join public.followup_execution_steps parent on parent.id = child.inherited_from_step_id
+      and parent.organization_id = child.organization_id
+  ), protected as (
+    select e.id from public.followup_enrollments e
+    where e.execution_contract = 1 and e.status not in ('completed', 'cancelled', 'dead')
+    union
+    select d.parent from dependencies d join protected p on p.id = d.child
+  )
+  select p.id from protected p;
+$$;
+revoke all on function public.fn_followup_protected_execution_ids() from public, anon, authenticated;
+grant execute on function public.fn_followup_protected_execution_ids() to service_role;
+
+-- A mesma limpeza atende prazo e anonimização. Metadados técnicos permanecem;
+-- dados apagados nunca são apresentados como se fossem uma saída JSON null.
+create or replace function public.fn_redigir_payloads_execucao(p_org uuid, p_enrollment uuid)
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare
+  attempts integer;
+  effects integer;
+begin
+  update public.followup_execution_attempts a
+    set input_snapshot = null, config_snapshot = null, output_snapshot = null,
+        error_snapshot = null, payload_expired_at = coalesce(a.payload_expired_at, now())
+  from public.followup_execution_steps s
+  where s.id = a.step_id and s.organization_id = a.organization_id
+    and s.organization_id = p_org and s.enrollment_id = p_enrollment
+    and (a.payload_expired_at is null or a.input_snapshot is not null or a.config_snapshot is not null
+      or a.output_snapshot is not null or a.error_snapshot is not null);
+  get diagnostics attempts = row_count;
+  update public.followup_execution_effects e
+    set result_snapshot = null, external_ref = null,
+        payload_expired_at = coalesce(e.payload_expired_at, now()), updated_at = now()
+  where e.organization_id = p_org and e.enrollment_id = p_enrollment
+    and (e.payload_expired_at is null or e.result_snapshot is not null or e.external_ref is not null);
+  get diagnostics effects = row_count;
+  return attempts + effects;
+end;
+$$;
+revoke all on function public.fn_redigir_payloads_execucao(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_redigir_payloads_execucao(uuid, uuid) to service_role;
+
+-- Escrita tardia respeita anonimização e expurgo. A marca de expiração é
+-- permanente: callbacks não podem repor dados nem apagar a marca. FOR SHARE serializa com a
+-- atualização do contato; não basta ler is_anonymized por um snapshot antigo.
+create or replace function public.fn_followup_snapshot_privacy_guard()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+declare
+  anonymized boolean;
+begin
+  select c.is_anonymized into anonymized
+  from public.followup_execution_steps s
+  join public.followup_enrollments e on e.id = s.enrollment_id and e.organization_id = s.organization_id
+  join public.contacts c on c.id = e.contact_id and c.organization_id = e.organization_id
+  where s.id = new.step_id and s.organization_id = new.organization_id
+  for share of c;
+  if tg_op = 'UPDATE' then
+    if old.payload_expired_at is not null then
+      new.payload_expired_at := old.payload_expired_at;
+    end if;
+  end if;
+  if anonymized is true or new.payload_expired_at is not null then
+    new.payload_expired_at := coalesce(new.payload_expired_at, now());
+    if tg_table_name = 'followup_execution_attempts' then
+      new.input_snapshot := null;
+      new.config_snapshot := null;
+      new.output_snapshot := null;
+      new.error_snapshot := null;
+    else
+      new.result_snapshot := null;
+      new.external_ref := null;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.fn_followup_snapshot_privacy_guard() from public, anon, authenticated;
+grant execute on function public.fn_followup_snapshot_privacy_guard() to service_role;
+
+drop trigger if exists followup_attempts_privacy_guard on public.followup_execution_attempts;
+create trigger followup_attempts_privacy_guard before insert or update on public.followup_execution_attempts
+  for each row execute function public.fn_followup_snapshot_privacy_guard();
+drop trigger if exists followup_effects_privacy_guard on public.followup_execution_effects;
+create trigger followup_effects_privacy_guard before insert or update on public.followup_execution_effects
+  for each row execute function public.fn_followup_snapshot_privacy_guard();
+
+create or replace function public.fn_redigir_execucoes_ao_anonimizar_contato()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+declare
+  enrollment uuid;
+begin
+  for enrollment in
+    select e.id from public.followup_enrollments e
+    where e.organization_id = new.organization_id and e.contact_id = new.id
+  loop
+    perform public.fn_redigir_payloads_execucao(new.organization_id, enrollment);
+  end loop;
+  return new;
+end;
+$$;
+revoke all on function public.fn_redigir_execucoes_ao_anonimizar_contato() from public, anon, authenticated;
+grant execute on function public.fn_redigir_execucoes_ao_anonimizar_contato() to service_role;
+drop trigger if exists followup_redigir_ao_anonimizar on public.contacts;
+create trigger followup_redigir_ao_anonimizar after update of is_anonymized on public.contacts
+  for each row when (new.is_anonymized is true)
+  execute function public.fn_redigir_execucoes_ao_anonimizar_contato();
+
+-- Contagens são de EXECUÇÕES, não de linhas de snapshot. Retry deve bloquear
+-- a execução original antes de validar a disponibilidade do checkpoint.
+create or replace function public.fn_expurgar_payloads_de_automacao(p_retencao_dias integer default 30, p_limite integer default 1000)
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare
+  row_to_scrub record;
+  changed integer := 0;
+begin
+  for row_to_scrub in
+    select e.id, e.organization_id
+    from public.followup_enrollments e
+    cross join lateral public.fn_followup_retention_policy(e.organization_id, p_retencao_dias, 180) policy
+    where e.execution_contract = 1 and e.status in ('completed', 'cancelled', 'dead')
+      and e.completed_at < now() - make_interval(days => policy.payload_days)
+      and (e.claimed_until is null or e.claimed_until <= now())
+      and e.id not in (select public.fn_followup_protected_execution_ids())
+      and (exists (
+        select 1 from public.followup_execution_attempts a
+        join public.followup_execution_steps s on s.id = a.step_id and s.organization_id = a.organization_id
+        where s.enrollment_id = e.id and s.organization_id = e.organization_id and a.payload_expired_at is null
+      ) or exists (
+        select 1 from public.followup_execution_effects effect
+        where effect.enrollment_id = e.id and effect.organization_id = e.organization_id and effect.payload_expired_at is null
+      ))
+    order by e.completed_at, e.id
+    limit least(1000, greatest(1, coalesce(p_limite, 1000)))
+    for update of e skip locked
+  loop
+    perform public.fn_redigir_payloads_execucao(row_to_scrub.organization_id, row_to_scrub.id);
+    changed := changed + 1;
+  end loop;
+  return changed;
+end;
+$$;
+revoke all on function public.fn_expurgar_payloads_de_automacao(integer, integer) from public, anon, authenticated;
+grant execute on function public.fn_expurgar_payloads_de_automacao(integer, integer) to service_role;
+
+create or replace function public.fn_expurgar_execucoes_de_automacao(p_retencao_dias integer default 180, p_limite integer default 1000)
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare
+  removed integer := 0;
+  batch integer;
+  budget integer := least(1000, greatest(1, coalesce(p_limite, 1000)));
+begin
+  loop
+  with expired as (
+    select e.id, e.organization_id from public.followup_enrollments e
+    cross join lateral public.fn_followup_retention_policy(e.organization_id, 30, p_retencao_dias) policy
+    where e.execution_contract = 1 and e.status in ('completed', 'cancelled', 'dead')
+      and e.completed_at < now() - make_interval(days => policy.metadata_days)
+      and (e.claimed_until is null or e.claimed_until <= now())
+      and e.id not in (select public.fn_followup_protected_execution_ids())
+      and not exists (select 1 from public.followup_enrollments child where child.organization_id = e.organization_id and child.source_enrollment_id = e.id)
+      and not exists (
+        select 1 from public.followup_execution_steps parent
+        join public.followup_execution_steps child on child.inherited_from_step_id = parent.id and child.organization_id = parent.organization_id
+        where parent.enrollment_id = e.id and parent.organization_id = e.organization_id and child.enrollment_id <> e.id
+      )
+    order by e.completed_at, e.id
+    limit budget - removed
+    for update of e skip locked
+  )
+  delete from public.followup_enrollments e using expired x
+  where e.id = x.id and e.organization_id = x.organization_id;
+  get diagnostics batch = row_count;
+  removed := removed + batch;
+  -- Filhos vencidos liberam os pais. O lote só termina quando não há mais
+  -- elegíveis ou esgota a cota; não deixa resto silencioso por causa da FK.
+  exit when batch = 0 or removed >= budget;
+  end loop;
+  return removed;
+end;
+$$;
+revoke all on function public.fn_expurgar_execucoes_de_automacao(integer, integer) from public, anon, authenticated;
+grant execute on function public.fn_expurgar_execucoes_de_automacao(integer, integer) to service_role;
+
+-- ---- Execution attempt leases and immutable origin (migration 0704) ----
+-- manifest: Fixa a origem do contrato novo e registra o lease de cada tentativa para recusar workers obsoletos sem duplicar efeitos
+-- Complemento da 0698; não ativa o executor e não muda inscrições legadas.
+
+alter table public.followup_execution_attempts
+  add column if not exists lease_revision bigint,
+  add column if not exists lease_until timestamptz;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.followup_execution_attempts'::regclass and conname = 'followup_execution_attempt_lease_check') then
+    alter table public.followup_execution_attempts add constraint followup_execution_attempt_lease_check
+      check (lease_revision is null or lease_revision >= 0);
+  end if;
+end;
+$$;
+
+create or replace function public.fn_followup_execution_origin_immutable()
+returns trigger language plpgsql set search_path = public
+as $$
+begin
+  if new.execution_contract is distinct from old.execution_contract or (old.execution_contract = 1 and (
+    new.organization_id is distinct from old.organization_id
+    or new.contact_id is distinct from old.contact_id
+    or new.pointer_id is distinct from old.pointer_id
+    or new.version_id is distinct from old.version_id
+    or new.execution_contract is distinct from old.execution_contract
+    or new.execution_mode is distinct from old.execution_mode
+    or new.lead_id is distinct from old.lead_id
+    or new.source_enrollment_id is distinct from old.source_enrollment_id
+    or new.recovery_kind is distinct from old.recovery_kind
+    or new.conversation_id is distinct from old.conversation_id
+    or new.service_boundary is distinct from old.service_boundary
+  )) then
+    raise exception 'followup_execution_origin_immutable' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.fn_followup_execution_origin_immutable() from public, anon, authenticated;
+grant execute on function public.fn_followup_execution_origin_immutable() to service_role;
+
+drop trigger if exists followup_execution_origin_immutable on public.followup_enrollments;
+create trigger followup_execution_origin_immutable before update on public.followup_enrollments
+  for each row execute function public.fn_followup_execution_origin_immutable();
+
+-- ---- Execution attempts linked to queue jobs (migration 0705) ----
+-- manifest: Vincula a tentativa da automação ao job real, com FK por organização e preservação do histórico após retenção da fila
+-- Fundação da integração assíncrona. Não habilita o contrato novo.
+create unique index if not exists job_queue_org_id_key on public.job_queue(organization_id,id);
+
+alter table public.followup_execution_attempts add column if not exists job_id uuid;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid='public.followup_execution_attempts'::regclass and conname='followup_execution_attempt_job_fk') then
+    alter table public.followup_execution_attempts add constraint followup_execution_attempt_job_fk
+      foreign key (organization_id,job_id) references public.job_queue(organization_id,id)
+      on delete set null (job_id);
+  end if;
+end;
+$$;
+
+create index if not exists followup_execution_attempts_job_idx
+  on public.followup_execution_attempts(organization_id,job_id) where job_id is not null;
+
+-- ---- Execution attempts with several queue jobs (migration 0706) ----
+-- manifest: Liga varios jobs de turno a mesma tentativa de automacao (reenfileirar a classificacao por IA sem fechar a tentativa em voo)
+-- Uma resposta do cliente que acorda o no cedo faz o motor reenfileirar o turno de classificacao
+-- enquanto o job anterior segue na fila. `followup_execution_attempts.job_id` (0705) guarda UM job;
+-- esta tabela guarda todos, de modo que o primeiro a concluir vence e os demais viram no-op,
+-- como no motor legado. So ids: nada de dado pessoal, e some junto com a tentativa (cascade).
+-- Fundacao da integracao do ai_classify. Nao habilita o contrato novo.
+create table if not exists public.followup_execution_attempt_jobs (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  attempt_id uuid not null,
+  job_id uuid not null,
+  created_at timestamptz not null default now(),
+  primary key (organization_id, attempt_id, job_id),
+  foreign key (organization_id, attempt_id) references public.followup_execution_attempts(organization_id, id) on delete cascade,
+  foreign key (organization_id, job_id) references public.job_queue(organization_id, id) on delete cascade
+);
+
+create index if not exists followup_execution_attempt_jobs_job_idx
+  on public.followup_execution_attempt_jobs (organization_id, job_id);
+
+-- Quem ja tinha um job ligado pela 0705 passa a te-lo tambem aqui (idempotente).
+insert into public.followup_execution_attempt_jobs (organization_id, attempt_id, job_id)
+  select a.organization_id, a.id, a.job_id
+  from public.followup_execution_attempts a
+  where a.job_id is not null
+  on conflict do nothing;
+
+-- A sessao so le, e so manager+ (como as tentativas). Escrita e do motor.
+alter table public.followup_execution_attempt_jobs enable row level security;
+revoke all on table public.followup_execution_attempt_jobs from public, anon, authenticated;
+grant select on table public.followup_execution_attempt_jobs to authenticated;
+grant all on table public.followup_execution_attempt_jobs to service_role;
+
+drop policy if exists followup_execution_attempt_jobs_select on public.followup_execution_attempt_jobs;
+create policy followup_execution_attempt_jobs_select on public.followup_execution_attempt_jobs for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+    and exists (select 1 from public.followup_execution_attempts a
+      where a.id = followup_execution_attempt_jobs.attempt_id and a.organization_id = followup_execution_attempt_jobs.organization_id));
+
+-- ---- Publish refuses the new execution contract (migration 0707) ----
+-- manifest: A publicacao de fluxo recusa, no banco, grafo do contrato de execucao novo enquanto ele nao esta habilitado (defesa em profundidade)
+-- O validador da rota ja recusa o contrato 1 (execution_contract_unavailable), mas a funcao e a unica
+-- porta que cria versao publicada: um chamador futuro com service role passaria por fora do validador.
+-- Habilitar o contrato exige trocar esta guarda por uma migration nova, de proposito: o interruptor
+-- do codigo (EXECUTION_CONTRACT_AVAILABLE) e o do banco andam juntos e ninguem liga um sem o outro.
+create or replace function fn_publish_followup_flow_version(
+  p_org uuid,
+  p_pointer uuid,
+  p_graph jsonb,
+  p_created_by uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pointer record;
+  v_version_id uuid;
+begin
+  if p_graph ? 'execution_contract' then
+    raise exception 'execution_contract_unavailable' using errcode = 'P0001';
+  end if;
+
+  select p.id, p.organization_id
+    into v_pointer
+  from followup_flow_pointers p
+  where p.id = p_pointer
+  for update;
+
+  if not found or v_pointer.organization_id <> p_org then
+    raise exception 'pointer_not_found' using errcode = 'P0001';
+  end if;
+
+  insert into followup_flow_versions (organization_id, pointer_id, graph, created_by)
+  values (p_org, p_pointer, p_graph, p_created_by)
+  returning id into v_version_id;
+
+  update followup_flow_pointers
+     set active_version_id = v_version_id,
+         status = 'active',
+         updated_at = now()
+   where id = p_pointer;
+
+  return v_version_id;
+end;
+$$;
+revoke all on function fn_publish_followup_flow_version(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
+
+-- ---- Execution attempt reuse counter (migration 0708) ----
+-- manifest: Conta as reentradas seguidas, sem job novo ligado, da tentativa em voo de uma classificacao por IA, para que um worker que morre sempre no mesmo ponto pare de reentrar e caia no orcamento de tentativas
+-- Dentro da janela de reaproveitamento (max(24 h, 2x carencia)) o `begin` reabre a mesma tentativa
+-- sem contar nada; o unico teto era o relogio. Com o contador, passado o limite o `begin` deixa de
+-- reaproveitar e segue o caminho de "lease interrompido", que fecha a tentativa e conta no orcamento.
+-- Ligar um job NOVO a tentativa (resposta do contato que reenfileira a classificacao) zera o contador:
+-- so a reentrada que nunca chega a enfileirar acumula.
+-- Coluna nova, com default: tentativas existentes comecam em zero. Nao habilita o contrato novo.
+alter table public.followup_execution_attempts
+  add column if not exists reuse_count integer not null default 0;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid='public.followup_execution_attempts'::regclass and conname='followup_execution_attempts_reuse_count_check') then
+    alter table public.followup_execution_attempts add constraint followup_execution_attempts_reuse_count_check
+      check (reuse_count >= 0);
+  end if;
+end;
+$$;
+
+-- ---- Publish accepts execution contract 1 (migration 0709) ----
+-- manifest: A publicacao de fluxo passa a aceitar o contrato de execucao 1 (motor novo); qualquer outro valor de execution_contract continua recusado
+-- Troca a guarda da 0707, que recusava a chave inteira enquanto o contrato estava desligado. O interruptor do
+-- codigo (EXECUTION_CONTRACT_AVAILABLE) e o do banco andam juntos: esta migration e a que liga o banco.
+-- Continua recusando valor desconhecido (so o 1 existe) para um chamador com service role nao gravar um contrato inventado.
+create or replace function fn_publish_followup_flow_version(
+  p_org uuid,
+  p_pointer uuid,
+  p_graph jsonb,
+  p_created_by uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pointer record;
+  v_version_id uuid;
+begin
+  if p_graph ? 'execution_contract' and p_graph -> 'execution_contract' is distinct from '1'::jsonb then
+    raise exception 'execution_contract_invalid' using errcode = 'P0001';
+  end if;
+
+  select p.id, p.organization_id
+    into v_pointer
+  from followup_flow_pointers p
+  where p.id = p_pointer
+  for update;
+
+  if not found or v_pointer.organization_id <> p_org then
+    raise exception 'pointer_not_found' using errcode = 'P0001';
+  end if;
+
+  insert into followup_flow_versions (organization_id, pointer_id, graph, created_by)
+  values (p_org, p_pointer, p_graph, p_created_by)
+  returning id into v_version_id;
+
+  update followup_flow_pointers
+     set active_version_id = v_version_id,
+         status = 'active',
+         updated_at = now()
+   where id = p_pointer;
+
+  return v_version_id;
+end;
+$$;
+revoke all on function fn_publish_followup_flow_version(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
+grant execute on function fn_publish_followup_flow_version(uuid, uuid, jsonb, uuid) to service_role;
+
+-- ---- Enrollment inherits the version execution contract (migration 0710) ----
+-- manifest: A inscricao nasce no contrato de execucao da versao fixada (motor novo) e com o lead explicito congelado na criacao
+-- Todo ponto de criacao de inscricao (manual, varredura de silencio e os gatilhos) grava version_id; este gatilho
+-- copia execution_contract do grafo dessa versao e fixa lead_id no negocio mais recente do contato, a mesma escolha
+-- que o motor antigo refazia a cada passo. So age em inscricao nascida no contrato 0 sobre versao de contrato 1:
+-- linha que ja traz contrato 1 (ou lead explicito) fica como veio. Sem HTTP: apenas leitura de duas tabelas.
+create or replace function public.fn_enrollment_herda_contrato_da_versao()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_contract int;
+begin
+  if new.execution_contract <> 0 then
+    return new;
+  end if;
+
+  select (v.graph ->> 'execution_contract')::int
+    into v_contract
+  from followup_flow_versions v
+  where v.organization_id = new.organization_id
+    and v.id = new.version_id;
+
+  if v_contract is distinct from 1 then
+    return new;
+  end if;
+
+  new.execution_contract := 1;
+  if new.lead_id is null then
+    select l.id
+      into new.lead_id
+    from crm_leads l
+    where l.organization_id = new.organization_id
+      and l.contact_id = new.contact_id
+    order by l.updated_at desc, l.id
+    limit 1;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.fn_enrollment_herda_contrato_da_versao() from public, anon, authenticated;
+
+drop trigger if exists trg_enrollment_herda_contrato_da_versao on public.followup_enrollments;
+create trigger trg_enrollment_herda_contrato_da_versao
+  before insert on public.followup_enrollments
+  for each row execute function public.fn_enrollment_herda_contrato_da_versao();
+
+-- ---- campo computado ultimo_status_de_saida (migration 0711) ----
+-- Antes da VARREDURA anon por ser função; as policies da 0711 ficam no fim,
+-- depois dos conjuntos fn_orgs_veem_* da 0661, que elas usam.
+-- Status da última mensagem de SAÍDA da conversa, para o tique da prévia na
+-- lista da inbox (único/duplo/azul, como no WhatsApp). Campo computado do
+-- PostgREST em vez de coluna: nada a sincronizar (DIRC: Calcular). SECURITY
+-- INVOKER de propósito — a policy de `messages` decide o que o leitor vê.
+-- Servido por `idx_messages_conversation_sent (conversation_id, sent_at desc)`.
+create or replace function public.ultimo_status_de_saida(public.conversations)
+returns text
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select m.status
+  from public.messages m
+  where m.conversation_id = $1.id
+    and m.direction = 'outbound'
+  order by m.sent_at desc
+  limit 1;
+$$;
+
+revoke execute on function public.ultimo_status_de_saida(public.conversations) from public, anon;
+grant execute on function public.ultimo_status_de_saida(public.conversations) to authenticated, service_role;
+
+
+-- ---- produtos no negócio (migration 0660) ----
+--
+-- Estallo: o card do lead escolhe produtos do catálogo; o preço vem do produto e
+-- o desconto (em centavos, por item) abate do total. `crm_leads.value_cents` é
+-- CALCULADO daqui por trigger — uma fonte só, seja quem for que mexa nos itens
+-- (tela, API ou MCP). Nome e preço são COPIADOS na hora de vincular: mudar o
+-- preço do catálogo depois não reescreve negócio já montado, e apagar o produto
+-- não apaga o histórico (`product_id` vira nulo, o item fica).
+
+create table if not exists public.crm_lead_products (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid not null references public.crm_leads(id) on delete cascade,
+  product_id uuid references public.catalog_products(id) on delete set null,
+  nome text not null,
+  quantidade integer not null default 1,
+  preco_unitario_cents bigint not null,
+  desconto_cents bigint not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint crm_lead_products_quantidade_positiva check (quantidade > 0),
+  constraint crm_lead_products_preco_nao_negativo check (preco_unitario_cents >= 0),
+  constraint crm_lead_products_desconto_nao_negativo check (desconto_cents >= 0)
+);
+
+create index if not exists crm_lead_products_lead_idx
+  on public.crm_lead_products (organization_id, lead_id);
+-- O filtro por produto no quadro do funil.
+create index if not exists crm_lead_products_produto_idx
+  on public.crm_lead_products (organization_id, product_id);
+
+alter table public.crm_lead_products enable row level security;
+
+-- Leitura: quem vê o negócio vê os itens dele (molde de crm_lead_links).
+drop policy if exists crm_lead_products_select on public.crm_lead_products;
+
+-- Escrita: `agent` para cima, e o negócio precisa ser da MESMA organização.
+drop policy if exists crm_lead_products_insert on public.crm_lead_products;
+create policy crm_lead_products_insert on public.crm_lead_products
+  for insert with check (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and exists (
+          select 1 from public.crm_leads l
+          where l.id = crm_lead_products.lead_id
+            and l.organization_id = crm_lead_products.organization_id
+        ))
+  );
+
+drop policy if exists crm_lead_products_update on public.crm_lead_products;
+create policy crm_lead_products_update on public.crm_lead_products
+  for update using (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists crm_lead_products_delete on public.crm_lead_products;
+create policy crm_lead_products_delete on public.crm_lead_products
+  for delete using (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+revoke all on public.crm_lead_products from anon;
+grant select, insert, update, delete on public.crm_lead_products to authenticated;
+grant all on public.crm_lead_products to service_role;
+
+drop trigger if exists trg_crm_lead_products_updated_at on public.crm_lead_products;
+create trigger trg_crm_lead_products_updated_at
+  before update on public.crm_lead_products
+  for each row execute function public.fn_set_updated_at();
+
+-- O valor do negócio = soma de (quantidade × preço − desconto), nunca negativa
+-- por item. Invoker de propósito: quem mexe no item precisa poder mexer no
+-- negócio, e a RLS de crm_leads continua valendo. Sem HTTP (anti-pattern 9).
+create or replace function public.fn_crm_lead_products_recalcula_valor()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_lead uuid := coalesce(new.lead_id, old.lead_id);
+begin
+  update public.crm_leads l
+     set value_cents = coalesce((
+           select sum(greatest(p.quantidade * p.preco_unitario_cents - p.desconto_cents, 0))
+             from public.crm_lead_products p
+            where p.lead_id = v_lead
+         ), 0)
+   where l.id = v_lead;
+  -- Item trocado de negócio (não há rota para isso, mas o UPDATE permite):
+  -- o negócio antigo também se recalcula.
+  if tg_op = 'UPDATE' and old.lead_id is distinct from new.lead_id then
+    update public.crm_leads l
+       set value_cents = coalesce((
+             select sum(greatest(p.quantidade * p.preco_unitario_cents - p.desconto_cents, 0))
+               from public.crm_lead_products p
+              where p.lead_id = old.lead_id
+           ), 0)
+     where l.id = old.lead_id;
+  end if;
+  return null;
+end
+$$;
+
+revoke execute on function public.fn_crm_lead_products_recalcula_valor() from public, anon;
+grant execute on function public.fn_crm_lead_products_recalcula_valor() to authenticated, service_role;
+
+drop trigger if exists trg_crm_lead_products_recalcula_valor on public.crm_lead_products;
+create trigger trg_crm_lead_products_recalcula_valor
+  after insert or update or delete on public.crm_lead_products
+  for each row execute function public.fn_crm_lead_products_recalcula_valor();
+
+comment on table public.crm_lead_products is
+  'Produtos do negócio (Estallo, 0660): nome e preço copiados do catálogo; o valor do negócio é a soma dos itens menos o desconto.';
+
+notify pgrst, 'reload schema';
+
+-- ---- RLS de negócio sem fn_can_view_lead por linha (migration 0661) ----
+--
+-- Medido em produção (Estallo, 15/10/2026, plano gratuito do Supabase): a leitura
+-- do quadro de um funil com 1.135 negócios fazia `fn_can_view_lead` rodar uma vez
+-- POR LINHA — função SECURITY DEFINER com SET search_path (o planner não a
+-- inline-a), com 4 a 5 subconsultas cada. Em `crm_lead_products` ela rodava duas
+-- vezes por linha (a policy chamava a função E consultava `crm_leads`, cuja
+-- policy chama a mesma função): 3,2 s de média por lote de 100. O pico saturava o
+-- banco a ponto de o `/auth/v1/user` de todos os usuários pendurar.
+--
+-- O QUE NÃO MUDA: quem vê qual negócio. `fn_can_view_lead` decide, nesta ordem:
+--   1. admin de plataforma → vê
+--   2. sem papel na organização → não vê
+--   3. viewer, manager ou admin → vê
+--   4. dono do negócio → vê
+--   5. senão, pela `visibility_mode` da organização: 'all' → vê;
+--      'own_and_unassigned' (o padrão) → só o sem dono; outro valor → não vê.
+-- As funções abaixo devolvem CONJUNTOS de organizações para cada caso, sem
+-- depender da linha — então entram como `in (select ...)`, que o Postgres avalia
+-- uma vez por consulta (initplan) em vez de uma vez por linha. "Tem papel" é
+-- exatamente `fn_user_org_ids()` (vínculo não revogado ou suporte ativo), o
+-- mesmo universo em que `fn_user_role_in_org` devolve algo diferente de nulo.
+--
+-- `fn_can_view_lead` continua existindo: as policies de UPDATE/DELETE de
+-- `crm_leads` a chamam só nas linhas afetadas, que são poucas.
+
+create or replace function public.fn_orgs_veem_todos_os_negocios()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select o.id
+  from public.organizations o
+  where o.id in (select public.fn_user_org_ids())
+    and (
+      public.fn_user_role_in_org(o.id) in ('viewer', 'manager', 'admin')
+      or coalesce(o.settings->>'visibility_mode', 'own_and_unassigned') = 'all'
+    );
+$$;
+
+create or replace function public.fn_orgs_veem_negocios_sem_dono()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select o.id
+  from public.organizations o
+  where o.id in (select public.fn_user_org_ids())
+    and coalesce(o.settings->>'visibility_mode', 'own_and_unassigned') = 'own_and_unassigned';
+$$;
+
+revoke execute on function public.fn_orgs_veem_todos_os_negocios() from public, anon;
+grant execute on function public.fn_orgs_veem_todos_os_negocios() to authenticated, service_role;
+revoke execute on function public.fn_orgs_veem_negocios_sem_dono() from public, anon;
+grant execute on function public.fn_orgs_veem_negocios_sem_dono() to authenticated, service_role;
+
+drop policy if exists crm_leads_select on public.crm_leads;
+create policy crm_leads_select on public.crm_leads
+  for select
+  using (
+    (select public.fn_is_platform_admin())
+    or organization_id in (select public.fn_orgs_veem_todos_os_negocios())
+    or (
+      owner_user_id = (select auth.uid())
+      and organization_id in (select public.fn_user_org_ids())
+    )
+    or (
+      owner_user_id is null
+      and organization_id in (select public.fn_orgs_veem_negocios_sem_dono())
+    )
+  );
+
+-- As tabelas que herdam a visibilidade do negócio passam a perguntar a
+-- `crm_leads` — cuja policy acima já decide quem vê — em vez de chamar a função
+-- de novo por linha. O admin de plataforma entra pela policy de `crm_leads`.
+drop policy if exists crm_lead_products_select on public.crm_lead_products;
+create policy crm_lead_products_select on public.crm_lead_products
+  for select
+  using (exists (select 1 from public.crm_leads l where l.id = crm_lead_products.lead_id));
+
+drop policy if exists crm_lead_activities_select on public.crm_lead_activities;
+create policy crm_lead_activities_select on public.crm_lead_activities
+  for select
+  using (exists (select 1 from public.crm_leads l where l.id = crm_lead_activities.lead_id));
+
+drop policy if exists crm_lead_links_select on public.crm_lead_links;
+create policy crm_lead_links_select on public.crm_lead_links
+  for select
+  using (exists (select 1 from public.crm_leads l where l.id = crm_lead_links.lead_id));
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -54312,9 +56018,6 @@ begin
   ) then
     alter table public.channel_knobs
       add column prospeccao_dias smallint[] not null default '{0,1,2,3,4,5,6}';
-    update public.channel_knobs
-      set prospeccao_dias = '{1,2,3,4,5,6}'
-      where allow_sunday is false;
   end if;
   alter table public.channel_knobs
     drop constraint if exists channel_knobs_prospeccao_dias_validos;
@@ -54413,3 +56116,252 @@ on conflict (model) do update set
   completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
   notes = excluded.notes,
   superseded_at = null;
+
+-- ---- conversas fixadas por atendente (migration 0662) ----
+--
+-- Estallo (16/10/2026): o menu de cada conversa ganhou "Fixar conversa". Fixar é
+-- preferência de QUEM USA, não estado da conversa: o que um atendente fixa não
+-- pode empurrar a lista do colega. Por isso uma tabela por (usuário, conversa), e
+-- não uma coluna em `conversations`.
+--
+-- RLS: cada um lê, cria e apaga só as próprias linhas, e só nas organizações de
+-- que é membro. Apagar a conversa, o usuário ou a organização leva o pin junto.
+
+create table if not exists public.conversation_pins (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  pinned_at timestamptz not null default now(),
+  primary key (user_id, conversation_id)
+);
+
+create index if not exists conversation_pins_org_user_idx
+  on public.conversation_pins (organization_id, user_id, pinned_at desc);
+
+alter table public.conversation_pins enable row level security;
+
+drop policy if exists conversation_pins_select on public.conversation_pins;
+create policy conversation_pins_select on public.conversation_pins
+  for select using (
+    user_id = (select auth.uid())
+    and organization_id in (select public.fn_user_org_ids())
+  );
+
+drop policy if exists conversation_pins_insert on public.conversation_pins;
+create policy conversation_pins_insert on public.conversation_pins
+  for insert with check (
+    user_id = (select auth.uid())
+    and organization_id in (select public.fn_user_org_ids())
+    and exists (
+      select 1 from public.conversations c
+      where c.id = conversation_pins.conversation_id
+        and c.organization_id = conversation_pins.organization_id
+    )
+  );
+
+drop policy if exists conversation_pins_delete on public.conversation_pins;
+create policy conversation_pins_delete on public.conversation_pins
+  for delete using (
+    user_id = (select auth.uid())
+    and organization_id in (select public.fn_user_org_ids())
+  );
+
+revoke all on table public.conversation_pins from anon;
+grant select, insert, delete on table public.conversation_pins to authenticated;
+grant all on table public.conversation_pins to service_role;
+
+-- ---- Support write guards after recent tables (migration 0703) ----
+-- manifest: Reaplica as travas canônicas de suporte após as tabelas recentes para proteger conversation_pins já na instalação fresca
+-- A 0662 acrescentou a tabela depois da última aplicação das travas. Uma
+-- atualização a protegia na segunda passada, mas a instalação ficava incompleta.
+-- O helper inclui somente tabelas graváveis por authenticated; tentativas,
+-- passagens e efeitos continuam sem escrita de sessão e sem policies extras.
+do $$
+begin
+  perform public.fn_aplicar_travas_de_suporte();
+end;
+$$;
+
+
+-- ---- RLS de conversa sem fn_can_view_conversation por linha (migration 0711) ----
+--
+-- Medido em produção (Estallo, 30/10/2026): ~5.000 respostas 500 do PostgREST em
+-- /rest/v1/conversations em 8 horas, todas "canceling statement due to statement
+-- timeout". As contagens das abas da inbox (HEAD count) tinham média de 3,6 a
+-- 4,6 s sobre uma tabela de 173 conversas. A policy `conversations_select` chamava
+-- `fn_can_view_conversation` POR LINHA — SECURITY DEFINER, não inline-ável — e ela
+-- chamava `fn_user_role_in_org` duas vezes, cada uma rodando `fn_support_context()`
+-- (join com auth.sessions e auth.mfa_factors). `messages_select` faz EXISTS em
+-- `conversations` por mensagem e herdava o custo. Era o toast "ID: …" que os
+-- atendentes viam a cada mensagem recebida (o realtime refaz lista e contagens).
+--
+-- O QUE NÃO MUDA: quem vê qual conversa. `fn_can_view_conversation` tem a MESMA
+-- regra de `fn_can_view_lead` (admin de plataforma; sem papel não vê; viewer,
+-- manager e admin veem; responsável vê; senão a `visibility_mode` da organização),
+-- então reusa os conjuntos da 0661, que entram como `in (select ...)` e são
+-- avaliados uma vez por consulta. `fn_can_view_conversation` continua existindo
+-- para quem a chama fora de policy.
+
+drop policy if exists "conversations_select" on public.conversations;
+create policy "conversations_select" on public.conversations
+  for select using (
+    (select public.fn_is_platform_admin())
+    or organization_id in (select public.fn_orgs_veem_todos_os_negocios())
+    or (
+      assigned_to_user_id = (select auth.uid())
+      and organization_id in (select public.fn_user_org_ids())
+    )
+    or (
+      assigned_to_user_id is null
+      and organization_id in (select public.fn_orgs_veem_negocios_sem_dono())
+    )
+  );
+
+drop policy if exists "messages_select" on public.messages;
+create policy "messages_select" on public.messages
+  for select using (
+    (select public.fn_is_platform_admin())
+    or exists (
+      select 1 from public.conversations c
+      where c.id = messages.conversation_id
+    )
+  );
+
+drop policy if exists "message_templates_select" on public.message_templates;
+create policy "message_templates_select" on public.message_templates
+  for select using (
+    (
+      organization_id in (select public.fn_user_org_ids())
+      and (owner_user_id is null or owner_user_id = (select auth.uid()))
+    )
+    or (select public.fn_is_platform_admin())
+  );
+
+-- ---- realtime do negócio traz o valor antigo (migration 0712) ----
+-- O realtime só entrega `old` completo com replica identity full. Sem isto os avisos "Lead atribuído a você",
+-- "Lead ganho" e "Lead perdido" comparavam com um valor sempre nulo e disparavam a cada update do negócio.
+alter table if exists public.crm_leads replica identity full;
+
+-- ---- remove a Proteção de envio: ritmo, janela, aquecimento e spinning por canal (migration 0713) ----
+-- A "Proteção de envio" (ritmo, janela, aquecimento, teto diário e spinning por canal) foi removida do produto:
+-- o ritmo entre envios é fixo (300-800 ms, em memória, no código) e nada mais lê estas tabelas e colunas.
+-- O disjuntor de saúde do canal FICA: channel_session_health e channel_knobs.health_knobs não são tocados.
+--
+-- 1. Tabelas sem leitor nem escritor (drop cascata leva índices, policies, grants e FKs próprios).
+drop table if exists public.pacing_ledger cascade;
+drop table if exists public.channel_session_warmup cascade;
+drop table if exists public.outbound_copies cascade;
+
+-- 2. As podas dessas tabelas.
+drop function if exists public.fn_expurgar_ritmo_de_envio_vencido(int, int);
+drop function if exists public.fn_expurgar_copias_enviadas_vencidas(int, int);
+
+-- 3. Colunas de channel_knobs que eram só da Proteção de envio. A tabela fica (health_knobs). O fuso vem de
+--    organizations.timezone; nenhum código lê channel_knobs.timezone.
+alter table if exists public.channel_knobs
+  drop constraint if exists channel_knobs_warmup_caps_is_array,
+  drop constraint if exists channel_knobs_spinning_is_object,
+  drop constraint if exists channel_knobs_resposta_horas_validas,
+  drop constraint if exists channel_knobs_atraso_humano_saneamento,
+  drop constraint if exists channel_knobs_prospeccao_dias_validos;
+alter table if exists public.channel_knobs
+  drop column if exists throttle_ms,
+  drop column if exists jitter_max_ms,
+  drop column if exists window_start_hour,
+  drop column if exists window_end_hour,
+  drop column if exists allow_sunday,
+  drop column if exists timezone,
+  drop column if exists warmup_daily_caps,
+  drop column if exists spinning_knobs,
+  drop column if exists number_activated_at,
+  drop column if exists resposta_start_hour,
+  drop column if exists resposta_end_hour,
+  drop column if exists atraso_notar_ms,
+  drop column if exists ms_por_caractere,
+  drop column if exists atraso_minimo_ms,
+  drop column if exists atraso_maximo_ms,
+  drop column if exists prospeccao_dias;
+
+-- 4. O trace de envio vetado deixou de dizer se era resposta ou disparo: a janela por tipo de envio não existe mais.
+alter table if exists public.before_send_traces
+  drop constraint if exists before_send_traces_tipo_envio_check,
+  drop column if exists tipo_envio;
+
+-- Fica: channel_sessions.daily_message_limit / warmup_started_at / warmup_completed_at / is_warmup_complete. Ainda são lidas
+-- pelo webhook do WAHA, pela API de canais e por um trigger de channel_sessions; sairão num PR próprio.
+
+-- ---- execução passo a passo: o operador conduz um bloco por vez (migration 0714) ----
+-- Marca de COMO conduzir a execução: com `passo_a_passo`, o motor pausa (paused_manual) depois de cada bloco concluído.
+-- Nasce falsa em toda execução existente. Fora da trava de imutabilidade de propósito («continuar automaticamente»).
+alter table if exists public.followup_enrollments
+  add column if not exists passo_a_passo boolean not null default false;
+comment on column public.followup_enrollments.passo_a_passo is
+  'Execução conduzida bloco a bloco pelo operador: o motor pausa (paused_manual) depois de cada bloco concluído.';
+
+-- ---- execuções do fluxo ao vivo: followup_enrollments na publicação supabase_realtime (migration 0715) ----
+-- A aba Execuções do editor assina a tabela filtrada pelo fluxo e só invalida a leitura; os diários ficam fora.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'followup_enrollments'
+     ) then
+    execute 'alter publication supabase_realtime add table public.followup_enrollments';
+  end if;
+end $$;
+
+-- ---- conexões HTTP protegidas das automações (migration 0716) ----
+create table if not exists public.automation_http_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  label text not null check (length(btrim(label)) between 1 and 80),
+  base_url text not null check (length(base_url) <= 300 and base_url ~ '^https?://[^/?#@[:space:]]+$'),
+  auth_kind text not null check (auth_kind in ('none', 'bearer', 'header', 'basic')),
+  header_name text check (header_name is null or header_name ~ '^[A-Za-z0-9-]{1,64}$'),
+  secret_encrypted bytea,
+  secret_iv bytea,
+  secret_tag bytea,
+  secret_last4 text check (secret_last4 is null or length(secret_last4) <= 4),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint automation_http_connections_label_uk unique (organization_id, label),
+  constraint automation_http_connections_segredo_completo check (
+    (auth_kind = 'none') = (secret_encrypted is null)
+    and (secret_encrypted is null) = (secret_iv is null)
+    and (secret_iv is null) = (secret_tag is null)
+  ),
+  constraint automation_http_connections_cabecalho check ((auth_kind = 'header') = (header_name is not null))
+);
+
+comment on table public.automation_http_connections is
+  'Conexão HTTP protegida de uma organização, citada pelo bloco Requisição HTTP das automações. A credencial é cifrada com AES-GCM (AI_CRED_AES_KEY) e só o servidor a lê; o bloco só chama a origem cadastrada.';
+
+create index if not exists automation_http_connections_org_idx
+  on public.automation_http_connections (organization_id);
+
+alter table public.automation_http_connections enable row level security;
+
+drop policy if exists tenant_isolation_automation_http_connections_all on public.automation_http_connections;
+create policy tenant_isolation_automation_http_connections_all on public.automation_http_connections
+  for all
+  using (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  )
+  with check (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  );
+
+-- O ALTER DEFAULT PRIVILEGES do baseline dá GRANT ALL em tabelas novas a anon/authenticated: revogar explicitamente.
+revoke all on table public.automation_http_connections from public, anon, authenticated;
+grant all on table public.automation_http_connections to service_role;
+
+drop trigger if exists trg_automation_http_connections_updated_at on public.automation_http_connections;
+create trigger trg_automation_http_connections_updated_at
+  before update on public.automation_http_connections
+  for each row execute function public.fn_set_updated_at();

@@ -494,19 +494,19 @@ describe.skipIf(!temAwk)("recriar o que falta: o comando INTEIRO, nunca o nome",
   it("CONTROLE VIVO: contra o baseline REAL, recria uma regra de verdade", () => {
     // Os casos acima usam SQL de brinquedo. Este roda contra o arquivo que o
     // cliente aplica de fato — e é ele que pega uma régua que só funciona no
-    // exemplo. A regra escolhida não é aleatória: `crm_leads_select` é uma das
+    // exemplo. A regra escolhida não é aleatória: `crm_leads_update` é uma das
     // duas que sumiram no incidente e deixaram o funil vazio.
     const baseline = path.join(RAIZ, "supabase", "baseline.sql");
-    expect(fs.readFileSync(baseline, "utf8")).toMatch(/create policy "crm_leads_select"/);
+    expect(fs.readFileSync(baseline, "utf8")).toMatch(/create policy "crm_leads_update"/);
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recria-real-"));
     const f = path.join(dir, "faltam.txt");
-    fs.writeFileSync(f, "crm_leads_select|crm_leads\n", "utf8");
+    fs.writeFileSync(f, "crm_leads_update|crm_leads\n", "utf8");
     try {
       const saida = execFileSync("awk", [programaAwkRecria(), f, baseline], {
         encoding: "utf8",
       });
-      expect(saida).toMatch(/create policy "crm_leads_select" on public\.crm_leads/);
+      expect(saida).toMatch(/create policy "crm_leads_update" on public\.crm_leads/);
       expect(saida.trim().endsWith(";")).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

@@ -4,8 +4,6 @@ import {
   casePromiseGate,
   type GateContext,
 } from "@/lib/agent-engine/guardrails/before-send";
-import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
-import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 
 /**
  * Wave 4 (spec 15 §10.2) — o GATE do requisito mais importante do épico: a
@@ -35,8 +33,6 @@ function baseCtx(overrides: Partial<GateContext> = {}): GateContext {
     body: "",
     optedOut: false,
     provider: "waha",
-    pacing: { knobs: PACING_DEFAULTS, state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null }, crmDailyLimit: null },
-    spinning: { knobs: SPINNING_DEFAULTS, window: [] },
     promise: { table: null },
     semanticPromise: null,
     disclosure: { template: null, isFirstOutbound: false, mode: "inject" },

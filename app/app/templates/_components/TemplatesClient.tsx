@@ -20,10 +20,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, PencilSimple, Trash } from "@/lib/ui/icons";
+import { MagnifyingGlass, Plus, PencilSimple, Trash } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import {
+  useMessageTemplates,
+  useMessageTemplatesPaginados,
+  type MessageTemplate,
+} from "@/hooks/inbox/useMessageTemplates";
+import { Input } from "@/components/ui/input";
+import { FormatacaoWhatsApp } from "@/lib/mensagens/formatacao-whatsapp";
 import { TemplateFormDialog } from "./TemplateFormDialog";
 
 const TEMPLATES_KEY = ["message-templates"];
@@ -35,7 +41,18 @@ interface Props {
 
 export function TemplatesClient({ canShare, currentUserId }: Props) {
   const t = useT();
-  const { data: templates, isLoading } = useMessageTemplates();
+  const [buscaDigitada, setBuscaDigitada] = React.useState("");
+  const [busca, setBusca] = React.useState("");
+  React.useEffect(() => {
+    const timer = setTimeout(() => setBusca(buscaDigitada.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [buscaDigitada]);
+  const paginas = useMessageTemplatesPaginados(busca);
+  const templates = React.useMemo(
+    () => paginas.data?.pages.flatMap((p) => p.data) ?? [],
+    [paginas.data],
+  );
+  const isLoading = paginas.isLoading;
   const qc = useQueryClient();
   const del = useMutation({
     mutationFn: async (id: string) => apiClient.delete(`/api/v1/message-templates/${id}`),
@@ -51,6 +68,9 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
   // acontece em teste e em render estático), como no resto do repo.
   const idDoModelo = useSearchParams()?.get("modelo") ?? null;
   const [abertoPelaUrl, setAbertoPelaUrl] = React.useState(false);
+  // O modelo do link pode estar além das páginas carregadas: só neste caso a
+  // tela pede a lista inteira (a mesma do composer, já em cache quase sempre).
+  const todos = useMessageTemplates(Boolean(idDoModelo) && !abertoPelaUrl);
   // Só quem pode editar/apagar pela RLS vê as ações: o dono do pessoal, ou
   // manager+ no compartilhado (owner null). Sem isto, um agent veria botões
   // que o backend rejeita (404/nada apagado).
@@ -64,7 +84,7 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
     if (abertoPelaUrl || !idDoModelo) return;
     // A lista chega depois: enquanto ela não tem o modelo pedido, NÃO marca como
     // aberto — marcar aqui faria o link depender de o dado já estar em cache.
-    const alvo = templates?.find((template) => template.id === idDoModelo);
+    const alvo = (todos.data ?? templates).find((template) => template.id === idDoModelo);
     if (!alvo) return;
     setAbertoPelaUrl(true);
     // O link só abre a EDIÇÃO para quem pode editar — a mesma régua da lista.
@@ -73,7 +93,23 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
     if (!canModify(alvo)) return;
     setEditing(alvo);
     setFormOpen(true);
-  }, [abertoPelaUrl, idDoModelo, templates, canModify]);
+  }, [abertoPelaUrl, idDoModelo, templates, todos.data, canModify]);
+
+  // Mais 30 quando o fim da lista se aproxima da tela.
+  const sentinela = React.useRef<HTMLDivElement | null>(null);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = paginas;
+  React.useEffect(() => {
+    const alvo = sentinela.current;
+    if (!alvo || !hasNextPage) return;
+    const observador = new IntersectionObserver(
+      (entradas) => {
+        if (entradas.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observador.observe(alvo);
+    return () => observador.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, templates.length]);
 
   const openNew = () => {
     setEditing(null);
@@ -84,24 +120,36 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
     setFormOpen(true);
   };
 
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <div className="flex sm:justify-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <MagnifyingGlass
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            type="search"
+            value={buscaDigitada}
+            onChange={(e) => setBuscaDigitada(e.target.value)}
+            placeholder={t("Buscar pelo nome")}
+            aria-label={t("Buscar respostas rápidas pelo nome")}
+            className="pl-9"
+          />
+        </div>
         <Button type="button" onClick={openNew} className="w-full sm:w-auto">
           <Plus /> {t("Novo template")}
         </Button>
       </div>
-      {!templates?.length ? (
-        <p className="text-sm text-muted-foreground">{t("Nenhum template ainda.")}</p>
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : !templates.length ? (
+        <p className="text-sm text-muted-foreground">
+          {busca ? t("Nenhuma resposta rápida com esse nome.") : t("Nenhum template ainda.")}
+        </p>
       ) : (
         <ul className="space-y-2">
           {templates.map((template) => {
@@ -117,7 +165,9 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
                       {t(template.owner_user_id ? "Pessoal" : "Compartilhado")}
                     </Badge>
                   </div>
-                  <p className="line-clamp-2 text-sm text-muted-foreground">{template.body}</p>
+                  <p className="line-clamp-2 whitespace-pre-line text-sm text-muted-foreground">
+                    <FormatacaoWhatsApp texto={template.body} modo="linha" />
+                  </p>
                 </div>
                 {canModify(template) && (
                   <div className="flex shrink-0 gap-1">
@@ -169,6 +219,8 @@ export function TemplatesClient({ canShare, currentUserId }: Props) {
           })}
         </ul>
       )}
+      <div ref={sentinela} aria-hidden />
+      {isFetchingNextPage && <Skeleton className="h-16 w-full" />}
       <TemplateFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}

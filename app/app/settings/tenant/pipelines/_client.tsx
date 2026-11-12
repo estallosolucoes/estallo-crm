@@ -2,6 +2,7 @@
 
 import { useT } from "@/hooks/i18n/useT";
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,11 +18,8 @@ import {
 } from "@/components/ui/select";
 import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import type { PipelineConfigPatch } from "@/lib/schemas/settings";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
-import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
-import { Plus, Trash } from "@/lib/ui/icons";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -219,7 +217,7 @@ export function PipelinesClient({
 
 function PipelineEditor({
   pipeline,
-  etapas,
+  etapas: _etapas,
   comandaDisponivel,
 }: {
   pipeline: PipelineRow;
@@ -246,44 +244,9 @@ function PipelineEditor({
   const [comandaNoGanho, setComandaNoGanho] = useState(
     (pipeline.settings as { comanda_no_ganho?: unknown } | null)?.comanda_no_ganho === true,
   );
-  const [retomaComoNovo, setRetomaComoNovo] = useState(
-    modoDeReabertura(pipeline.settings) === "novo_negocio",
-  );
-  const [fields, setFields] = useState<CustomFieldDef[]>(camposDoFunil(pipeline.settings));
   const [isPending, startTransition] = useTransition();
 
   function handleSave() {
-    const ok: CustomFieldDef[] = [];
-    for (const f of fields) {
-      // O item vazio que a vírgula deixou no input segue vivo até aqui — é o
-      // preço de NÃO descartá-lo durante a digitação (ver o `onChange` das
-      // opções). Ele nunca foi uma opção: `customFieldSchema` exige
-      // `label.min(1)`, então filtrá-lo ANTES de validar é o que separa "acabei
-      // de digitar uma vírgula" de "quero gravar uma opção em branco". É aqui
-      // também que o espaço do FIM de cada opção é aparado: o `onChange` só
-      // apara o início, para não apagar o espaço que a pessoa está digitando.
-      const limpo = tipoTemOpcoes(f.type)
-        ? {
-            ...f,
-            options: (f.options ?? [])
-              .map((o) => ({ value: o.value.trim(), label: o.label.trim() }))
-              .filter((o) => o.label !== ""),
-          }
-        : f;
-      // A regra de `obrigatorio_em` é normalizada AQUI, e não só durante a
-      // digitação: um campo que chegou do settings com `{}` ou com marca
-      // desligada sai sem a chave — é o que mantém o funil idêntico ao de antes
-      // do #1536 enquanto ninguém marca nada.
-      const { obrigatorio_em: regraBruta, ...semRegra } = limpo;
-      const regra = normalizaObrigatorioEm(regraBruta);
-      const base = regra ? { ...semRegra, obrigatorio_em: regra } : semRegra;
-      const parsed = customFieldSchema.safeParse(base);
-      if (!parsed.success) {
-        toast.error(parsed.error.issues[0]?.message ?? t("Campo inválido."));
-        return;
-      }
-      ok.push(parsed.data);
-    }
     const reasons = reasonsText
       .split(",")
       .map((s) => s.trim())
@@ -303,12 +266,10 @@ function PipelineEditor({
 
     const patch: PipelineConfigPatch = {
       vocabulary: { lead, deal, won, lost },
-      fields: ok,
       lost_reasons: motivosComCategoria,
       won_reasons: wonReasons,
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
-      reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
@@ -412,22 +373,6 @@ function PipelineEditor({
         </label>
       </div>
 
-      <div className="space-y-1">
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={retomaComoNovo}
-            onChange={(e) => setRetomaComoNovo(e.target.checked)}
-          />
-          {t("Negócio encerrado que volta abre um negócio novo")}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.",
-          )}
-        </p>
-      </div>
-
       {/* ─── A COMANDA DO GANHO (#1477) ───────────────────────────────
           Porta do consumidor de `lead.won`. Desligada por padrão, pela régua
           de `docs/doctrine/extensoes.md`: quem não ativar continua com a
@@ -453,174 +398,14 @@ function PipelineEditor({
         </div>
       )}
 
-      <div className="space-y-2">
+      {/* Os campos saíram daqui: são um cadastro da EMPRESA (lead e contato),
+          com visibilidade por funil/etapa, em CRM › Campos personalizados. */}
+      <div className="space-y-1 rounded-md border border-border p-3">
         <Label className="text-xs">{t("Campos do lead neste funil")}</Label>
         <p className="text-xs text-muted-foreground">
-          {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
+          {t("Os campos personalizados agora são da empresa: escolha em quais funis e etapas cada um aparece.")}{" "}
+          <Link href="/app/crm/campos" className="underline">{t("Abrir Campos personalizados")}</Link>
         </p>
-        {fields.map((f, i) => (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 md:grid-cols-[1fr_1fr_8rem_auto]">
-            <Input
-              aria-label={`${t("Chave do campo")} ${i + 1}`}
-              placeholder={t("chave (endereco)")}
-              value={f.key}
-              onChange={(e) => {
-                const next = [...fields];
-                next[i] = { ...f, key: e.target.value };
-                setFields(next);
-              }}
-            />
-            <Input
-              aria-label={`${t("Rótulo do campo")} ${i + 1}`}
-              placeholder={t("Rótulo (Endereço)")}
-              value={f.label}
-              onChange={(e) => {
-                const next = [...fields];
-                next[i] = { ...f, label: e.target.value };
-                setFields(next);
-              }}
-            />
-            <Select
-              value={f.type}
-              onValueChange={(type) => {
-                const next = [...fields];
-                next[i] = { ...f, type: type as CustomFieldDef["type"] };
-                setFields(next);
-              }}
-            >
-              <SelectTrigger aria-label={`${t("Tipo do campo")} ${i + 1}`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIPOS_DE_CAMPO.map((tipo) => (
-                  <SelectItem key={tipo} value={tipo}>
-                    {tipo === "currency" ? t("Moeda (BRL)") : tipo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={`${t("Remover campo")} ${f.label || i + 1}`}
-              onClick={() => setFields(fields.filter((_, j) => j !== i))}
-            >
-              <Trash size={14} aria-hidden />
-            </Button>
-            {tipoTemOpcoes(f.type) && (
-              <Input
-                className="md:col-span-3"
-                aria-label={`${t("Opções do campo")} ${i + 1}`}
-                placeholder={t("Opções, separadas por vírgula")}
-                value={(f.options ?? []).map((o) => o.label).join(", ")}
-                onChange={(e) => {
-                  // SEM `.filter(Boolean)` aqui, de propósito. O item vazio do
-                  // fim é o que a vírgula acabou de criar, e ele precisa
-                  // sobreviver até a pessoa digitar a palavra seguinte.
-                  // Descartá-lo no mesmo instante apaga o separador da tela —
-                  // digitar "Dor," some com a vírgula — e a tecla seguinte cola
-                  // na palavra anterior ("Dor" + "O" vira "DorO"). Com o item
-                  // vazio preservado, o `join(", ")` reescreve "Dor, " e o
-                  // cursor continua onde a pessoa parou. O vazio só é descartado
-                  // no `handleSave`, quando deixa de ser útil. Pelo mesmo
-                  // motivo só o INÍCIO é aparado (o espaço que o `join(", ")`
-                  // põe): aparar o fim apagaria o espaço recém-digitado, e
-                  // "Clareamento" + " " + "D" viraria "ClareamentoD".
-                  const options = e.target.value
-                    .split(",")
-                    .map((s) => s.trimStart())
-                    .map((label) => ({ value: label, label }));
-                  const next = [...fields];
-                  next[i] = { ...f, options };
-                  setFields(next);
-                }}
-              />
-            )}
-            {/* ── QUANDO ESTE CAMPO OBRIGA (issue #1536) ────────────────────
-                O `obrigatorio_em` nasceu no schema sem nenhuma tela: quem
-                operava não conseguia ligar a régua principal do PR. As três
-                marcas são as que `campoExigidoNoDestino` lê — etapas de
-                entrada, `ao_ganhar` e `ao_perder` — e nada mais, para a tela
-                não prometer gatilho que o servidor não pergunta. */}
-            <div className="space-y-1 md:col-span-4">
-              <p className="text-xs font-medium">{t("Exigir o preenchimento:")}</p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                {etapas.map((e) => (
-                  <label key={e.id} className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      aria-label={`${t("Exigir em")} ${e.name} — ${f.label || i + 1}`}
-                      checked={f.obrigatorio_em?.etapas?.includes(e.id) ?? false}
-                      onChange={(ev) => {
-                        const next = [...fields];
-                        next[i] = {
-                          ...f,
-                          obrigatorio_em: comEtapa(f.obrigatorio_em, e.id, ev.target.checked),
-                        };
-                        setFields(next);
-                      }}
-                    />
-                    {e.name}
-                    {e.is_archived ? ` (${t("arquivada")})` : ""}
-                  </label>
-                ))}
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    aria-label={`${t("Ao ganhar")} — ${f.label || i + 1}`}
-                    checked={f.obrigatorio_em?.ao_ganhar === true}
-                    onChange={(ev) => {
-                      const next = [...fields];
-                      next[i] = {
-                        ...f,
-                        obrigatorio_em: comGatilho(f.obrigatorio_em, "ao_ganhar", ev.target.checked),
-                      };
-                      setFields(next);
-                    }}
-                  />
-                  {t("Ao ganhar")}
-                </label>
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    aria-label={`${t("Ao perder")} — ${f.label || i + 1}`}
-                    checked={f.obrigatorio_em?.ao_perder === true}
-                    onChange={(ev) => {
-                      const next = [...fields];
-                      next[i] = {
-                        ...f,
-                        obrigatorio_em: comGatilho(f.obrigatorio_em, "ao_perder", ev.target.checked),
-                      };
-                      setFields(next);
-                    }}
-                  />
-                  {t("Ao perder")}
-                </label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Sem marca nenhuma este campo nunca é exigido — é o comportamento de sempre. Marcado, ele precisa estar preenchido para o negócio entrar na etapa escolhida ou ser fechado como ganho/perdido.",
-                )}
-              </p>
-            </div>
-          </div>
-        ))}
-        {fields.length < 50 && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setFields([
-                ...fields,
-                { key: `campo_${fields.length + 1}`, label: t("Novo campo"), type: "text" },
-              ])
-            }
-          >
-            <Plus size={14} aria-hidden className="mr-1" /> {t("Adicionar campo")}
-          </Button>
-        )}
       </div>
 
       <div className="flex sm:justify-end">

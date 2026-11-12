@@ -87,7 +87,7 @@ export function MentionMenu({ open, opcoes, indice, onPick }: Props) {
     <div
       role="listbox"
       aria-label={t("Atendentes para mencionar")}
-      className="absolute bottom-14 left-3 z-30 max-h-64 w-72 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+      className="absolute bottom-14 left-3 z-30 max-h-64 w-72 max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
     >
       {opcoes.length === 0 ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">{t("Nenhum atendente encontrado.")}</div>

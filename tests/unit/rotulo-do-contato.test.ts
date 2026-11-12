@@ -219,6 +219,16 @@ describe("a sétima cópia não nasce", () => {
       motivo: "nome de MODELO de IA",
     },
     {
+      arquivo: "components/chat-suspenso/ChatSuspenso.tsx",
+      trecho: 'atual?.display_name || atual?.phone_number || "WhatsApp"',
+      motivo: "rótulo do NÚMERO (channel_sessions) em que a conversa está, não de contato",
+    },
+    {
+      arquivo: "components/inbox/InboxFilters.tsx",
+      trecho: "{c.display_name || channelLabel(c)}",
+      motivo: "rótulo do CANAL na lista de números do filtro do Inbox, não de contato",
+    },
+    {
       arquivo: "lib/channels/estado.ts",
       trecho: '(c.display_name ?? "").trim()',
       motivo: "`nomeDoCanal` — a função central do rótulo de canal",

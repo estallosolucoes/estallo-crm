@@ -129,10 +129,6 @@ async function setup() {
     "update contacts set phone_number='+5531998765432',force_human=true where id=$1",
     [f.contact],
   );
-  await pool.query(
-    "insert into channel_knobs(organization_id,channel_session_id,throttle_ms,jitter_max_ms,window_start_hour,window_end_hour) values($1,$2,0,0,0,24)",
-    [f.org, f.channel],
-  );
   const d = await pending(f),
     jid = await approve(f, d);
   await claim(f, jid);

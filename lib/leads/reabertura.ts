@@ -18,7 +18,7 @@
  * `/retomar`).
  */
 import { traduzir } from "@/lib/i18n/dicionario";
-import { CAMPOS_COPIAVEIS_NA_RETOMADA, pipelineConfigPatchSchema } from "@/lib/schemas/settings";
+import { CAMPOS_COPIAVEIS_NA_RETOMADA } from "@/lib/schemas/settings";
 
 /** Os dois modos aceitos em `settings.reabertura`. */
 export type ModoReabertura = "mesmo_registro" | "novo_negocio";
@@ -70,10 +70,30 @@ export interface RecusaDeReabertura {
  * `mesmo_registro`. Silencioso de propósito, como `motivosDoFunil` faz com
  * `lost_reasons`: um settings malformado não pode virar trava de negócio.
  */
-export function modoDeReabertura(settings: unknown): ModoReabertura {
-  const bruto = (settings as { reabertura?: unknown } | null | undefined)?.reabertura;
-  const lido = pipelineConfigPatchSchema.shape.reabertura.safeParse(bruto);
-  return lido.success && lido.data ? lido.data : MODO_REABERTURA_PADRAO;
+//
+// 30/10/2026 — A ESCOLHA SAIU DO FUNIL. Quem move um negócio ganho ou perdido
+// para uma etapa aberta escolhe na hora, no diálogo "Criar novo negócio × Mover
+// este" (`pedeEscolhaDeReabertura`, abaixo; `RetomarComoNovoNegocioDialog`). O
+// funil não trava mais a saída: este leitor devolve sempre o padrão, e um
+// `settings.reabertura = "novo_negocio"` já gravado fica inerte. A chave segue
+// aceita pelo schema para um cliente antigo não levar 422 ao salvar o funil.
+// ponytail: os ramos `novo_negocio` (recusaReabertura, clonar fechado) ficaram
+// inalcançáveis; apagá-los toca o motor de automações — limpeza à parte.
+export function modoDeReabertura(_settings?: unknown): ModoReabertura {
+  return MODO_REABERTURA_PADRAO;
+}
+
+/**
+ * Mover para `destino` pede a escolha "criar novo × mover este"? Só quando o
+ * negócio está ENCERRADO (ganho/perdido) e o destino é uma etapa ABERTA — levar
+ * um encerrado a outra etapa de ganho/perda não reabre nada.
+ */
+export function pedeEscolhaDeReabertura(
+  statusAtual: string | null | undefined,
+  destino: { is_won?: boolean | null; is_lost?: boolean | null } | null | undefined,
+): boolean {
+  if (!destino) return false;
+  return (statusAtual ?? "open") !== "open" && !destino.is_won && !destino.is_lost;
 }
 
 /**

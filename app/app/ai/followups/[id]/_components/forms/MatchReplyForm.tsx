@@ -10,15 +10,16 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { matchReplyConfigSchema, type IfExists, type MatchReplyBranch, type ReplySaveTo } from "@/lib/followup/graph-schema";
 import { ESPERA_PELA_RESPOSTA, SE_INFORMACAO_JA_EXISTIR } from "@/lib/followup/vocabulario";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { Plus, Trash } from "@/lib/ui/icons";
-import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
+import { useCamposPersonalizados } from "@/hooks/campos/useCamposPersonalizados";
 
 import { msToMin, minToMs, type ConfigOf } from "./shared";
 
@@ -42,9 +43,20 @@ export function MatchReplyForm({
   const [saveTo, setSaveTo] = useState<ReplySaveTo | undefined>(config.save_to);
   const [ifExists, setIfExists] = useState<IfExists>(config.if_exists ?? "overwrite");
   const [error, setError] = useState<string | null>(null);
-  const pipelines = usePipelines();
-  const campos = (pipelines.data?.data ?? []).flatMap((p) => camposDoFunil(p.settings));
-  const camposUnicos = [...new Map(campos.map((c) => [c.key, c])).values()];
+  // O cadastro central (CRM › Campos personalizados): campos do NEGÓCIO e do CONTATO.
+  const cadastro = useCamposPersonalizados();
+  const definicoes = (cadastro.data?.definicoes ?? []).filter((d) => !d.hidden);
+  const camposUnicos = definicoes.filter((d) => d.entity === "lead");
+  const camposDoContato = definicoes.filter((d) => d.entity === "contact");
+  // O valor do Select carrega o destino: "lead:chave" ou "contato:chave".
+  const valorDoDestino = (d: ReplySaveTo | undefined): string => {
+    if (!d) return "__none__";
+    if (d.kind === "contact_name") return "__contact_name__";
+    if (d.kind === "contact_custom") {
+      return camposDoContato.some((c) => c.key === d.key) ? `contato:${d.key}` : "__livre__";
+    }
+    return camposUnicos.some((c) => c.key === d.key) ? `lead:${d.key}` : "__livre__";
+  };
 
   const commit = (next: {
     branches: MatchReplyBranch[];
@@ -157,21 +169,14 @@ export function MatchReplyForm({
       <div className="space-y-2">
         <Label htmlFor="match-reply-save">{t("Gravar a resposta em")}</Label>
         <Select
-          value={
-            saveTo?.kind === "contact_name"
-              ? "__contact_name__"
-              : saveTo?.kind === "lead_custom"
-                ? camposUnicos.some((c) => c.key === saveTo.key)
-                  ? saveTo.key
-                  : "__livre__"
-                : "__none__"
-          }
+          value={valorDoDestino(saveTo)}
           onValueChange={(v) => {
             let next: ReplySaveTo | undefined;
             if (v === "__none__") next = undefined;
             else if (v === "__contact_name__") next = { kind: "contact_name" };
             else if (v === "__livre__") next = { kind: "lead_custom", key: "campo_{{volta}}" };
-            else next = { kind: "lead_custom", key: v };
+            else if (v.startsWith("contato:")) next = { kind: "contact_custom", key: v.slice(8) };
+            else next = { kind: "lead_custom", key: v.slice(5) };
             setSaveTo(next);
             commit({ branches, graceMin, saveTo: next, ifExists });
           }}
@@ -182,20 +187,35 @@ export function MatchReplyForm({
           <SelectContent>
             <SelectItem value="__none__">{t("Não gravar")}</SelectItem>
             <SelectItem value="__contact_name__">{t("Nome do contato")}</SelectItem>
-            {camposUnicos.map((c) => (
-              <SelectItem key={c.key} value={c.key}>
-                {c.label} ({c.key})
-              </SelectItem>
-            ))}
+            {camposUnicos.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>{t("Oportunidade")}</SelectLabel>
+                {camposUnicos.map((c) => (
+                  <SelectItem key={`lead:${c.key}`} value={`lead:${c.key}`}>
+                    {c.label} ({c.key})
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            {camposDoContato.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>{t("Contato")}</SelectLabel>
+                {camposDoContato.map((c) => (
+                  <SelectItem key={`contato:${c.key}`} value={`contato:${c.key}`}>
+                    {c.label} ({c.key})
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
             <SelectItem value="__livre__">{t("Chave livre (use")} {t("{{volta}}")} {t("no laço)")}</SelectItem>
           </SelectContent>
         </Select>
-        {saveTo?.kind === "lead_custom" && !camposUnicos.some((c) => c.key === saveTo.key) && (
+        {valorDoDestino(saveTo) === "__livre__" && saveTo && saveTo.kind !== "contact_name" && (
           <Input
             aria-label={t("Chave do campo personalizado")}
             value={saveTo.key}
             onChange={(e) => {
-              const next: ReplySaveTo = { kind: "lead_custom", key: e.target.value };
+              const next: ReplySaveTo = { kind: saveTo.kind, key: e.target.value };
               setSaveTo(next);
               commit({ branches, graceMin, saveTo: next, ifExists });
             }}

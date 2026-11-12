@@ -43,8 +43,13 @@ export function useCrmAlerts(): void {
       const ownerAntes = str(antigo?.owner_user_id);
       const status = str(novo.status);
       const statusAntes = str(antigo?.status);
+      // O realtime só traz o valor ANTIGO se a tabela publica a linha inteira (migration 0712). Sem a chave no
+      // `old`, "mudou" é incognoscível: tratar a ausência como "era outro" avisava a cada salvamento do negócio
+      // (mover o card gera dois updates → o aviso saía duas vezes). Na dúvida, não avisa.
+      const sabeODonoAntes = antigo !== null && "owner_user_id" in antigo;
+      const sabeOStatusAntes = antigo !== null && "status" in antigo;
 
-      if (owner && owner === user.id && owner !== ownerAntes) {
+      if (sabeODonoAntes && owner && owner === user.id && owner !== ownerAntes) {
         entregarAviso({
           category: "lead_assigned",
           kind: "lead_assigned",
@@ -54,7 +59,7 @@ export function useCrmAlerts(): void {
           href,
         });
       }
-      if (owner === user.id && status === "won" && statusAntes !== "won") {
+      if (sabeOStatusAntes && owner === user.id && status === "won" && statusAntes !== "won") {
         entregarAviso({
           category: "lead_won",
           kind: "lead_won",
@@ -64,7 +69,7 @@ export function useCrmAlerts(): void {
           href,
         });
       }
-      if (owner === user.id && status === "lost" && statusAntes !== "lost") {
+      if (sabeOStatusAntes && owner === user.id && status === "lost" && statusAntes !== "lost") {
         entregarAviso({
           category: "lead_lost",
           kind: "lead_lost",

@@ -110,7 +110,7 @@ case "${1:-}" in
     # cuja publicação TERMINOU (`$DUB/voz-pronta` é o interruptor do caso 4).
     [ -f "$DUB/registro" ] || exit 1
     case "$*" in
-      *deskcomm-voice-agent*) [ -f "$DUB/voz-pronta" ] || exit 1 ;;
+      *estallo-crm-voice-agent*) [ -f "$DUB/voz-pronta" ] || exit 1 ;;
     esac
     exit 0 ;;
 esac
@@ -186,7 +186,7 @@ export PATH="$WORK/bin:$PATH"
 # Uma VPS que JÁ ESTÁ no ar, na 0.8.0, com as quatro imagens pinadas no .env —
 # é o estado de quem clica em "Atualizar" na tela.
 montar_instalacao() {  # montar_instalacao <raiz>
-  local raiz="$1" proj="$1/deskcommcrm"
+  local raiz="$1" proj="$1/estallo-crm"
   mkdir -p "$proj/supabase"
   cp -RL "$RAIZ/hostgator-setup-kit" "$proj/"
   # O dublê do backup grava a marca SÓ se for executado — é como o caso 1 prova
@@ -205,13 +205,13 @@ STUB
   # de qualquer construção e o caso 3 (controle) mediria outra coisa.
   cp "$RAIZ/docker-compose.build.yml" "$proj/"
   cat > "$proj/.env" <<ENV
-APP_IMAGE=${NS}/deskcommcrm:0.8.0
+APP_IMAGE=${NS}/estallo-crm:0.8.0
 APP_PULL_POLICY=missing
-WORKER_IMAGE=${NS}/deskcomm-worker:0.8.0
+WORKER_IMAGE=${NS}/estallo-crm-worker:0.8.0
 WORKER_PULL_POLICY=missing
-SCHEDULER_IMAGE=${NS}/deskcomm-scheduler:0.8.0
+SCHEDULER_IMAGE=${NS}/estallo-crm-scheduler:0.8.0
 SCHEDULER_PULL_POLICY=missing
-VOICE_AGENT_IMAGE=${NS}/deskcomm-voice-agent:0.8.0
+VOICE_AGENT_IMAGE=${NS}/estallo-crm-voice-agent:0.8.0
 VOICE_AGENT_PULL_POLICY=missing
 WAHA_IMAGE=devlikeapro/waha:latest-2026.7.2
 SUPABASE_DB_URL=postgresql://x/y
@@ -249,7 +249,7 @@ preparar_vps() {
 rodar_update() {
   local raiz="$1" saida="$2"; shift 2
   RC=0
-  ( cd "$raiz" && env "$@" bash deskcommcrm/hostgator-setup-kit/update.sh \
+  ( cd "$raiz" && env "$@" bash estallo-crm/hostgator-setup-kit/update.sh \
       --to v0.9.0 --force ) > "$saida" 2>&1 < /dev/null || RC=$?
 }
 
@@ -262,7 +262,7 @@ rm -f "$DUB/registro"                      # registro/DNS inacessível
 R1="$WORK/caso1"; mkdir -p "$R1"; montar_instalacao "$R1"
 OUT1="$WORK/saida1.txt"
 rodar_update "$R1" "$OUT1"; RC1="$RC"
-DIAG1="$R1/deskcommcrm/.deskcomm-update-diagnostico.log"
+DIAG1="$R1/estallo-crm/.deskcomm-update-diagnostico.log"
 
 if [ "$RC1" -eq 3 ]; then
   ok "o update RECUSOU sem começar (RC 3 — o agente não tenta desfazer)"
@@ -285,10 +285,10 @@ if grep -qE ' stop | up -d| rm -f' "$DOCKER_LOG"; then
 else
   ok "nenhum serviço foi parado, recriado ou removido"
 fi
-if grep -q "^APP_IMAGE=$NS/deskcommcrm:0.8.0$" "$R1/deskcommcrm/.env"; then
+if grep -q "^APP_IMAGE=$NS/estallo-crm:0.8.0$" "$R1/estallo-crm/.env"; then
   ok "o .env segue apontando para a versão de antes (0.8.0)"
 else
-  nao ".env intocado" "APP_IMAGE=:0.8.0" "$(grep '^APP_IMAGE=' "$R1/deskcommcrm/.env")"
+  nao ".env intocado" "APP_IMAGE=:0.8.0" "$(grep '^APP_IMAGE=' "$R1/estallo-crm/.env")"
 fi
 if [ -f "$DIAG1" ]; then
   ok "o run terminou com diagnóstico PERSISTIDO"
@@ -307,7 +307,7 @@ preparar_vps
 R2="$WORK/caso2"; mkdir -p "$R2"; montar_instalacao "$R2"
 OUT2="$WORK/saida2.txt"
 rodar_update "$R2" "$OUT2"; RC2="$RC"
-DIAG2="$R2/deskcommcrm/.deskcomm-update-diagnostico.log"
+DIAG2="$R2/estallo-crm/.deskcomm-update-diagnostico.log"
 
 if [ "$RC2" -ne 0 ]; then
   ok "o update terminou como FALHA (RC $RC2), não como sucesso"
@@ -328,11 +328,11 @@ else
   ok "NENHUM serviço saiu em Created/Exited — o rollback religou o que estava no ar"
 fi
 for chave in APP WORKER SCHEDULER VOICE_AGENT; do
-  if grep -q "^${chave}_IMAGE=$NS/.*:0.8.0$" "$R2/deskcommcrm/.env"; then
+  if grep -q "^${chave}_IMAGE=$NS/.*:0.8.0$" "$R2/estallo-crm/.env"; then
     ok "o pin ${chave}_IMAGE voltou para a versão anterior (0.8.0)"
   else
     nao "rollback do pin ${chave}_IMAGE" "…:0.8.0" \
-        "$(grep "^${chave}_IMAGE=" "$R2/deskcommcrm/.env" 2>/dev/null)"
+        "$(grep "^${chave}_IMAGE=" "$R2/estallo-crm/.env" 2>/dev/null)"
   fi
 done
 if [ -f "$DIAG2" ] && grep -qiE 'falha|RC 1|saída: 1' "$DIAG2"; then
@@ -356,7 +356,7 @@ preparar_vps
 R3="$WORK/caso3"; mkdir -p "$R3"; montar_instalacao "$R3"
 OUT3="$WORK/saida3.txt"
 rodar_update "$R3" "$OUT3" DESKCOMM_BUILD_LOCAL=1; RC3="$RC"
-DIAG3="$R3/deskcommcrm/.deskcomm-update-diagnostico.log"
+DIAG3="$R3/estallo-crm/.deskcomm-update-diagnostico.log"
 
 if grep -q -- '-f docker-compose.build.yml build' "$DOCKER_LOG"; then
   ok "o build local foi EXECUTADO (prova que o que trava o caso 2 é o portão)"
@@ -375,10 +375,10 @@ if grep -qE ' (created|exited)$' "$DUB/estado.txt"; then
 else
   ok "app, worker, scheduler e proxy saíram SAUDÁVEIS"
 fi
-if grep -q "^APP_IMAGE=$NS/deskcommcrm:0.9.0$" "$R3/deskcommcrm/.env"; then
+if grep -q "^APP_IMAGE=$NS/estallo-crm:0.9.0$" "$R3/estallo-crm/.env"; then
   ok "sem rollback: o .env ficou na versão nova (0.9.0)"
 else
-  nao ".env na versão nova" "APP_IMAGE=:0.9.0" "$(grep '^APP_IMAGE=' "$R3/deskcommcrm/.env")"
+  nao ".env na versão nova" "APP_IMAGE=:0.9.0" "$(grep '^APP_IMAGE=' "$R3/estallo-crm/.env")"
 fi
 if [ -f "$DIAG3" ] && grep -qiE 'concluído|sucesso' "$DIAG3"; then
   ok "o run de sucesso TAMBÉM deixa diagnóstico (status legível)"
@@ -418,11 +418,11 @@ for jeito in exited some; do
   else
     nao "worker $jeito acusado" "RC≠0 e 'NÃO subiram: worker'" "RC $RC5; $(tail -2 "$OUT5" | tr '\n' ' ')"
   fi
-  if grep -q "^APP_IMAGE=$NS/deskcommcrm:0.8.0$" "$R5/deskcommcrm/.env" \
-     && grep -q "^WORKER_IMAGE=$NS/deskcomm-worker:0.8.0$" "$R5/deskcommcrm/.env"; then
+  if grep -q "^APP_IMAGE=$NS/estallo-crm:0.8.0$" "$R5/estallo-crm/.env" \
+     && grep -q "^WORKER_IMAGE=$NS/estallo-crm-worker:0.8.0$" "$R5/estallo-crm/.env"; then
     ok "worker $jeito: os pins voltaram para a versão anterior (0.8.0)"
   else
-    nao "worker $jeito: pins de volta" "…:0.8.0" "$(grep -E '^(APP|WORKER)_IMAGE=' "$R5/deskcommcrm/.env" | tr '\n' ' ')"
+    nao "worker $jeito: pins de volta" "…:0.8.0" "$(grep -E '^(APP|WORKER)_IMAGE=' "$R5/estallo-crm/.env" | tr '\n' ' ')"
   fi
 done
 

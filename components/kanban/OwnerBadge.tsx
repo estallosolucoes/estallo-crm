@@ -1,6 +1,5 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
-import { Badge } from "@/components/ui/badge";
 import type { OwnerKind } from "@/lib/types/leads";
 
 /** Iniciais a partir do nome (primeira + última palavra). */
@@ -46,9 +45,9 @@ export function OwnerBadge({
     // Mesma geometria dos outros dois estados (disco de 24px + rótulo), para o
     // rodapé do card não mudar de altura conforme o lead tem dono ou não.
     return (
-      <div className="flex items-center gap-1.5" aria-label={t("Sem responsável")}>
+      <div className="flex min-w-0 items-center gap-1.5" aria-label={t("Sem responsável")}>
         <span
-          className={`${compacto ? "h-4 w-4" : "h-6 w-6"} shrink-0 rounded-full border border-dashed border-border-strong`}
+          className={`${compacto ? "h-4 w-4" : "h-7 w-7"} shrink-0 rounded-full border border-dashed border-border-strong`}
           aria-hidden
         />
         <span className={`truncate text-text-muted ${compacto ? "text-[10px]" : "text-xs"}`}>
@@ -65,7 +64,7 @@ export function OwnerBadge({
 
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex min-w-0 items-center gap-1.5"
       aria-label={`${t("Responsável")}: ${fullLabel}`}
       title={fullLabel}
     >
@@ -73,11 +72,11 @@ export function OwnerBadge({
         className={
           isAgent
             ? // Vazado com anel: o fundo do card atravessa o disco.
-              `flex ${compacto ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[10px]"} shrink-0 items-center justify-center rounded-full border border-accent bg-surface font-mono font-semibold text-accent ring-1 ring-inset ring-accent/40`
+              `flex ${compacto ? "h-4 w-4 text-[8px]" : "h-7 w-7 text-xs"} shrink-0 items-center justify-center rounded-full border border-accent bg-surface font-mono font-semibold text-accent ring-1 ring-inset ring-accent/40`
             : // Preenchido SÓLIDO: a um metro, o humano é uma mancha escura e o
               // agente é um anel claro. Contraste que não depende da borda —
               // fundo suave fazia os dois lerem como "círculo claro".
-              `flex ${compacto ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[10px]"} shrink-0 items-center justify-center rounded-full bg-accent font-semibold text-accent-foreground`
+              `flex ${compacto ? "h-4 w-4 text-[8px]" : "h-7 w-7 text-xs"} shrink-0 items-center justify-center rounded-full bg-accent dark:bg-accent-700 font-semibold text-accent-foreground`
         }
         aria-hidden
       >

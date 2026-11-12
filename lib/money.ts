@@ -55,6 +55,54 @@ export function parseReaisToCents(input: string): number | null {
   return Math.round(n * 100);
 }
 
+// ─── A MÁSCARA DOS CAMPOS DE DINHEIRO ────────────────────────────────────────
+//
+// Todo campo que recebe dinheiro digita da DIREITA para a ESQUERDA, sempre com
+// duas casas: "1" → "0,01", "123" → "1,23", "1234567" → "12.345,67". O texto do
+// campo fica no formato pt-BR ("12.345,67"), que é exatamente o que
+// `parseReaisToCents` lê — então quem grava continua chamando a mesma função e o
+// valor salvo (centavos) não muda. O símbolo da moeda é desenhado ao lado pelo
+// `CampoDeDinheiro` e NÃO entra no texto.
+
+/** Teto da máscara: 99.999.999.999,99 — cabe com folga num inteiro seguro. */
+const MAXIMO_DE_DIGITOS = 13;
+
+/** Centavos → texto do campo ("1.234,56"); `null`/`undefined` → "" (campo vazio). */
+export function centavosParaCampo(cents: number | null | undefined): string {
+  if (cents == null || !Number.isFinite(cents)) return "";
+  const c = Math.max(0, Math.round(cents));
+  const inteiro = Math.floor(c / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${inteiro},${String(c % 100).padStart(2, "0")}`;
+}
+
+/**
+ * O que foi DIGITADO → texto mascarado. Só os dígitos contam (letra e símbolo
+ * somem), lidos como centavos: é o "preencher da direita para a esquerda".
+ * Sem dígito nenhum, o campo fica vazio.
+ */
+export function mascararDinheiro(digitado: string): string {
+  const digitos = digitado.replace(/\D/g, "").slice(-MAXIMO_DE_DIGITOS);
+  if (digitos === "") return "";
+  return centavosParaCampo(Number(digitos));
+}
+
+/**
+ * Um valor que chega de FORA da digitação (o salvo, o colado, o padrão do
+ * formulário) → texto mascarado. Ao contrário de `mascararDinheiro`, aqui
+ * "249.9" é 249,90 e não 24,99: o texto é lido como valor (`parseReaisToCents`),
+ * não como sequência de teclas. Texto já mascarado passa intacto.
+ */
+export function normalizarParaCampo(valor: string | number | null | undefined): string {
+  if (valor == null) return "";
+  if (typeof valor === "number") return centavosParaCampo(Math.round(valor * 100));
+  const texto = valor.replace(/[^\d.,]/g, "");
+  if (texto === "") return "";
+  if (/^\d{1,3}(\.\d{3})*,\d{2}$/.test(texto)) return texto;
+  return centavosParaCampo(parseReaisToCents(texto));
+}
+
 /** Centavos → "R$ 249,90". Para eco na tela do que foi entendido. */
 export function formatCentsBRL(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

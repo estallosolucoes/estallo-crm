@@ -4,20 +4,12 @@ import { tool } from '../edge/llm/run-model-call';
 import { z } from 'zod';
 import { applyPreviewPolicy, newPreviewResult, scenarioContext, type TurnPreview } from './preview';
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
-import { PACING_DEFAULTS } from '../pacing/defaults';
-import { SPINNING_DEFAULTS } from '../spinning/defaults';
 const gate = (): GateContext => ({
   now: new Date('2026-09-07T15:00:00Z'),
   body: 'Olá, posso ajudar?',
   optedOut: false,
   provider: DEFAULT_CHANNEL_PROVIDER,
   messagingWindow: { lastInboundAt: new Date('2026-09-07T14:00:00Z') },
-  pacing: {
-    knobs: PACING_DEFAULTS,
-    state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
-    crmDailyLimit: null,
-  },
-  spinning: { knobs: SPINNING_DEFAULTS, window: [] },
   promise: { table: null },
   semanticPromise: null,
   disclosure: { template: null, isFirstOutbound: false, mode: 'inject' },

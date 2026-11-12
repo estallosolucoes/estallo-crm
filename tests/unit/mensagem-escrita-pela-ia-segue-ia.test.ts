@@ -75,10 +75,7 @@ vi.mock("@/lib/agenda/efeito", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/agenda/efeito")>()),
   assertAgendaEffectSupabase: vi.fn(async () => {}),
 }));
-vi.mock("@/lib/automation/throttle", () => ({
-  espacarEnvio: vi.fn(async () => {}),
-  checkDailyLimit: vi.fn(async () => ({ allowed: true })),
-}));
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({ esperarRitmo: vi.fn(async () => {}) }));
 vi.mock("@/lib/automation/desfecho-do-envio", () => ({
   reportarEnvio: vi.fn(async (_ctx: unknown, type: string) => ({ type, status: "success", detail: {} })),
 }));

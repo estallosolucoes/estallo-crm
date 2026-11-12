@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { RecusaDeCampos } from "@/hooks/kanban/useMoveCard";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 /**
  * O DIAGNÓGICO EM FORMULÁRIO — o outro lado do 422 `required_fields_missing`
@@ -213,14 +214,24 @@ export function CamposObrigatoriosDialog({
                 </div>
               );
             }
+            if (campo.tipo === "currency") {
+              return (
+                <div key={campo.chave} className="space-y-1">
+                  <Label className="text-xs">{rotuloCampo}</Label>
+                  <CampoDeDinheiro
+                    aria-label={nome}
+                    value={valores[campo.chave] ?? ""}
+                    onChange={(e) => setValores((v) => ({ ...v, [campo.chave]: e.target.value }))}
+                  />
+                </div>
+              );
+            }
             return (
               <div key={campo.chave} className="space-y-1">
                 <Label className="text-xs">{rotuloCampo}</Label>
                 <Input
                   aria-label={nome}
                   type={inputHtmlParaTipo(campo.tipo)}
-                  inputMode={campo.tipo === "currency" ? "decimal" : undefined}
-                  placeholder={campo.tipo === "currency" ? "R$ 1.250,00" : undefined}
                   value={valores[campo.chave] ?? ""}
                   onChange={(e) => setValores((v) => ({ ...v, [campo.chave]: e.target.value }))}
                 />

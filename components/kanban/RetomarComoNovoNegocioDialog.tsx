@@ -19,25 +19,24 @@ interface RetomarComoNovoNegocioDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   leadId: string;
-  /** A etapa em que o operador soltou o card — onde a nova tentativa nasce. */
+  /** A etapa ABERTA para onde o negócio encerrado foi levado. */
   stageId: string;
   pipelineId: string;
+  /** "Mover este negócio": reabre o MESMO registro na etapa (o move de sempre). */
+  onMoverEste: () => void;
 }
 
 /**
- * "Retomar como novo negócio" — a TELA que o 409 `reabertura_cria_novo`
- * aponta (issue #1538).
+ * Um negócio GANHO ou PERDIDO levado para uma etapa aberta — no funil (arrasto)
+ * ou no dossiê (trilho de etapas, também dentro da inbox). Desde 30/10/2026 a
+ * escolha é de quem move, não do funil:
  *
- * Num funil `settings.reabertura = "novo_negocio"` o arrasto de um card
- * encerrado não reabre o registro; este diálogo chama
- * `POST /api/v1/leads/{id}/retomar`, que cria a nova tentativa com o mesmo
- * contato (campos e tags copiados conforme `settings.reabertura_campos`), com
- * `source = "retomada"` e `retomado_de_lead_id` apontando para o original —
- * que NÃO é tocado: status, motivo e linha do tempo dele ficam intactos.
- *
- * O board é invalidado pelo próprio `useMoveCard` no `onSettled` do arrasto;
- * aqui só de novo depois do 201, porque a criação acontece DEPOIS daquela
- * rodada de invalidação.
+ *  - "Criar novo negócio" chama `POST /api/v1/leads/{id}/retomar`: nova
+ *    tentativa com o mesmo contato (campos e tags conforme
+ *    `settings.reabertura_campos`), `source = "retomada"` e
+ *    `retomado_de_lead_id` para o original — que NÃO é tocado.
+ *  - "Mover este negócio" reabre o mesmo registro na etapa
+ *    (`fn_crm_lead_close_on_stage` limpa status e data de fechamento).
  */
 export function RetomarComoNovoNegocioDialog({
   open,
@@ -45,12 +44,13 @@ export function RetomarComoNovoNegocioDialog({
   leadId,
   stageId,
   pipelineId,
+  onMoverEste,
 }: RetomarComoNovoNegocioDialogProps) {
   const t = useT();
   const qc = useQueryClient();
   const [criando, setCriando] = useState(false);
 
-  const handleSubmit = async () => {
+  const criarNovo = async () => {
     if (criando) return;
     setCriando(true);
     try {
@@ -69,19 +69,29 @@ export function RetomarComoNovoNegocioDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("Retomar como novo negócio")}</DialogTitle>
+          <DialogTitle>{t("Este lead já foi encerrado")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Este funil não reabre negócios encerrados. Retomar cria um negócio novo com o mesmo contato, copiando campos e tags, e guarda a ligação com este — o negócio original fica intacto, com o motivo dele.",
+              "Criar um novo lead mantém este como está (ganho ou perdido) e abre um novo lead com o mesmo contato, copiando campos e tags. Mover o lead existente o reabre na etapa escolhida.",
             )}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={criando}>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={criando}>
             {t("Cancelar")}
           </Button>
-          <Button onClick={() => void handleSubmit()} disabled={criando}>
-            {criando ? t("Retomando…") : t("Retomar")}
+          <Button
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              onMoverEste();
+            }}
+            disabled={criando}
+          >
+            {t("Mover lead existente")}
+          </Button>
+          <Button onClick={() => void criarNovo()} disabled={criando}>
+            {criando ? t("Criando…") : t("Criar novo lead")}
           </Button>
         </DialogFooter>
       </DialogContent>

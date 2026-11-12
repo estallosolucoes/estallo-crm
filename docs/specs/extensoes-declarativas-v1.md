@@ -1,7 +1,8 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Extensões declarativas v1 — primeira integração
 
 Estado em 16/set/2026: instalação, configuração e recuperação **implementadas e provadas em tela** no J25; atualizar, desfazer a última troca e remover **implementados**, com a prova em tela no J26 (o resultado de cada rodada fica no fim do PROG-021). Complementa o PROG-017 e o marco 2 do PROG-018. A autorização de arquitetura e as respostas A/A/A do DEC-004 continuam vigentes. Os relatórios [08](../research/extensoes/08-integracao-bases.md), [09](../research/extensoes/09-integracao-impactos.md) e [10](../research/extensoes/10-integracao-riscos.md) são as três investigações deste recorte.
-
 
 > **Atualizado pela ADR-0003 (18/set/2026).** O perfil declarativo ganhou uma **lista fechada** de
 > portas e permissões, e o metadado de loja passou a viver no catálogo. Onde este documento ainda
@@ -44,7 +45,9 @@ type ExtensionManifest = {
   configuration: ExtensionConfiguration; // defaults; sem configuração textual livre
   contributions: {
     crm_cards: Array<{
-      id: string; title: LocalizedText; description: LocalizedText;
+      id: string;
+      title: LocalizedText;
+      description: LocalizedText;
       icon: "ListChecks" | "BookOpen" | "Lightbulb";
       blocks: Array<{ heading: LocalizedText; body: LocalizedText }>;
       action: { label: LocalizedText; capability: ExtensionCapability }; // ADR-0003
@@ -57,7 +60,8 @@ type ExtensionManifest = {
     };
   };
 };
-type CatalogEntry = Pick<ExtensionManifest,
+type CatalogEntry = Pick<
+  ExtensionManifest,
   "publisher" | "name" | "version" | "license" | "host_api" | "display" | "permissions"
 > & { sha256: string; byte_length: number };
 type ExtensionCatalog = {
@@ -159,18 +163,18 @@ Gestão em `/app/extensions`, declarada no catálogo canônico de navegação; u
 
 Validações de parser/rede hostil; banco real para RLS/RBAC, repetição/revisão, cancelamento tardio, conflito de versão e concorrência com atualização; baseline fresco e reaplicado. E2E real instala pacote publicado após o build, ativa em A sem afetar B, configura, usa guia e cria/conclui tarefa pela UI existente; desativa, abre URL antiga, reativa e confere preservação. O J26 atualiza de 1.0.0 para 1.1.0 com A ativa, desfaz com o catálogo desligado, recusa a aba antiga, remove, reinstala e reativa. Ensaia download inválido/interrompido, repetição de pedido, catálogo desligado, reinício/reconexão, troca de organização, papéis negados, tela estreita, teclado, marca e espanhol. Captura screenshot/trace e inspeciona backend.
 
-| Pergunta da doutrina | Artefato implementado neste incremento |
-|---|---|
-| Quem alimenta? | `CatalogAdmission` recebe o arquivo revisado; o servidor baixa bytes da origem admitida por `downloadArtifact`. |
-| Quem recebe a saída? | `NavHub`, `ExtensionGuide` e a porta nomeada que o cartão pede, resolvida em `lib/extensions/capacidades.ts` para uma tela já existente. |
-| Que registro emite? | `extension_operations` é o recibo transacional; `audit()` emite ações `extension.*` em `api_audit_log`, como registro complementar. |
-| Onde o registro aparece? | `ExtensionOperations` exibe recibos na gestão; a auditoria complementar aparece em `/admin/audit` para a plataforma e em `/app/audit` para a organização, onde a remoção deixa `extension.deactivated_by_removal`. |
-| Por qual porta se chega? | Entrada Extensões no `NAV_CATALOG` de `lib/navigation/catalogo.ts`, grupo Organização › "Sua empresa" (visível a todo membro; ações só para admin); cards ativos também abrem os guias pelo hub CRM. |
-| Qual o próximo passo garantido? | Preparação persistida (instalação ou atualização) oferece retomar a quem pediu e cancelar a qualquer administrador da instalação; falhas explicam o motivo e a nova tentativa. Uma versão com defeito tem saída: desfazer a última troca ou remover da instalação. O guia não cria demanda própria: a tarefa continua no domínio e na jornada existentes. |
-| Onde se configura? | `InstalledExtensionCard` permite ativar, desativar, mudar densidade e descrição; `fn_extensions_configure` verifica papel, organização e revisão. |
-| Qual a continuidade IA ↔ humano? | Este perfil só apresenta texto e abre uma tela existente. Não cria ferramentas de IA, handoff, envio ou autoridade nova; essas integrações pertencem aos marcos seguintes. |
-| O que muda quando há erro? | A operação guarda falha/cancelamento ou permanece reconciliável; a gestão relê o recibo e orienta corrigir o catálogo/arquivo antes de novo pedido. Não repete efeito incerto nem altera outra organização. Uma versão publicada com defeito volta pelo desfazer, sem depender do catálogo, ou sai de todas as organizações pela remoção; cada organização desligada vê o motivo na própria auditoria e no card "Estava ativa até…". |
-| Onde está o mapa? | `docs/architecture/extensoes-declarativas.architecture.json` conecta admissão, download, persistência, configuração, hub, Tarefas, recibos e auditoria. Seu estado separa implementação de provas concluídas. |
+| Pergunta da doutrina             | Artefato implementado neste incremento                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Quem alimenta?                   | `CatalogAdmission` recebe o arquivo revisado; o servidor baixa bytes da origem admitida por `downloadArtifact`.                                                                                                                                                                                                                                                                                                                      |
+| Quem recebe a saída?             | `NavHub`, `ExtensionGuide` e a porta nomeada que o cartão pede, resolvida em `lib/extensions/capacidades.ts` para uma tela já existente.                                                                                                                                                                                                                                                                                             |
+| Que registro emite?              | `extension_operations` é o recibo transacional; `audit()` emite ações `extension.*` em `api_audit_log`, como registro complementar.                                                                                                                                                                                                                                                                                                  |
+| Onde o registro aparece?         | `ExtensionOperations` exibe recibos na gestão; a auditoria complementar aparece em `/admin/audit` para a plataforma e em `/app/audit` para a organização, onde a remoção deixa `extension.deactivated_by_removal`.                                                                                                                                                                                                                   |
+| Por qual porta se chega?         | Entrada Extensões no `NAV_CATALOG` de `lib/navigation/catalogo.ts`, grupo Organização › "Sua empresa" (visível a todo membro; ações só para admin); cards ativos também abrem os guias pelo hub CRM.                                                                                                                                                                                                                                 |
+| Qual o próximo passo garantido?  | Preparação persistida (instalação ou atualização) oferece retomar a quem pediu e cancelar a qualquer administrador da instalação; falhas explicam o motivo e a nova tentativa. Uma versão com defeito tem saída: desfazer a última troca ou remover da instalação. O guia não cria demanda própria: a tarefa continua no domínio e na jornada existentes.                                                                            |
+| Onde se configura?               | `InstalledExtensionCard` permite ativar, desativar, mudar densidade e descrição; `fn_extensions_configure` verifica papel, organização e revisão.                                                                                                                                                                                                                                                                                    |
+| Qual a continuidade IA ↔ humano? | Este perfil só apresenta texto e abre uma tela existente. Não cria ferramentas de IA, handoff, envio ou autoridade nova; essas integrações pertencem aos marcos seguintes.                                                                                                                                                                                                                                                           |
+| O que muda quando há erro?       | A operação guarda falha/cancelamento ou permanece reconciliável; a gestão relê o recibo e orienta corrigir o catálogo/arquivo antes de novo pedido. Não repete efeito incerto nem altera outra organização. Uma versão publicada com defeito volta pelo desfazer, sem depender do catálogo, ou sai de todas as organizações pela remoção; cada organização desligada vê o motivo na própria auditoria e no card "Estava ativa até…". |
+| Onde está o mapa?                | `docs/architecture/extensoes-declarativas.architecture.json` conecta admissão, download, persistência, configuração, hub, Tarefas, recibos e auditoria. Seu estado separa implementação de provas concluídas.                                                                                                                                                                                                                        |
 
 Essas respostas identificam o código implementado; o aceite de suas jornadas depende das provas registradas no PROG-021.
 

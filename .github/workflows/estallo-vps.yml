@@ -1,0 +1,25 @@
+name: Estallo VPS
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  operacao:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Contrato de implantação e recuperação
+        run: python3 -m unittest discover -s tests/shell -p test_estallo_vps.py -v
+      - name: Validar receita Swarm sem segredos
+        env:
+          ESTALLO_IMAGE_TAG: "1111111111111111111111111111111111111111"
+          WAHA_API_KEY_SHA512: teste
+          WAHA_HMAC_SECRET: teste
+          SRH_TOKEN: teste
+        run: |
+          sudo mkdir -p /opt/stacks/estallo-crm
+          printf 'APP_NAME=Estallo CRM\n' | sudo tee /opt/stacks/estallo-crm/runtime.env >/dev/null
+          docker stack config -c docker-stack.estallo.yml >/dev/null

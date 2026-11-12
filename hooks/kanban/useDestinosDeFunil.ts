@@ -5,6 +5,8 @@ import { apiClient } from "@/lib/api/client";
 export interface DestinoDeFunil {
   id: string;
   name: string;
+  /** As etapas abertas do funil, na ordem do quadro. */
+  etapas?: Array<{ id: string; name: string; color: string | null }>;
 }
 
 /**

@@ -78,7 +78,7 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     await expect(page.getByText(/Empresas que já existem ficam isentas/)).toBeVisible();
     await page.screenshot({ path: `${EVIDENCIA}/sistema-cobranca-ligada.png`, fullPage: true });
     await page.goto("/admin/dashboard");
-    await page.getByRole("link", { name: "Cobrança" }).first().click();
+    await page.getByRole("link", { name: "Planos e assinatura" }).first().click();
     await page.waitForURL("**/admin/cobranca");
     // Estado vazio que ensina: o primeiro passo do checklist é conectar.
     await expect(page.locator('[data-passo="chave"]')).toHaveAttribute("data-feito", "false");

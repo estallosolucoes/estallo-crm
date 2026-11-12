@@ -18,9 +18,10 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
-import { formatCents, parseReaisToCents } from "@/lib/money";
+import { formatCents, parseReaisToCents, centavosParaCampo } from "@/lib/money";
 
 import { AtendimentosSemComanda, type Pendente } from "./_pendentes";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 type Item = {
   id: string;
@@ -367,7 +368,7 @@ function FormularioDeItem({
             // não sobrescreve o que alguém já digitou: quem digitou um valor
             // antes de escolher o serviço tinha um motivo.
             if (escolhido?.default_price_cents != null && preco.trim() === "") {
-              setPreco((escolhido.default_price_cents / 100).toFixed(2));
+              setPreco(centavosParaCampo(escolhido.default_price_cents));
             }
           }}
           className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
@@ -393,13 +394,12 @@ function FormularioDeItem({
 
       <label className="flex flex-col gap-1 text-xs text-text-muted">
         {t("Valor")}
-        <input
+        <CampoDeDinheiro
           value={preco}
-          inputMode="decimal"
-          placeholder="0,00"
+          containerClassName="w-36"
           data-testid="item-valor"
           onChange={(e) => setPreco(e.target.value)}
-          className="w-28 rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+          className="w-full rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
         />
       </label>
 

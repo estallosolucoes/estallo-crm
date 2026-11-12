@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
-import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 import {
   messagingWindowGate,
   type GateContext,
@@ -17,13 +15,6 @@ function baseCtx(over: Partial<GateContext> = {}): GateContext {
     body: "oi",
     optedOut: false,
     provider: "waha",
-    pacing: {
-      knobs: PACING_DEFAULTS,
-      state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
-      crmDailyLimit: null,
-      rng: () => 0,
-    },
-    spinning: { knobs: SPINNING_DEFAULTS, window: [] },
     lgpd: null,
     promise: { table: null },
     semanticPromise: null,

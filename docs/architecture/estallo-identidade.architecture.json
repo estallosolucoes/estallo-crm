@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Estallo — identidade fixa e planos demonstrativos",
+    "subtitle": "SaaS Estallo; cobrança Stripe ainda pendente",
+    "output": "estallo-identidade.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "fonte",
+      "label": "Fontes"
+    },
+    {
+      "id": "politica",
+      "label": "Política e navegação"
+    },
+    {
+      "id": "tela",
+      "label": "Superfícies"
+    }
+  ],
+  "mainPath": ["design", "tokens", "marca", "shell"],
+  "nodes": [
+    {
+      "id": "design",
+      "lane": "fonte",
+      "col": 0,
+      "type": "service",
+      "label": "Design System Estallo",
+      "sublabel": "SVGs oficiais e fontes OFL"
+    },
+    {
+      "id": "tokens",
+      "lane": "politica",
+      "col": 1,
+      "type": "service",
+      "label": "app/globals.css",
+      "sublabel": "régua runtime gerada e contraste"
+    },
+    {
+      "id": "marca",
+      "lane": "politica",
+      "col": 2,
+      "type": "service",
+      "label": "lib/branding/plataforma.ts",
+      "sublabel": "identidade única, sem overrides por tenant"
+    },
+    {
+      "id": "auth",
+      "lane": "fonte",
+      "col": 0,
+      "type": "service",
+      "label": "Organização e papel autenticados",
+      "sublabel": "RBAC existente"
+    },
+    {
+      "id": "catalogo",
+      "lane": "politica",
+      "col": 1,
+      "type": "service",
+      "label": "lib/navigation/catalogo.ts",
+      "sublabel": "uma lista para menu, busca e hubs"
+    },
+    {
+      "id": "shell",
+      "lane": "tela",
+      "col": 3,
+      "type": "service",
+      "label": "Shell desktop/mobile",
+      "sublabel": "empresa ativa, marca e navegação"
+    },
+    {
+      "id": "acesso",
+      "lane": "tela",
+      "col": 3,
+      "type": "service",
+      "label": "Acesso e ícones",
+      "sublabel": "login, recuperação, onboarding e favicon"
+    },
+    {
+      "id": "planos",
+      "lane": "fonte",
+      "col": 1,
+      "type": "service",
+      "label": "lib/planos/catalogo.ts",
+      "sublabel": "preços ilustrativos, sem assinatura"
+    },
+    {
+      "id": "billing",
+      "lane": "tela",
+      "col": 3,
+      "type": "service",
+      "label": "Plano e cobrança",
+      "sublabel": "demonstração sem checkout"
+    }
+  ],
+  "edges": [
+    {
+      "from": "design",
+      "to": "tokens"
+    },
+    {
+      "from": "design",
+      "to": "marca"
+    },
+    {
+      "from": "tokens",
+      "to": "marca"
+    },
+    {
+      "from": "marca",
+      "to": "shell"
+    },
+    {
+      "from": "marca",
+      "to": "acesso"
+    },
+    {
+      "from": "auth",
+      "to": "catalogo"
+    },
+    {
+      "from": "catalogo",
+      "to": "shell"
+    },
+    {
+      "from": "catalogo",
+      "to": "billing"
+    },
+    {
+      "from": "planos",
+      "to": "billing"
+    },
+    {
+      "from": "tokens",
+      "to": "billing"
+    }
+  ]
+}

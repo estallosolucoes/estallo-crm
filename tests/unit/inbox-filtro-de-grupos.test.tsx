@@ -59,9 +59,11 @@ function montar() {
   );
 }
 
+/** Desde o redesenho (16/10/2026) "Grupos" é uma caixa do popover de filtros. */
 async function clicarEmGrupos() {
-  const botao = await screen.findByRole("button", { name: "Grupos" });
-  fireEvent.click(botao);
+  fireEvent.click(await screen.findByRole("button", { name: "Filtrar conversas" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Grupos" }));
+  fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
 }
 
 function urlsPedidas(): string[] {

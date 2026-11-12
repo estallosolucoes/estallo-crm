@@ -208,7 +208,7 @@ describe("encerraDemanda", () => {
     expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE });
   });
 
-  it("move para o fim da stage, preserva a fonte única de evento e fecha como ganho", async () => {
+  it("move para o fim da stage, avisa que o negócio ENTROU na etapa (sem repetir lead.won) e fecha como ganho", async () => {
     const db = makeDb({
       leads: [
         baseLead(),
@@ -221,7 +221,9 @@ describe("encerraDemanda", () => {
 
     expect(result.lead).toMatchObject({ status: "won", stage_id: WON_STAGE, position_in_stage: 5000 });
     expect(db.updates[0]).toMatchObject({ stage_id: WON_STAGE, position_in_stage: 5000 });
-    expect(db.rpcs).toEqual([]);
+    // Só o evento de etapa: lead.won/lead.lost seguem sendo gravados pelo trigger do banco, e emitir
+    // aqui duplicaria notificações. Sem o de etapa, o gatilho "entrou em Ganhos" dos fluxos não dispara.
+    expect(db.rpcs).toEqual(["emit_event"]);
   });
 
   it("não alcança lead de outra organização", async () => {

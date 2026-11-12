@@ -9,6 +9,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { resumoDasTarefas, type NovaTarefa, type Tarefa } from "@/lib/tarefas/tipos";
 import { Plus } from "@/lib/ui/icons";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Props {
   leadId: string;
@@ -64,15 +65,15 @@ export function TarefasDoNegocio({ leadId, contactId, podeEditar, aberto }: Prop
   }
 
   return (
-    <section className="border-b border-border py-3" aria-labelledby="dossie-tarefas">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3
-          id="dossie-tarefas"
-          className="text-xs font-medium uppercase tracking-wide text-text-muted"
-        >
+    <section
+      className="shrink-0 overflow-hidden rounded-[14px] border border-border bg-card shadow-xs"
+      aria-labelledby="dossie-tarefas"
+    >
+      <div className="flex min-h-[34px] items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
+        <h3 id="dossie-tarefas" className="font-sans text-xs font-semibold text-text">
           {t("Tarefas")}
           {resumo.abertas > 0 ? (
-            <span className="ml-1.5 normal-case tracking-normal">
+            <span className="ml-1.5 font-normal text-text-muted">
               · {resumo.abertas} {resumo.abertas === 1 ? t("aberta") : t("abertas")}
               {resumo.atrasadas > 0 ? (
                 <span className="font-semibold text-destructive">
@@ -96,12 +97,14 @@ export function TarefasDoNegocio({ leadId, contactId, podeEditar, aberto }: Prop
         ) : null}
       </div>
 
+      <div className="p-3">
       {falhou ? (
         <p className="text-xs text-destructive">{t("Não foi possível carregar as tarefas.")}</p>
       ) : carregando ? (
-        <p className="text-xs text-text-muted" aria-busy>
-          {t("Carregando…")}
-        </p>
+        <div aria-busy="true" aria-label={t("Carregando…")} className="space-y-2">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
       ) : tarefas.length === 0 ? (
         // Vazio CURTO, e não o quadro tracejado da tela de Tarefas: no painel
         // estreito do dossiê ele empurraria a linha do tempo para baixo da dobra.
@@ -109,7 +112,9 @@ export function TarefasDoNegocio({ leadId, contactId, podeEditar, aberto }: Prop
           {t("Nenhuma tarefa neste negócio. Anote o próximo passo combinado, com prazo e responsável.")}
         </p>
       ) : (
-        <div className="-mx-3">
+        // Sem `-mx-3`: ele anulava o `p-3` do card e encostava a caixa de cada
+        // faixa (borda + canto próprios) na borda do card — tarefa sem respiro.
+        <div>
           <ListaDeTarefas
             tarefas={tarefas}
             podeEditar={podeEditar}
@@ -120,6 +125,7 @@ export function TarefasDoNegocio({ leadId, contactId, podeEditar, aberto }: Prop
           />
         </div>
       )}
+      </div>
 
       <FormularioDeTarefa
         key={aberturas}

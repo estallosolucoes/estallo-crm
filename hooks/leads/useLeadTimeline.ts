@@ -1,6 +1,6 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api/client";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
@@ -24,6 +24,8 @@ export interface TimelineAoVivo {
   itens: TimelineItemView[];
   isLoading: boolean;
   isError: boolean;
+  /** Tentar de novo depois de uma falha — a seção se recupera sozinha. */
+  refetch: () => void;
   /**
    * Ids que chegaram por realtime NESTE mount.
    *
@@ -43,14 +45,27 @@ export interface TimelineAoVivo {
   seguranca: RefetchDeSeguranca;
 }
 
-async function fetchTimeline(leadId: string): Promise<TimelineItemView[]> {
+async function fetchTimeline(leadId: string, signal?: AbortSignal): Promise<TimelineItemView[]> {
   const res = await apiClient.get<{ data: TimelineItemView[] }>(
     `/api/v1/leads/${leadId}/timeline`,
+    { signal },
   );
   if (res && typeof res === "object" && "data" in res) {
     return (res as { data: TimelineItemView[] }).data;
   }
   return res as unknown as TimelineItemView[];
+}
+
+/**
+ * Chave e busca da timeline — as MESMAS para o hook e para o prefetch do card
+ * (`KanbanCard`): prefetch com chave escrita à mão seria cache que ninguém lê.
+ * O `signal` cancela a busca do lead anterior quando se troca de lead rápido.
+ */
+export function opcoesDaTimeline(leadId: string) {
+  return {
+    queryKey: ["timeline", leadId] as const,
+    queryFn: ({ signal }: { signal?: AbortSignal }) => fetchTimeline(leadId, signal),
+  };
 }
 
 /** O id da atividade dentro do payload do postgres_changes. */
@@ -65,7 +80,8 @@ export function useLeadTimeline(
   contactId: string | null,
 ): TimelineAoVivo {
   const qc = useQueryClient();
-  const queryKey = ["timeline", leadId] as const;
+  // Estável: entra no `useCallback` do canal e no refetch de segurança.
+  const queryKey = useMemo(() => ["timeline", leadId] as const, [leadId]);
   const [chegouAoVivo, setChegouAoVivo] = useState<Set<string>>(new Set());
   // `useRef` para o Set não virar dependência do callback e o canal não
   // re-assinar a cada evento — re-assinar perderia eventos na janela.
@@ -73,7 +89,7 @@ export function useLeadTimeline(
 
   const query = useQuery({
     queryKey,
-    queryFn: () => fetchTimeline(leadId as string),
+    queryFn: ({ signal }) => fetchTimeline(leadId as string, signal),
     enabled: !!leadId,
   });
 
@@ -136,6 +152,7 @@ export function useLeadTimeline(
     itens: query.data ?? [],
     isLoading: query.isLoading,
     isError: query.isError,
+    refetch: () => void query.refetch(),
     chegouAoVivo,
     realtimeStatus: status,
     seguranca,

@@ -86,11 +86,9 @@ test("CONTROLE: com dois caracteres a busca VAI ao servidor", async ({ page }) =
     .toBeGreaterThan(0);
 });
 
-test("o placeholder promete o que a busca faz — a ÚLTIMA mensagem", async ({ page }) => {
-  await expect(page.getByLabel(CAMPO_DE_BUSCA)).toHaveAttribute(
-    "placeholder",
-    /última mensagem/i,
-  );
+test("o campo promete o que a busca faz — a ÚLTIMA mensagem", async ({ page }) => {
+  // No Estallo o placeholder é curto («Buscar nome ou telefone»); a promessa completa mora no `title` do campo.
+  await expect(page.getByLabel(CAMPO_DE_BUSCA)).toHaveAttribute("title", /última mensagem/i);
 });
 
 test("lista vazia por filtro NÃO se passa por caixa vazia, e mantém a saída", async ({
@@ -127,7 +125,10 @@ test('"Não lidos" VAI ao servidor — o defeito era filtrar a página carregada
     if (r.url().includes("unread=true")) comUnread.push(r.url());
   });
 
-  await page.getByRole("button", { name: /Não lidos/i }).click();
+  // No Estallo os filtros ficam atrás do botão «Filtrar conversas» e só valem ao «Aplicar».
+  await page.getByRole("button", { name: "Filtrar conversas" }).click();
+  await page.getByLabel(/Não lidos/i).check();
+  await page.getByTestId("aplicar-filtros").click();
 
   await expect
     .poll(() => comUnread.length, { timeout: 5_000 })

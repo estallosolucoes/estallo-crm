@@ -19,8 +19,7 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
-import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
-import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { reportarEnvio, type MensagemEnviada } from "@/lib/automation/desfecho-do-envio";
 import { dadosDoFormularioDoContexto } from "@/lib/automation/dados-do-formulario";
 import { checarGuardasDeContato } from "@/lib/automation/guarda-do-contato";
@@ -42,12 +41,7 @@ async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): P
     if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
     if (protection.adiar) return protection.reavaliar_em;
   }
-  const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
-  if (!sessionId) return null;
-  const foraDaJanela = await adiarAteAJanelaAbrir(ctx.admin, ctx.organizationId, sessionId);
-  if (foraDaJanela) return foraDaJanela;
-  const daily = await checkDailyLimit(ctx.admin, ctx.organizationId, sessionId);
-  return daily.allowed ? null : (daily.retry_at ?? null);
+  return null;
 }
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
@@ -148,7 +142,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       contactId: contact.id,
       reason: `automacao:${ctx.ruleId}`,
     });
-    await espacarEnvio(sessionId);
+    await esperarRitmo(sessionId);
     const message = await sendMessageHandler(
       ctx.admin,
       {

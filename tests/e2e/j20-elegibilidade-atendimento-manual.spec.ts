@@ -266,6 +266,8 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
         page.getByTestId("badge-atendimento-humano"),
         "conversa com a IA pausada não pode ter a mesma cara de uma normal",
       ).toBeVisible({ timeout: 30_000 });
+      // «Devolver ao automático» é item do menu «Mais ações da conversa» no Estallo: abre o menu como a pessoa faria.
+      await page.getByRole("button", { name: "Mais ações da conversa", exact: true }).click();
       const devolver = page.getByTestId("devolver-ao-automatico");
       await expect(devolver).toBeVisible();
       await captura(page, "18-ia-pausada-por-resposta-manual");

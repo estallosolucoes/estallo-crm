@@ -1,6 +1,6 @@
 ---
 name: deskcomm-doutrina
-description: 'Doutrina de código do DeskcommCRM — multi-tenancy com RLS, tripla de migration, restrição de canal, eixo self-host. USE SEMPRE ao escrever ou revisar código neste repositório, e antes de responder pergunta sobre convenção, schema, tenancy, WhatsApp/WAHA, instalador ou Definition of Done. É o ponteiro para a doutrina viva do repo; não substitui ler o CLAUDE.md.'
+description: "Doutrina de código do DeskcommCRM — multi-tenancy com RLS, tripla de migration, restrição de canal, eixo self-host. USE SEMPRE ao escrever ou revisar código neste repositório, e antes de responder pergunta sobre convenção, schema, tenancy, WhatsApp/WAHA, instalador ou Definition of Done. É o ponteiro para a doutrina viva do repo; não substitui ler o CLAUDE.md."
 ---
 
 # DeskcommCRM — doutrina de código
@@ -11,12 +11,12 @@ description: 'Doutrina de código do DeskcommCRM — multi-tenancy com RLS, trip
 
 ## 1. Leia antes de escrever
 
-| arquivo | quando |
-|---|---|
-| `CLAUDE.md` | **sempre**, antes de qualquer código — contém a Definition of Done, que muda |
-| `VISION.md` | antes de decidir escopo, ou de dizer não a uma feature |
-| `docs/doctrine/` | ao mexer em canal, agente, ou peça que se conecte a outra |
-| `ARCHITECTURE.md` | para a visão de uma página |
+| arquivo           | quando                                                                       |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `CLAUDE.md`       | **sempre**, antes de qualquer código — contém a Definition of Done, que muda |
+| `VISION.md`       | antes de decidir escopo, ou de dizer não a uma feature                       |
+| `docs/doctrine/`  | ao mexer em canal, agente, ou peça que se conecte a outra                    |
+| `ARCHITECTURE.md` | para a visão de uma página                                                   |
 
 **Não confie em resumo de doutrina — nem neste arquivo.** A Definition of Done já foi de 13 para 14
 itens; cópia congelada ensina a regra de ontem. Abra o `CLAUDE.md`.
@@ -39,11 +39,7 @@ lista **também** reprova.
 
 ## 3. O eixo que não é técnico
 
-A monetização é **self-host em VPS**, não assinatura: quem instala é o cliente. Então uma mudança
-pode ser tecnicamente impecável e ainda assim ser recusada — env var nova sem default quebra
-instalação fresca, dependência de serviço pago obrigatório quebra o modelo, e a pior de todas é a
-**falha-em-verde**: a sonda que declara sucesso medindo caminho diferente do que o usuário usa. Num
-produto que a pessoa instala sozinha, ela não descobre que está quebrado.
+Neste fork, o produto é o SaaS comercial da Estallo, com marca fixa e planos por assinatura. O posicionamento self-host gratuito pertence ao upstream e não limita as decisões do proprietário. A direção atual é `VISION.md` e `docs/estallo-produto.md`. Stripe será adaptado da referência Nutrigg; preços apresentados nesta etapa são demonstração sem cobrança. Preservar isolamento, contratos e licença MIT.
 
 ## 4. Antes de dizer "pronto"
 

@@ -79,7 +79,6 @@ function argsDoTurno(
     channelSessionId: '00000000-0000-4000-8000-000000000004',
     body: 'Olá! Segue o orçamento que você pediu.',
     optedOutThisTurn: false,
-    crmDailyLimit: null,
     now: new Date('2026-09-17T12:00:00.000Z'),
     rng: () => 0,
     sleep: async () => {},

@@ -7,23 +7,25 @@ date: 2026-04-28
 owner: Rafael Melgaço
 ---
 
+> **Padrão visual vigente:** [Design System Estallo](../README.md). Esta pasta registra jornadas e estados operacionais; referências visuais herdadas não substituem os tokens atuais. O catálogo executável de navegação é `lib/navigation/registry.ts`.
+
 # Screen Flow — Índice
 
 > Mapeamento exaustivo de **quem usa**, **que jornadas existem**, **quais telas precisam ser construídas**, **como elas se conectam** e **quais estados cada uma carrega** — antes de qualquer linha de UI real. Esta pasta antecede stories e specs de UI; serve de contrato visual entre PRDs (PT-BR, prioridade MVP-B).
 
 ## Ordem de leitura recomendada
 
-| # | Arquivo | O que entrega |
-|---|---|---|
-| 1 | [`00-personas.md`](./00-personas.md) | 5 personas com JTBD, frustrations e métricas |
-| 2 | [`01-sitemap.md`](./01-sitemap.md) | Árvore canônica de rotas Next.js (app + admin) |
-| 3 | [`02-journeys.md`](./02-journeys.md) | 5 jornadas críticas passo-a-passo |
-| 4 | [`03-screen-inventory.md`](./03-screen-inventory.md) | Tabela exaustiva de ~70 telas com estados |
-| 5 | [`04-clickflows.md`](./04-clickflows.md) | Diagramas Mermaid `flowchart` por fluxo |
-| 6 | [`05-state-machines.md`](./05-state-machines.md) | Máquinas de estado (`stateDiagram-v2`) |
-| 7 | [`06-empty-states-and-errors.md`](./06-empty-states-and-errors.md) | Catálogo de empty states e errors em PT-BR |
-| 8 | [`07-responsive-strategy.md`](./07-responsive-strategy.md) | Comportamento por breakpoint |
-| 9 | [`08-accessibility.md`](./08-accessibility.md) | Atalhos, ARIA, foco e contraste |
+| #   | Arquivo                                                            | O que entrega                                  |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------- |
+| 1   | [`00-personas.md`](./00-personas.md)                               | 5 personas com JTBD, frustrations e métricas   |
+| 2   | [`01-sitemap.md`](./01-sitemap.md)                                 | Árvore canônica de rotas Next.js (app + admin) |
+| 3   | [`02-journeys.md`](./02-journeys.md)                               | 5 jornadas críticas passo-a-passo              |
+| 4   | [`03-screen-inventory.md`](./03-screen-inventory.md)               | Tabela exaustiva de ~70 telas com estados      |
+| 5   | [`04-clickflows.md`](./04-clickflows.md)                           | Diagramas Mermaid `flowchart` por fluxo        |
+| 6   | [`05-state-machines.md`](./05-state-machines.md)                   | Máquinas de estado (`stateDiagram-v2`)         |
+| 7   | [`06-empty-states-and-errors.md`](./06-empty-states-and-errors.md) | Catálogo de empty states e errors em PT-BR     |
+| 8   | [`07-responsive-strategy.md`](./07-responsive-strategy.md)         | Comportamento por breakpoint                   |
+| 9   | [`08-accessibility.md`](./08-accessibility.md)                     | Atalhos, ARIA, foco e contraste                |
 
 ## Princípios que governam todo este pacote
 

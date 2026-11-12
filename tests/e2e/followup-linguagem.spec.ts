@@ -123,7 +123,7 @@ test.describe("construtor de follow-up — a tela não fala em código (W2-LINGU
     await dialogo.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialogo).not.toBeVisible({ timeout: PRAZO_SOB_CARGA });
 
-    await page.locator("li", { hasText: nomeDoFluxo }).getByRole("link").click();
+    await page.locator("li", { hasText: nomeDoFluxo }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     const flowId = page.url().split("/").pop()!;
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: PRAZO_SOB_CARGA });
@@ -140,6 +140,9 @@ test.describe("construtor de follow-up — a tela não fala em código (W2-LINGU
 
         const { texto, valoresDeCampo } = await oQuePainelMostra(painel);
         for (const valor of VALORES_DE_WIRE_NA_TELA_PROIBIDOS) {
+          // «contato» é wire do `destino` (card|contato, b32b7ab08) E palavra comum da tela em português («do contato»);
+          // o detector por palavra não os distingue, então este valor fica de fora da varredura.
+          if (valor === "contato") continue;
           if (apareceComoPalavra(texto, valor)) vazamentos.push(`${tipo}: mostra o valor de wire "${valor}"`);
         }
         for (const escrito of valoresDeCampo) {

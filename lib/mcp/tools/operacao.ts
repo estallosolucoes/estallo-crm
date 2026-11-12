@@ -223,9 +223,9 @@ const listTagsShape = {
 export const crmListTags: McpToolDefinition<typeof listTagsShape> = {
   name: "crm_list_tags",
   description:
-    "Lista os marcadores (tags) que a organização já usa, com a contagem de conversas de cada um e se ele está no " +
-    "vocabulário canônico da org. Chame ANTES de crm_manage_tags: aplicar 'cliente-vip' quando já existe 'vip' " +
-    "quebra os filtros de quem opera. Ordenado pelos mais usados.",
+    "Lista os marcadores (tags) da organização por entidade (lead = oportunidade, contact = contato), com quantos " +
+    "registros carregam cada um e se ele está no cadastro oficial (tela Tags). Chame ANTES de crm_manage_tags: aplicar " +
+    "'cliente-vip' quando já existe 'vip' quebra os filtros de quem opera. Ordenado pelos mais usados.",
   inputSchema: listTagsShape,
   category: "read",
   requiresRole: "agent",

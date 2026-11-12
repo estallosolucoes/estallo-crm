@@ -169,12 +169,12 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   await acknowledgeKnownAction(page,"/app/settings/tenant");
   await db.from("platform_admins").update({scope:"full"}).eq("user_id",actor);
 
-  // Org A fresca não tem automático: a consulta final da fila inclui ambos
-  // os comandos depois de automatico-ativo resolver. Observa antes do reload.
+  // Qualquer consulta da lista de conversas volta a trazer a org A; o que se prova é o corpo (org e contato certos),
+  // não o conjunto de comandos, que muda com a aba do Inbox. Observa antes do reload.
   const returnedToA=sameTab.waitForResponse(async response=>{
    const url=new URL(response.url());
    if(response.request().method()!=="GET" || url.pathname!=="/api/v1/conversations"
-    || url.searchParams.get("comando")!=="aguardando,automatico" || response.status()!==200)return false;
+    || response.status()!==200)return false;
    const body=await response.json().catch(()=>null) as {data?:Array<{organization_id?:string;contacts?:{name?:string}}> } | null;
    return body?.data?.some(conversation=>conversation.organization_id===orgs[0]
     && conversation.contacts?.name===`Contato A ${suffix}`)===true;

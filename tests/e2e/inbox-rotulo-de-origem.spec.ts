@@ -258,7 +258,8 @@ test.describe("Inbox — o balão diz de onde saiu a mensagem", () => {
       ["RESPOSTA PELO CELULAR", "Celular"],
       ["RESPOSTA DO AGENTE", "IA"],
       ["RESPOSTA DIGITADA POR MIM", "Você"],
-      ["RESPOSTA DIGITADA PELO COLEGA", "Atendente"],
+      // O colega aparece pelo NOME real do autor (4d1b037e1); "Atendente" só quando o nome é desconhecido.
+      ["RESPOSTA DIGITADA PELO COLEGA", "E2E Manager"],
     ];
 
     for (const [corpo, rotulo] of esperado) {

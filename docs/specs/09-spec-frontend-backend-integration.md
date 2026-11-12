@@ -793,6 +793,15 @@ export function useUploadMedia(conversationId: string) {
 
 Composer chama `uploadMedia.mutateAsync(file)` → recebe `storage_path` → passa pro `useSendMessage({ type: 'image', media: { storage_path, mime_type } })`.
 
+O estado `closed` não bloqueia o composer do Inbox nem o chat suspenso. Uma
+mensagem humana aceita por `POST /api/v1/messages` reabre a conversa por
+`fn_service_status`, preservando o responsável existente. A revisão observada
+antes do envio impede reabrir um atendimento encerrado novamente durante a
+entrega. Envios recusados ou com status `failed` não reabrem; notas internas
+também não. Os bloqueios de contato, suporte somente leitura e janela do canal
+continuam sendo aplicados. O cache de conversas e seus contadores são
+invalidados pelo `useSendMessage` após o envio.
+
 ---
 
 ## 11. Server Actions Catalog

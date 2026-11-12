@@ -31,6 +31,8 @@ export type SituacaoDaTarefa = (typeof SITUACOES_DA_TAREFA)[number];
 export interface NegocioDaTarefa {
   id: string;
   title: string;
+  /** O contato da oportunidade — de onde sai a conversa do botão "Conversar". */
+  contact_id?: string | null;
 }
 
 /** Uma linha de `crm_tasks`, como a API a devolve. */

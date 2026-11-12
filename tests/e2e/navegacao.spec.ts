@@ -221,6 +221,15 @@ test.describe("navegação agrupada", () => {
    */
   test("nenhum grupo fica fora da dobra, e em 900px o menu não rola", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
+    // O que se mede é o menu no padrão do Estallo (Agente de IA, Canais e Análise FECHADOS). O contexto das specs abre
+    // todos os grupos para quem só quer clicar num item; aqui o padrão precisa valer.
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("sidebar-grupos-fechados", JSON.stringify(["ia", "canais", "analise"]));
+      } catch {
+        // storage bloqueado: o padrão do menu já é este.
+      }
+    });
     await loginAdmin(page);
 
     const m = await page.evaluate(() => {

@@ -2,20 +2,12 @@ import { audit } from "@/lib/audit";
 import type pg from "pg";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
-import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
-import {
-  decidePacing,
-  janelaDeProspeccaoAberta,
-  proximaAberturaDaProspeccao,
-} from "@/lib/agent-engine/pacing/engine";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { comSaida } from "./rodape-de-saida";
-import {
-  proximoEnvioDaEsteiraFria,
-  tetoDiarioDaEsteiraFria,
-} from "./ritmo-da-esteira-fria";
+import { proximoEnvioDaEsteiraFria } from "./ritmo-da-esteira-fria";
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
@@ -43,56 +35,14 @@ export async function sendNextCandidate(
   const cfg = campaignConfigSchema.parse(c.config);
   await validateConfig(db, c.organization_id, cfg);
   if (new Date(c.next_send_at).getTime() > Date.now()) return;
-  const { knobs, numberActivatedAt } = await loadChannelKnobs(
-    db,
-    c.organization_id,
-    cfg.channel_session_id,
-  );
   const now = new Date();
-  // O PORTÃO DA PROSPECÇÃO: dias próprios (`prospeccao_dias`, 0642) + horas de
-  // disparo — e NÃO o domingo compartilhado. Fora dele, o envio fica agendado
-  // para a próxima abertura, sem tentativa e sem queimar quota: a fila espera,
-  // não morre. Resposta, massa e retomada seguem o portão genérico delas.
-  const nextWindow = janelaDeProspeccaoAberta(now, knobs)
-    ? null
-    : proximaAberturaDaProspeccao(now, knobs);
-  if (nextWindow) {
-    await db.query(
-      "update prospecting_campaigns set next_send_at=$3 where organization_id=$1 and id=$2",
-      [c.organization_id, c.id, nextWindow],
-    );
-    return;
-  }
-  const pacingState = await loadPacingState(db, c.organization_id, cfg.channel_session_id, {
-    now,
-    timezone: knobs.timezone,
-    numberActivatedAt,
-  });
   const channel = (
     await db.query(
-      "select daily_message_limit from channel_sessions where organization_id=$1 and id=$2",
+      "select 1 as ok from channel_sessions where organization_id=$1 and id=$2",
       [c.organization_id, cfg.channel_session_id],
     )
   ).rows[0];
   if (!channel) throw new ProspectingError("Conexão de saída indisponível.");
-  const pacing = decidePacing({
-    now,
-    knobs,
-    state: pacingState,
-    crmDailyLimit: channel.daily_message_limit,
-    // Sem isto, o veto de domingo do portão genérico calaria a prospecção no
-    // dia que os dias próprios liberaram — o atalho acima deixaria passar e o
-    // gate barraria: a fila andaria um dia e pararia no outro, sem motivo visível.
-    prospeccao: true,
-  });
-  if (!pacing.allow || pacing.waitMs > 0) {
-    const next = pacing.allow ? new Date(now.getTime() + pacing.waitMs) : pacing.nextAllowedAt;
-    await db.query(
-      "update prospecting_campaigns set next_send_at=$3 where organization_id=$1 and id=$2",
-      [c.organization_id, c.id, next],
-    );
-    return;
-  }
   // Count attempts, including failures/unknown delivery: a timeout must not release quota.
   const { rows: counts } = await db.query<{
     campaign: number;
@@ -104,22 +54,6 @@ export async function sendNextCandidate(
     [c.organization_id, c.id],
   );
   const count = counts[0]!;
-  // O TETO DO WARM-UP DESTA ESTEIRA. Os degraus da casa (20 no primeiro dia)
-  // foram calibrados para a esteira de RESPOSTA, onde cada saída tem uma entrada
-  // correspondente. Vinte PRIMEIRAS abordagens saindo de um número novo, todas
-  // para quem nunca falou com a empresa, é o retrato do que a plataforma pune —
-  // e quem perde o número é o cliente que instalou.
-  const idadeEmDias = numberActivatedAt
-    ? Math.floor((now.getTime() - new Date(numberActivatedAt).getTime()) / 86_400_000)
-    : 0; // sem data registrada = degrau mais conservador, como o motor da casa faz
-  const tetoFrio = tetoDiarioDaEsteiraFria(knobs, idadeEmDias);
-  if (tetoFrio !== null && count.total >= tetoFrio) {
-    await db.query(
-      "update prospecting_campaigns set next_send_at=$3 where organization_id=$1 and id=$2",
-      [c.organization_id, c.id, count.retry_at],
-    );
-    return;
-  }
   if (count.campaign >= cfg.daily_limit || count.total >= 50) {
     await db.query(
       "update prospecting_campaigns set next_send_at=$3 where organization_id=$1 and id=$2",
@@ -203,11 +137,9 @@ export async function sendNextCandidate(
       [
         c.organization_id,
         c.id,
-        proximoEnvioDaEsteiraFria(new Date(), cfg.interval_minutes, knobs),
+        proximoEnvioDaEsteiraFria(new Date(), cfg.interval_minutes),
       ],
     );
-    // Reserve the shared channel budget before the external effect, including uncertain attempts.
-    await recordSend(db, c.organization_id, cfg.channel_session_id, now);
     await db.query("commit");
   } catch (error) {
     await db.query("rollback");
@@ -262,6 +194,7 @@ export async function sendNextCandidate(
     });
     if (!authorization.ok)
       throw new ProspectingError("Não foi possível preparar o atendimento da resposta.");
+    await esperarRitmo(cfg.channel_session_id);
     const message = await sendMessageHandler(
       admin,
       {

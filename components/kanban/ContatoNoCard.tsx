@@ -37,17 +37,17 @@ export function ContatoNoCard({ lead }: Props) {
   return (
     <div className="mt-1 space-y-1 text-xs text-text-muted" data-testid="contato-no-card">
       {(telefone || email) && (
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           {telefone && (
-            <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
-              <Phone size={12} aria-hidden />
+            <span className="inline-flex min-w-0 items-center gap-1 tabular-nums">
+              <Phone size={16} aria-hidden />
               <span className="sr-only">{t("Telefone")}: </span>
-              {telefone}
+              <span className="truncate">{telefone}</span>
             </span>
           )}
           {email && (
             <span className="inline-flex min-w-0 items-center gap-1">
-              <EnvelopeSimple size={12} aria-hidden />
+              <EnvelopeSimple size={16} aria-hidden />
               <span className="sr-only">{t("E-mail")}: </span>
               <span className="truncate">{email}</span>
             </span>

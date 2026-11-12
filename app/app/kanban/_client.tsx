@@ -1,4 +1,5 @@
 "use client";
+import { BotaoFixarFunil } from "@/components/kanban/BotaoFixarFunil";
 import { useState } from "react";
 import Link from "next/link";
 
@@ -28,6 +29,7 @@ import {
   CaretDown,
   CaretUp,
   Check,
+  Gear,
   PencilSimple,
   Plus,
   Trash,
@@ -465,6 +467,15 @@ export function FunisClient({
               lista que se escolhe o funil, e a planilha precisa de um destino.
               Uma rota nova exigiria um item de menu para uma coisa que se faz
               uma vez por mês — ruído permanente para um gesto ocasional. */}
+          {podeGerenciar ? (
+            <Link
+              href="/app/settings/tenant/pipelines"
+              className={buttonVariants({ variant: "outline", className: "w-full sm:w-auto" })}
+              data-testid="funis-configuracoes"
+            >
+              <Gear size={16} className="mr-2" aria-hidden /> {t("Configurações")}
+            </Link>
+          ) : null}
           {podeImportar ? <ImportarLeads funis={funis} /> : null}
           {podeGerenciar && novo === null ? (
             <Button onClick={() => setNovo("")} disabled={ocupado} data-testid="novo-funil" className="w-full sm:w-auto">
@@ -570,6 +581,7 @@ export function FunisClient({
                 </div>
 
                 <span className="shrink-0 text-xs text-muted-foreground">/{funil.slug}</span>
+                {!renomeandoAqui && <BotaoFixarFunil id={funil.id} nome={funil.name} />}
 
                 {podeGerenciar && !renomeandoAqui && (
                   <div className="flex shrink-0 flex-wrap gap-1">

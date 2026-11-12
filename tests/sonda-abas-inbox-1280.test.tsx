@@ -52,9 +52,6 @@ vi.mock("@/hooks/channels/useChannelSessions", () => ({
   channelLabel: (c: { display_name: string }) => c.display_name,
   useChannelSessions: () => ({ data: [] }),
 }));
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useConversationTagVocabulary: () => ({ data: [] }),
-}));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
   useContactTagVocabulary: () => ({ data: [] }),
 }));
@@ -66,7 +63,7 @@ vi.mock("@/hooks/inbox/useConversationCounts", () => ({
   }),
 }));
 
-const VALUE: InboxFiltersValue = { tab: "ai", search: "", onlyUnread: false };
+const VALUE: InboxFiltersValue = { tab: "all", search: "", onlyUnread: false };
 
 /**
  * As larguras da coluna da lista: `LIMITES_LISTA` (240–520) e o padrão da

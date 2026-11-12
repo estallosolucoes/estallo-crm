@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Webhooks Universais + Motor de Regras — Plano de Implementação (Parte 2: UI + Kit + E2E)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -21,12 +23,14 @@
 ### Task 1: Permissão + sidebar + shell da página com 3 abas
 
 **Files:**
+
 - Modify: `hooks/auth/AuthProvider.tsx` (mapa `ACTION_MIN_ROLE`)
 - Modify: `components/shell/Sidebar.tsx`
 - Create: `app/app/webhooks/page.tsx`
 - Create: `app/app/webhooks/_components/WebhooksClient.tsx`
 
 **Interfaces:**
+
 - Produces: rota `/app/webhooks` com `<Tabs>` de 3 abas (`sources` | `rules` | `activity`), cada aba renderizando o componente das Tasks 2/3/4 (por ora placeholders vazios que as tasks seguintes substituem). Permissão `webhooks.manage` → `"manager"`.
 
 - [ ] **Step 1:** Em `hooks/auth/AuthProvider.tsx`, adicionar ao mapa `ACTION_MIN_ROLE` (fim do objeto):
@@ -47,7 +51,7 @@
 3. No corpo do componente: `const canWebhooks = usePermission("webhooks.manage");` e no `.filter()` adicionar o branch:
 
 ```ts
-          if (item.permission === "webhooks.manage") return canWebhooks;
+if (item.permission === "webhooks.manage") return canWebhooks;
 ```
 
 - [ ] **Step 3:** `app/app/webhooks/page.tsx` (padrão da página de métricas):
@@ -97,9 +101,15 @@ export function WebhooksClient() {
         <TabsTrigger value="rules">Automações</TabsTrigger>
         <TabsTrigger value="activity">Atividade</TabsTrigger>
       </TabsList>
-      <TabsContent value="sources"><SourcesTab /></TabsContent>
-      <TabsContent value="rules"><RulesTab /></TabsContent>
-      <TabsContent value="activity"><ActivityTab /></TabsContent>
+      <TabsContent value="sources">
+        <SourcesTab />
+      </TabsContent>
+      <TabsContent value="rules">
+        <RulesTab />
+      </TabsContent>
+      <TabsContent value="activity">
+        <ActivityTab />
+      </TabsContent>
     </Tabs>
   );
 }
@@ -121,12 +131,14 @@ git commit -m "feat(webhooks): sidebar + shell da página /app/webhooks"
 ### Task 2: Aba "Receber dados" — fontes de captação
 
 **Files:**
+
 - Create: `app/app/webhooks/_components/SourcesTab.tsx` (substitui o stub)
 - Create: `app/app/webhooks/_components/SourceDetail.tsx`
 - Create: `app/app/webhooks/_components/CreateSourceDialog.tsx`
 - Create: `app/api/v1/webhook-sources/[id]/events/route.ts` (feed de recebimentos)
 
 **Interfaces:**
+
 - Consumes: `GET/POST /api/v1/webhook-sources`, `PATCH/DELETE /api/v1/webhook-sources/[id]` (Parte 1 Task 12); `GET /api/v1/pipelines` (existente — confira o shape real da resposta antes de usar).
 - Produces: `GET /api/v1/webhook-sources/[id]/events?limit=20` → `{data: Array<{id, created_at, valid_signature, payload_parsed, status}>}` (select RLS-scoped em `webhook_events_log` filtrando `webhook_path_token` = token da fonte; gate `requireRole("manager")`).
 
@@ -175,11 +187,13 @@ git commit -m "feat(webhooks): aba Receber dados — fontes, snippets e lead de 
 ### Task 3: Aba "Automações" — builder QUANDO / SE / ENTÃO
 
 **Files:**
+
 - Create: `app/app/webhooks/_components/RulesTab.tsx` (substitui o stub)
 - Create: `app/app/webhooks/_components/RuleEditor.tsx`
 - Create: `app/app/webhooks/_components/ActionConfigForm.tsx`
 
 **Interfaces:**
+
 - Consumes: `GET/POST /api/v1/automation-rules`, `PATCH/DELETE .../[id]`; `/api/v1/pipelines` (pipelines+stages); lista de sessões WhatsApp e de membros do time — descubra as rotas/fontes que as páginas `app/app/connections` e `app/app/team` já usam (leia os `_components` delas) e reuse as MESMAS.
 - Produces: labels pt-br canônicos dos gatilhos/ações (congelar aqui, a UI é a única fonte desses textos):
   - Gatilhos: `lead.created` "Quando entrar um contato novo (webhook)"; `lead.stage_changed` "Quando um lead mudar de etapa"; `message.received` "Quando chegar mensagem no WhatsApp"; `lead.tag_added` "Quando um lead ganhar uma tag"; `contact.tag_added` "Quando um contato ganhar uma tag".
@@ -194,7 +208,7 @@ git commit -m "feat(webhooks): aba Receber dados — fontes, snippets e lead de 
    - `lead.*`: `lead.title` "Nome do lead", `lead.tags` "Tags do lead" (op contains), `lead.custom_fields.utm_source` "Origem (utm_source)", `event.to_stage_id` "Etapa de destino" (só p/ stage_changed; renderizar como Select de stages, gravando o uuid como value);
    - `message.received`: `event.body_preview` "Texto da mensagem", `contact.tags` "Tags do contato";
    - `*.tag_added`: `event.added_tags` "Tag adicionada" (op contains).
-   Um link discreto "usar campo avançado" troca o Select por Input livre (poder sem poluir o padrão).
+     Um link discreto "usar campo avançado" troca o Select por Input livre (poder sem poluir o padrão).
 3. **ENTÃO** — lista ordenada de ações; "adicionar ação" abre Select com as 5; cada ação renderiza seu `ActionConfigForm`; remover/reordenar (setas cima/baixo bastam — sem drag-and-drop no v1).
 
 Salvar → `POST` (create) ou `PATCH` (edit); create mostra aviso fixo: "A automação nasce pausada. Revise e ligue quando estiver pronta." Validar client-side com os MESMOS schemas Zod (`import { createAutomationRuleSchema } from "@/lib/schemas/webhooks"`).
@@ -221,10 +235,12 @@ git commit -m "feat(webhooks): aba Automações — builder quando/se/então"
 ### Task 4: Aba "Atividade" — timeline de execuções
 
 **Files:**
+
 - Create: `app/app/webhooks/_components/ActivityTab.tsx` (substitui o stub)
 - Create: `app/api/v1/automation-rules/runs/route.ts` (lista runs da ORG inteira, cross-rule)
 
 **Interfaces:**
+
 - Produces: `GET /api/v1/automation-rules/runs?limit=50` → `{data: Array<{id, rule_id, rule_name, status, actions_result, error, created_at}>}` — select RLS-scoped em `automation_rule_runs` com join do nome da regra (`.select("*, automation_rules(name)")`), order desc, gate `requireRole("manager")`.
 
 - [ ] **Step 1:** Implementar a rota acima (padrão das rotas da Parte 1 Task 12).
@@ -250,11 +266,13 @@ git commit -m "feat(webhooks): aba Atividade — timeline de runs + reenviar"
 ### Task 5: Kit HostGator — crontab do drain + docs
 
 **Files:**
+
 - Modify: `hostgator-setup-kit/install.sh`
 - Modify: `hostgator-setup-kit/update.sh`
 - Modify: `hostgator-setup-kit/README.md`
 
 **Interfaces:**
+
 - Consumes: rota `/api/v1/cron/event-log-drain` (Parte 1 Task 2), env `INTERNAL_CRON_SECRET`/`INTERNAL_SECRET` já usadas pelo kit.
 
 - [ ] **Step 1:** Leia `hostgator-setup-kit/install.sh` e `_common.sh` inteiros para achar onde o kit configura env/crontab hoje (se já existe bloco de crontab p/ outros crons, siga o padrão; se NÃO existe, crie uma função `setup_cron` em `_common.sh` chamada pelos dois scripts). O objetivo idempotente (não duplicar linha a cada update):
@@ -284,6 +302,7 @@ git commit -m "feat(webhooks): crontab do event-log-drain no kit HostGator"
 ### Task 6: E2E Playwright + verificação final
 
 **Files:**
+
 - Create: `tests/e2e/webhooks.spec.ts`
 
 - [ ] **Step 1:** Leia `tests/e2e/utils/` e `tests/e2e/kanban-owner-filter.spec.ts` (login/seed pattern) antes de escrever. O spec:
@@ -325,12 +344,11 @@ git push -u origin feat/webhooks-automation
 
 ## Cobertura da spec (self-check do plano — Parte 2)
 
-| Spec § | Task |
-|---|---|
-| §9 sidebar + permissão | 1 |
-| §9 aba Receber dados (empty-state, snippets, lead de teste, feed) | 2 |
-| §9 aba Automações (builder, nasce pausada) | 3 |
-| §9 aba Atividade (timeline, reenviar) | 4 |
-| §6 crontab kit HostGator | 5 |
-| §11 E2E + Definition of Done | 6 |
-
+| Spec §                                                            | Task |
+| ----------------------------------------------------------------- | ---- |
+| §9 sidebar + permissão                                            | 1    |
+| §9 aba Receber dados (empty-state, snippets, lead de teste, feed) | 2    |
+| §9 aba Automações (builder, nasce pausada)                        | 3    |
+| §9 aba Atividade (timeline, reenviar)                             | 4    |
+| §6 crontab kit HostGator                                          | 5    |
+| §11 E2E + Definition of Done                                      | 6    |

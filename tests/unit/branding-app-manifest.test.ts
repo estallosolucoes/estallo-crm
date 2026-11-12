@@ -16,15 +16,11 @@ describe("manifest do ícone configurável", () => {
       { src: "/app-icon/512", sizes: "512x512", type: "image/png" },
     ]);
   });
-  it("trocar ou remover o arquivo muda as URLs sem trocar identidade/start_url", async () => {
-    mocks.linha.mockResolvedValueOnce({ favicon_path: "platform/primeiro.png" });
-    const antes = await manifest();
-    mocks.linha.mockResolvedValueOnce({ favicon_path: "platform/segundo.png" });
-    const depois = await manifest();
-    expect(antes.icons?.[0]?.src).not.toBe(depois.icons?.[0]?.src);
-    expect(depois.icons?.[0]?.src).toBe("/app-icon/192?v=platform%2Fsegundo.png");
-    expect((await manifest()).icons?.[0]?.src).toBe("/app-icon/192");
-    expect(antes.start_url).toBe(depois.start_url);
-    expect(antes.scope).toBe(depois.scope);
+  it("arquivos legados não mudam os ícones do SaaS", async () => {
+    mocks.linha.mockResolvedValue({ favicon_path: "platform/antigo.png" });
+    const valor = await manifest();
+    expect(valor.icons?.[0]?.src).toBe("/app-icon/192");
+    expect(valor.start_url).toBe("/app");
+    expect(mocks.linha).not.toHaveBeenCalled();
   });
 });

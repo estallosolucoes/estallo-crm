@@ -14,6 +14,7 @@ import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
 
 import { EdicaoDoProduto } from "./_edicao";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 interface Textos {
   titulo: string;
@@ -33,10 +34,8 @@ interface ResumoDaImportacao {
 interface Rascunho {
   codigo: string;
   nome: string;
-  marca: string;
   categoria: string;
   preco: string;
-  custo: string;
   quantidade: string;
   controla_estoque: boolean;
 }
@@ -44,10 +43,8 @@ interface Rascunho {
 const VAZIO: Rascunho = {
   codigo: "",
   nome: "",
-  marca: "",
   categoria: "",
   preco: "",
-  custo: "",
   quantidade: "0",
   controla_estoque: true,
 };
@@ -58,16 +55,12 @@ function doRascunho(
 ): Record<string, unknown> | { erro: string } {
   const preco_cents = precoParaCentavos(r.preco);
   if (preco_cents === null) return { erro: t("Preço inválido. Escreva assim: 5.499,00") };
-  const custo_cents = r.custo.trim() === "" ? null : precoParaCentavos(r.custo);
-  if (r.custo.trim() !== "" && custo_cents === null) return { erro: t("Custo inválido.") };
 
   return {
     codigo: r.codigo.trim(),
     nome: r.nome.trim(),
-    ...(r.marca.trim() ? { marca: r.marca.trim() } : {}),
     ...(r.categoria.trim() ? { categoria: r.categoria.trim() } : {}),
     preco_cents,
-    custo_cents,
     controla_estoque: r.controla_estoque,
     quantidade: Number(r.quantidade) || 0,
   };
@@ -344,7 +337,7 @@ export function ProdutosClient({
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder={t("Buscar por nome, código ou marca")}
+          placeholder={t("Buscar por nome ou código")}
           className="h-9 w-full max-w-sm rounded-md border px-3 text-sm"
           data-testid="busca-produto"
         />
@@ -446,14 +439,6 @@ export function ProdutosClient({
               />
             </label>
             <label className="text-sm">
-              {t("Marca")}
-              <input
-                value={rascunho.marca}
-                onChange={(e) => setRascunho({ ...rascunho, marca: e.target.value })}
-                className="mt-1 h-9 w-full rounded-md border px-3"
-              />
-            </label>
-            <label className="text-sm">
               {t("Categoria")}
               <input
                 value={rascunho.categoria}
@@ -463,25 +448,13 @@ export function ProdutosClient({
             </label>
             <label className="text-sm">
               {t("Preço de venda")}
-              <input
+              <CampoDeDinheiro
                 value={rascunho.preco}
                 onChange={(e) => setRascunho({ ...rascunho, preco: e.target.value })}
-                placeholder="5.499,00"
-                className="mt-1 h-9 w-full rounded-md border px-3"
+                containerClassName="mt-1 w-full"
+                className="h-9 w-full rounded-md border px-3"
                 data-testid="produto-preco"
               />
-            </label>
-            <label className="text-sm">
-              {t("Custo")} <span className="text-muted-foreground">{t("(opcional)")}</span>
-              <input
-                value={rascunho.custo}
-                onChange={(e) => setRascunho({ ...rascunho, custo: e.target.value })}
-                placeholder="4.100,00"
-                className="mt-1 h-9 w-full rounded-md border px-3"
-              />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {t("Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.")}
-              </span>
             </label>
           </div>
 
@@ -549,7 +522,6 @@ export function ProdutosClient({
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {p.codigo}
-                  {p.marca ? ` · ${p.marca}` : ""}
                   {p.controla_estoque
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}

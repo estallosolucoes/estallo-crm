@@ -18,6 +18,58 @@ import {
 } from "@/lib/tarefas/tipos";
 import { Check, Kanban, PencilSimple, Trash, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api/client";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { useConversaNovaComEscolhaDeCanal } from "@/components/channels/SeletorDeCanalParaConversa";
+import { useChatSuspenso } from "@/components/chat-suspenso/ChatSuspensoContext";
+import { IconeWhatsapp } from "@/components/chat-suspenso/IconeWhatsapp";
+
+/**
+ * CONVERSAR COM O CONTATO DA OPORTUNIDADE, SEM SAIR DAS TAREFAS.
+ *
+ * Abre o MESMO chat suspenso do funil. A conversa é procurada primeiro (sem
+ * efeito colateral); só quando o contato não tem nenhuma é que o fluxo de
+ * conversa nova — com a escolha de canal, quando há mais de um — a cria.
+ */
+function ConversarDaTarefa({ contactId }: { contactId: string }) {
+  const t = useT();
+  const chat = useChatSuspenso();
+  const conversaNova = useConversaNovaComEscolhaDeCanal({ aoAbrir: (id) => chat?.abrir(id) });
+  const [buscando, setBuscando] = useState(false);
+  if (!chat) return null;
+
+  async function conversar() {
+    setBuscando(true);
+    try {
+      const r = await apiClient.get<{ data: Array<{ id: string }> }>(
+        `/api/v1/conversations?contact_id=${encodeURIComponent(contactId)}&limit=1`,
+      );
+      const existente = r.data[0]?.id;
+      if (existente) chat!.abrir(existente);
+      else await conversaNova.iniciarConversa({ contact_id: contactId });
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void conversar()}
+        disabled={buscando || conversaNova.abrindo}
+        className="inline-flex size-6 items-center justify-center rounded-full bg-success-bg text-success-fg hover:bg-success-bg/70 disabled:opacity-60"
+        title={t("Conversar com o contato sem sair das tarefas")}
+        aria-label={t("Conversar com o contato sem sair das tarefas")}
+      >
+        <IconeWhatsapp size={14} />
+      </button>
+      {conversaNova.seletor}
+    </>
+  );
+}
 
 interface Props {
   tarefas: Tarefa[];
@@ -100,7 +152,7 @@ function Linha({
         className={cn(
           "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors",
           encerrada
-            ? "border-primary bg-primary text-primary-foreground"
+            ? "border-primary bg-primary dark:bg-accent-700 text-primary-foreground"
             : "border-muted-foreground/40 hover:border-primary",
         )}
       >
@@ -154,6 +206,9 @@ function Linha({
               <Kanban size={12} aria-hidden className="shrink-0" />
               <span className="truncate">{tarefa.lead.title}</span>
             </Link>
+          ) : null}
+          {tarefa.lead && (tarefa.lead.contact_id ?? tarefa.contact_id) ? (
+            <ConversarDaTarefa contactId={(tarefa.lead.contact_id ?? tarefa.contact_id)!} />
           ) : null}
         </div>
       </div>

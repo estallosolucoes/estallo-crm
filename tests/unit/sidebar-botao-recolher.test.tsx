@@ -19,7 +19,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { Sidebar } from "@/components/shell/Sidebar";
-import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 
@@ -137,77 +136,20 @@ describe("Sidebar — a marca não disputa a barra com o botão (#2722 / review 
     expect(botao.parentElement?.className).toContain("shrink-0");
   });
 
-  it("com marca própria: a imagem tem teto que encolhe, e o wrapper é min-w-0", () => {
+
+  // A barra do Estallo tem identidade FIXA: nome e logo da organização (white-label do upstream) não entram
+  // nela. Os três casos que mediam o teto da imagem e o corte do nome da marca própria (review #2723) só têm
+  // sentido onde a marca da organização se desenha; aqui o que vale é que ela NÃO se desenha.
+  it("a marca da organização não entra na barra: a identidade é a do Estallo", () => {
     authRef.user = { is_platform_admin: false };
     authRef.activeOrg = {
       orgId: "org-1",
       name: "Org",
       role: "admin",
-      marca: { nome: "Clínica Sorriso Feliz", logoUrl: "https://marca/logo.png" },
+      marca: { nome: "Clínica Odontológica Sorriso Feliz", logoUrl: "https://marca/logo.png" },
     };
     render(<Sidebar collapsed={false} />);
-    const img = document.querySelector("img")!;
-    // O review provou a pegadinha: `max-w-full` + `max-w-[10rem]` disputam a
-    // MESMA propriedade e só um vale. O teto tem de ser um único `min()`.
-    expect(img.className).toContain("max-w-[min(10rem,100%)]");
-    expect(img.className).not.toContain("max-w-[10rem]");
-    // `min-w-0` porque item de flex não encolhe abaixo do `min-width: auto`.
-    expect(img.parentElement?.className).toContain("min-w-0");
-  });
-
-  it("sem logo: o nome longo trunca, com o nome completo no title", () => {
-    // O nome da barra vem de `marca.nome ?? brand.name`, NUNCA de
-    // `activeOrg.name` — e `logo` é `marca.logoUrl || brand.logoUrl`. Sem o
-    // provider, o contexto default devolve a marca do PRODUTO e a barra
-    // desenha o símbolo no lugar do texto (foi o que este teste pegou na
-    // primeira rodada). `logoUrl: null` nos dois lados é o que dá a tela sem
-    // arte, que é o caso medido no review.
-    authRef.user = { is_platform_admin: false };
-    authRef.activeOrg = {
-      orgId: "org-1",
-      name: "Org",
-      role: "admin",
-      marca: { nome: "Clínica Odontológica Sorriso Feliz", logoUrl: null },
-    };
-    render(
-      <MarcaDaInstalacaoProvider
-        marca={{ name: "Sistema do Revendedor", logoUrl: null, initial: "S" }}
-      >
-        <Sidebar collapsed={false} />
-      </MarcaDaInstalacaoProvider>,
-    );
-    // Medido no review: 3 linhas (72px) dentro de uma linha de 56px.
-    const nome = screen.getByText("Clínica Odontológica Sorriso Feliz");
-    expect(nome.className).toContain("truncate");
-    expect(nome).toHaveAttribute("title", "Clínica Odontológica Sorriso Feliz");
-  });
-
-  it("só com a arte do escuro: o nome do tema claro também trunca (é bloco)", () => {
-    // Instalação que cadastrou só a arte do tema escuro: no claro a barra mostra
-    // o NOME dentro do wrapper da marca, que não é flex. Ali o `<span>` é inline,
-    // e `truncate` (overflow + ellipsis) não vale em elemento inline — medido
-    // numa réplica, o nome ia até x=255 numa barra de 240px, por cima do botão.
-    // `block` é o que faz o corte valer.
-    authRef.user = { is_platform_admin: false };
-    authRef.activeOrg = {
-      orgId: "org-1",
-      name: "Org",
-      role: "admin",
-      marca: {
-        nome: "Clínica Odontológica Sorriso Feliz",
-        logoUrl: null,
-        logoDarkUrl: "https://marca/logo-escuro.png",
-      },
-    };
-    render(
-      <MarcaDaInstalacaoProvider
-        marca={{ name: "Sistema do Revendedor", logoUrl: null, initial: "S" }}
-      >
-        <Sidebar collapsed={false} />
-      </MarcaDaInstalacaoProvider>,
-    );
-    const nome = screen.getByText("Clínica Odontológica Sorriso Feliz");
-    expect(nome.className).toContain("truncate");
-    expect(nome.className.split(/\s+/)).toContain("block");
+    expect(screen.queryByText("Clínica Odontológica Sorriso Feliz")).toBeNull();
+    expect(document.querySelector("img[src=\"https://marca/logo.png\"]")).toBeNull();
   });
 });

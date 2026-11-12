@@ -32,6 +32,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createClient } from "@/lib/supabase/server";
+import { loadAuthUser } from "@/lib/auth/server";
 import { GET } from "@/app/api/v1/leads/[id]/contatos-relacionados/route";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -132,6 +133,9 @@ function montarBanco(
     ) => Promise.resolve({ data: linhas(), error: null }).then(aoOk, aoErr);
     return elo;
   };
+  // A rota pergunta só ao `loadAuthUser` (uma ida ao GoTrue por requisição):
+  // sem sessão ele devolve null, e é isso que vira o 401.
+  vi.mocked(loadAuthUser).mockResolvedValue(sessao ? ({ idioma: "pt-BR" } as never) : null);
   vi.mocked(createClient).mockResolvedValue({
     auth: {
       getUser: async () =>

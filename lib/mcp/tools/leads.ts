@@ -507,7 +507,7 @@ export const crmRetomarLead: McpToolDefinition<typeof retomarInputShape> = {
     "Retoma um negócio ENCERRADO (perdido ou ganho) como um negócio NOVO no mesmo funil, com o mesmo contato, " +
     "source='retomada' e retomado_de_lead_id apontando para o original — que NÃO é alterado (status e motivo ficam intactos). " +
     "É o que fazer quando o cliente volta depois de uma venda fechada e a equipe quer uma nova tentativa registrada: " +
-    "em funis com reabertura 'novo_negocio', o crm_move_lead_stage devolve 409 reabertura_cria_novo e esta é a porta que resolve. " +
+    "já o crm_move_lead_stage para uma etapa aberta reabre o PRÓPRIO negócio encerrado. " +
     "O negócio original precisa estar encerrado; um negócio ABERTO é recusado (reabertura_lead_aberto).",
   inputSchema: retomarInputShape,
   category: "write",

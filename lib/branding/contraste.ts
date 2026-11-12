@@ -104,6 +104,43 @@ export function escolheAFrente(fundo: string): string {
 }
 
 /**
+ * O fundo é AZUL o bastante para levar texto branco? Matiz entre ciano e índigo
+ * (185°–255° em HSL), saturado (≥ 0,35) e não pastel (luminosidade ≤ 0,72).
+ * Os tons claros (`#e7f5fc`, accent-50…200) ficam de fora: neles o texto segue
+ * escuro. `fundo` precisa ser `#rrggbb` — hex malformado devolve `false`.
+ */
+export function ehFundoAzul(fundo: string): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec(fundo.trim());
+  if (!m) return false;
+  const n = parseInt(m[1]!, 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return false;
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+  const matiz = (h + 360) % 360;
+  return matiz >= 185 && matiz <= 255 && s >= 0.35 && l <= 0.72;
+}
+
+/**
+ * A frente do texto sobre uma cor pintada (etiqueta, etapa do funil): sobre AZUL
+ * é sempre branco; nas outras cores, a régua (`escolheAFrente`).
+ *
+ * Decisão do dono do produto em 2026-10-15, estendendo a de 2026-10-14 sobre o
+ * Estallo Blue: texto escuro sobre azul tem razão de contraste maior e leitura
+ * pior aos olhos. É deliberado que o branco aqui fique abaixo do piso de 4,5 em
+ * azuis médios (`#0091ff` dá 3,4) — ver `docs/design-system/README.md`.
+ */
+export function frenteSobreCor(fundo: string): string {
+  return ehFundoAzul(fundo) ? "#ffffff" : escolheAFrente(fundo);
+}
+
+/**
  * `--color-accent-fg` é CALCULADO, nunca fixo: `#ffffff` sobre um accent amarelo é
  * ilegível, e é justamente a marca amarela que o cliente cola sem avisar.
  *

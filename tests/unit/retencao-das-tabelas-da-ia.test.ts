@@ -11,14 +11,9 @@ import {
   houveEfeito,
   podarHistorico,
 } from "@/app/api/v1/cron/data-retention/route";
-import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 import {
   RETENCAO_CHECKPOINTS_DIAS_PADRAO,
   RETENCAO_CHECKPOINTS_DIAS_PISO,
-  RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
-  RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
-  RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
-  RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
   RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
   RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
 } from "@/lib/retencao/politica";
@@ -27,8 +22,7 @@ import {
  * AS TABELAS APPEND-ONLY DA IA ENTRAM NA PODA DIÁRIA (migration 0587).
  *
  * Antes: zero `delete` em `llm_calls`, `metrics`, `skill_activations`,
- * `ai_router_decisions`, `pacing_ledger`, `outbound_copies` e
- * `lead_checkpoints`. Este arquivo mede o lado do CRON (qual função, com que
+ * `ai_router_decisions` e `lead_checkpoints`. Este arquivo mede o lado do CRON (qual função, com que
  * prazo, e que a rodada que só apagou aqui ainda deixa rastro) e o TEXTO das
  * guardas no baseline que o kit aplica. O que o banco de fato preserva — o
  * último checkpoint da fronteira, o piso, o privilégio — é medido contra um
@@ -71,18 +65,6 @@ const NOVAS = {
     padrao: RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
     piso: RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
     campo: "telemetria_de_ia_apagada",
-  },
-  "fn_expurgar_ritmo_de_envio_vencido": {
-    chave: "PACING_LEDGER_RETENTION_DAYS",
-    padrao: RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO,
-    piso: RETENCAO_RITMO_DE_ENVIO_DIAS_PISO,
-    campo: "ritmo_de_envio_apagado",
-  },
-  "fn_expurgar_copias_enviadas_vencidas": {
-    chave: "OUTBOUND_COPIES_RETENTION_DAYS",
-    padrao: RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO,
-    piso: RETENCAO_COPIAS_ENVIADAS_DIAS_PISO,
-    campo: "copias_enviadas_apagadas",
   },
   "fn_expurgar_checkpoints_superados": {
     chave: "LEAD_CHECKPOINT_RETENTION_DAYS",
@@ -150,8 +132,6 @@ describe("podarHistorico — as quatro podas da IA", () => {
     const { db } = bancoGravador();
     const r = await podarHistorico(db, { AI_TELEMETRY_RETENTION_DAYS: "500" });
     expect(r.retencao_telemetria_de_ia_dias).toBe(500);
-    expect(r.retencao_ritmo_de_envio_dias).toBe(RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO);
-    expect(r.retencao_copias_enviadas_dias).toBe(RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO);
     expect(r.retencao_checkpoints_dias).toBe(RETENCAO_CHECKPOINTS_DIAS_PADRAO);
   });
 });
@@ -224,20 +204,6 @@ describe("as guardas moram no corpo das funções do baseline", () => {
     expect(corpo(BASELINE, "fn_expurgar_telemetria_de_ia_vencida")).toContain(
       "c.legacy_invocation_id is null",
     );
-  });
-
-  it("ritmo: só sai quem tem um envio MAIS NOVO do mesmo número", () => {
-    expect(corpo(BASELINE, "fn_expurgar_ritmo_de_envio_vencido")).toMatch(
-      /n\.channel_session_id = p\.channel_session_id\s+and n\.sent_at > p\.sent_at/,
-    );
-  });
-
-  it("cópias: a janela mínima no SQL é a de SPINNING_DEFAULTS", () => {
-    // Duas cópias do número 20: se o default do gate subir e o SQL não, a poda
-    // apagaria o que o gate ainda compara.
-    const c = corpo(BASELINE, "fn_expurgar_copias_enviadas_vencidas");
-    expect(c).toContain(`greatest(${SPINNING_DEFAULTS.windowSize}, case when`);
-    expect(c).toContain(`coalesce(j.janela, ${SPINNING_DEFAULTS.windowSize})`);
   });
 
   it("checkpoints: a fronteira são as MESMAS colunas que latestCheckpoint filtra", () => {

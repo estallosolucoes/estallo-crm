@@ -19,8 +19,7 @@ vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.enviar }));
 vi.mock("@/lib/automation/start-conversation", () => ({ ensureConversation: mocks.abrirConversa }));
-vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: async () => null }));
-vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({ esperarRitmo: async () => {} }));
 /** PostgREST falso: toda cadeia devolve a si mesma; a lista e as linhas únicas vêm de `mocks`. */
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({

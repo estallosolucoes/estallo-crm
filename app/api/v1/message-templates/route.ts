@@ -25,21 +25,83 @@ const COLS =
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
-export async function GET(_req: NextRequest): Promise<Response> {
+/**
+ * Sem `limit`, a resposta de sempre (todos, mais recentes primeiro) — é o que o
+ * menu `/` do composer consome. Com `limit`, a tela de Respostas rápidas pagina
+ * por cursor e busca NO BANCO (`q`), para achar o que ainda não foi carregado.
+ */
+const listaSchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  cursor: z.string().max(500).optional(),
+});
+
+type Cursor = { updated_at: string; id: string };
+const codificarCursor = (c: Cursor) => Buffer.from(`${c.updated_at}|${c.id}`, "utf8").toString("base64url");
+function decodificarCursor(raw: string): Cursor | null {
+  const [updated_at, id] = Buffer.from(raw, "base64url").toString("utf8").split("|");
+  if (!updated_at || !id || Number.isNaN(Date.parse(updated_at)) || !z.string().uuid().safeParse(id).success) {
+    return null;
+  }
+  return { updated_at, id };
+}
+
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "message_templates" });
   if (!authz.ok) return authz.response;
   const { org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  const parsed = listaSchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
+  if (!parsed.success) {
+    return fail("validation_failed", t("Dados inválidos."), 422, {
+      requestId,
+      details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
+    });
+  }
+  const { q, limit, cursor } = parsed.data;
 
   const supabase = await createClient();
   // RLS já limita a compartilhados + próprios da org ativa.
-  const { data, error } = await supabase
+  let query = supabase
     .from("message_templates")
     .select(COLS)
     .eq("organization_id", org.orgId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: false });
+
+  if (q) {
+    // Fora: o curinga `%`, a barra e os separadores do `.or()` do PostgREST. O
+    // `_` (curinga de um caractere) fica — no pior caso amplia a busca. Espaços
+    // viram `%`: "boas   vindas" acha "Boas vindas".
+    const termo = q.replace(/[%\\,()"]/g, " ").trim().replace(/\s+/g, "%");
+    query = query.or(`title.ilike.%${termo}%,shortcut.ilike.%${termo}%`);
+  }
+  if (limit) {
+    if (cursor) {
+      const c = decodificarCursor(cursor);
+      if (!c) return fail("invalid_cursor", t("Cursor inválido."), 400, { requestId });
+      query = query.or(`updated_at.lt.${c.updated_at},and(updated_at.eq.${c.updated_at},id.lt.${c.id})`);
+    }
+    query = query.limit(limit + 1);
+  }
+
+  const { data, error } = await query;
   if (error) return fail("internal_error", "Erro ao listar templates.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+  const linhas = data ?? [];
+  if (!limit) return ok(linhas, { requestId });
+
+  const hasMore = linhas.length > limit;
+  const pagina = hasMore ? linhas.slice(0, limit) : linhas;
+  const ultima = pagina[pagina.length - 1];
+  return ok(pagina, {
+    requestId,
+    meta: {
+      has_more: hasMore,
+      cursor: hasMore && ultima ? codificarCursor({ updated_at: ultima.updated_at, id: ultima.id }) : null,
+    },
+  });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {

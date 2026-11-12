@@ -189,7 +189,7 @@ describe("modelo do follow-up (#2528)", () => {
           ],
         };
       }
-      if (sql.includes("select current_node_id, status from followup_enrollments")) {
+      if (sql.includes("select e.current_node_id, e.status, e.execution_contract")) {
         return { rows: [{ current_node_id: "passo", status: "active" }] };
       }
       if (/from message_templates/.test(sql)) return { rows: [{ body: CORPO }] };

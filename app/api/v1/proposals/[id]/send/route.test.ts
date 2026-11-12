@@ -9,9 +9,7 @@ const mocks: Record<string, any> = vi.hoisted(() => ({
   requireRole: vi.fn(),
   requireSupportWrite: vi.fn(),
   createAdminClient: vi.fn(),
-  adiarAteAJanelaAbrir: vi.fn(),
-  checkDailyLimit: vi.fn(),
-  espacarEnvio: vi.fn(),
+  esperarRitmo: vi.fn(),
   alocarNumero: vi.fn(),
   decidirVersao: vi.fn(),
   renderDocumentoPdf: vi.fn(),
@@ -32,8 +30,7 @@ vi.mock("@/lib/propostas/porta", () => ({ sePropostasDesligadas: vi.fn(async () 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.requireRole }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.requireSupportWrite }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
-vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: mocks.adiarAteAJanelaAbrir }));
-vi.mock("@/lib/automation/throttle", () => ({ checkDailyLimit: mocks.checkDailyLimit, espacarEnvio: mocks.espacarEnvio }));
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({ esperarRitmo: mocks.esperarRitmo }));
 vi.mock("@/lib/propostas/numeracao", () => ({ alocarNumero: mocks.alocarNumero }));
 vi.mock("@/lib/propostas/versao", () => ({ decidirVersao: mocks.decidirVersao }));
 vi.mock("@/lib/propostas/documento/pdf-do-documento", () => ({ renderDocumentoPdf: mocks.renderDocumentoPdf }));
@@ -62,8 +59,6 @@ const ROLE_RANK: Record<string, number> = { viewer: 1, agent: 2, manager: 3, adm
 
 interface MundoOpts {
   papel?: keyof typeof ROLE_RANK;
-  foraDaJanela?: boolean;
-  limiteDiarioAtingido?: boolean;
   suporteReadOnly?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   propostaOriginal?: Partial<any>;
@@ -400,18 +395,8 @@ function montarMundoDeEnvio(opts: MundoOpts = {}) {
     },
   });
 
-  mocks.adiarAteAJanelaAbrir.mockImplementation(async () => {
-    ordemDeChamadas.push("adiarAteAJanelaAbrir");
-    return opts.foraDaJanela ? "2026-09-18T22:00:00Z" : null;
-  });
-
-  mocks.checkDailyLimit.mockImplementation(async () => {
-    ordemDeChamadas.push("checkDailyLimit");
-    return { allowed: !opts.limiteDiarioAtingido };
-  });
-
-  mocks.espacarEnvio.mockImplementation(async () => {
-    ordemDeChamadas.push("espacarEnvio");
+  mocks.esperarRitmo.mockImplementation(async () => {
+    ordemDeChamadas.push("esperarRitmo");
   });
 
   // D9/D3: alocarNumero (o de verdade) grava numero/ano na linha como efeito
@@ -603,28 +588,11 @@ describe("POST /api/v1/proposals/[id]/send", () => {
     expect(mundo.propostaEnviada?.status).toBe("enviada");
   });
 
-  it("throttle: adiarAteAJanelaAbrir e checkDailyLimit são chamados ANTES de alocar numero/gerar PDF", async () => {
+  it("ritmo: espera o intervalo fixo do número antes de entregar a mensagem", async () => {
     const mundo = montarMundoDeEnvio({ papel: "manager" });
     await mundo.POST();
-    expect(mundo.ordemDeChamadas).toContain("adiarAteAJanelaAbrir");
-    expect(mundo.ordemDeChamadas).toContain("checkDailyLimit");
-    expect(mundo.ordemDeChamadas).toContain("espacarEnvio");
-    expect(mundo.ordemDeChamadas).toContain("sendMessageHandler");
-  });
-
-  it("fora da janela de envio: 422, nao aloca numero nem gera PDF", async () => {
-    const mundo = montarMundoDeEnvio({ papel: "manager", foraDaJanela: true });
-    const res = await mundo.POST();
-    expect(res.status).toBe(422);
-    expect(mundo.numeroFoiAlocado).toBe(false);
-    expect(mundo.pdfFoiGerado).toBe(false);
-  });
-
-  it("limite diario atingido: 422, nao aloca numero nem gera PDF", async () => {
-    const mundo = montarMundoDeEnvio({ papel: "manager", limiteDiarioAtingido: true });
-    const res = await mundo.POST();
-    expect(res.status).toBe(422);
-    expect(mundo.numeroFoiAlocado).toBe(false);
+    expect(mundo.ordemDeChamadas).toContain("esperarRitmo");
+    expect(mundo.ordemDeChamadas.indexOf("esperarRitmo")).toBeLessThan(mundo.ordemDeChamadas.indexOf("sendMessageHandler"));
   });
 
   it("recusada/vencida/cancelada: 409, não envia", async () => {

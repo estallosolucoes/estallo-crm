@@ -1,3 +1,4 @@
+// @vitest-environment node
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -12,7 +13,7 @@ describe("resolveBranding", () => {
     expect(resolveBranding(undefined, undefined)).toEqual({
       name: DEFAULT_APP_NAME,
       logoUrl: null,
-      initial: "D",
+      initial: "E",
     });
   });
 
@@ -46,12 +47,9 @@ describe("resolveBranding", () => {
   });
 });
 
-describe("guarda de white-label (self-host)", () => {
+describe("identidade da plataforma no servidor e navegador", () => {
   const branding = fs.readFileSync(path.join(RAIZ, "lib/branding.ts"), "utf8");
-  const publicEnvScript = fs.readFileSync(
-    path.join(RAIZ, "app/public-env-script.tsx"),
-    "utf8",
-  );
+  const publicEnvScript = fs.readFileSync(path.join(RAIZ, "app/public-env-script.tsx"), "utf8");
   const layoutRaiz = fs.readFileSync(path.join(RAIZ, "app/layout.tsx"), "utf8");
 
   it("não usa prefixo NEXT_PUBLIC_ para a marca", () => {
@@ -101,7 +99,7 @@ describe("guarda de white-label (self-host)", () => {
       layoutRaiz.match(/await marcaResolvida\(\)/g) ?? [],
       "os quatro consumidores do layout raiz são `generateMetadata` (aba), " +
         "`EstiloDaMarca` (cor), `MarcaNoNavegador` (`window.__PUBLIC_ENV__`) e " +
-        "`MarcaDosClientComponents` (o contexto que os `\"use client\"` leem). " +
+        '`MarcaDosClientComponents` (o contexto que os `"use client"` leem). ' +
         "Consumidor a mais é legítimo — atualize o número. Consumidor a MENOS " +
         "significa que alguém voltou a montar a pilha por fora.",
     ).toHaveLength(4);
@@ -131,7 +129,7 @@ describe("nome do arquivo de códigos de recuperação", () => {
   it("deriva o prefixo da marca, sem acento e sem espaço", () => {
     expect(prefixoDoArquivo("Vendas Turbo")).toBe("vendas-turbo");
     expect(prefixoDoArquivo("Ótima Gestão")).toBe("otima-gestao");
-    expect(prefixoDoArquivo(DEFAULT_APP_NAME)).toBe("deskcommcrm");
+    expect(prefixoDoArquivo(DEFAULT_APP_NAME)).toBe("estallo-crm");
   });
 
   it("não devolve hífen pendurado nem repetido", () => {
@@ -231,7 +229,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     categoria: "PROTOCOLO",
     motivo:
       "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
-    marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature", "x-deskcomm-signature"],
+    marcas: [
+      "x-deskcomm-event",
+      "x-deskcomm-signature",
+      "x-deskcomm-signature",
+      "x-deskcomm-signature",
+    ],
   },
   "lib/mcp/server.ts": {
     categoria: "PROTOCOLO",
@@ -256,12 +259,6 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     motivo:
       "X-Client-Id enviado ao processo WaCalls (spec 18) — identifica o worker como o operador dono da conexão SSE nos logs e na lógica de exclusividade de chamada dele. Não é texto de interface e nunca chega ao usuário",
     marcas: ["deskcomm-worker"],
-  },
-  "lib/nuvemshop/config.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
-    marcas: ["deskcommcrm"],
   },
   "lib/agenda/google/evento.ts": {
     categoria: "PROTOCOLO",
@@ -313,13 +310,6 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   },
 
   // ─── DIVIDA — vazamento real. Cada linha declara a fase que a apaga. ───
-  "lib/email/templates/ai-budget-alarm.tsx": {
-    categoria: "DIVIDA",
-    fase: 7,
-    motivo:
-      "template sem caminho de produção: sem rota em app/api/v1/cron/, sem linha no docker/scheduler/entrypoint.sh e, desde a limpeza do teto de orçamento (0159), sem chamador NENHUM — o único era workers/ai-budget-checker.cron.ts, que foi apagado por nunca ter tido agendador. Marcar isto não muda nada que um usuário veja, e a única 'prova' possível seria invocar a função à mão — o que prova a função, não o produto. Sai quando o alarme ganhar cron de verdade (ou quando o template for apagado junto)",
-    marcas: ["deskcommcrm"],
-  },
 
   // ─── DEV — fixture de teste; não embarca. ───
   "lib/agent-engine/agent/draft-reply.test.ts": {
@@ -335,12 +325,6 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   },
 
   // ─── PADRAO — a marca padrão precisa existir em algum lugar. ───
-  "lib/branding.ts": {
-    categoria: "PADRAO",
-    motivo:
-      "é a DEFINIÇÃO de DEFAULT_APP_NAME — o valor que aparece quando o operador não configurou marca nenhuma. Se esta linha sumir, some o padrão",
-    marcas: ["deskcommcrm"],
-  },
   // `lib/video/jitsi.ts` ficou DE FORA por decisão do review do #2441: ele
   // prefixa a sala do Jitsi com `sala-`, neutro. O link é repassado no chat e
   // cai na tela do cliente final de quem revende a instalação — a sala não é
@@ -420,7 +404,12 @@ function marcasNoTexto(fonte: string): string[] {
     for (const casada of linha.matchAll(/[\w@.-]*deskcomm[\w@.-]*/gi)) {
       // Pontuação encostada (o ponto final de "no DeskcommCRM.") não faz parte
       // do identificador e faria a lista mudar por causa de uma vírgula.
-      achadas.push(casada[0].toLowerCase().replace(/^[.-]+/, "").replace(/[.-]+$/, ""));
+      achadas.push(
+        casada[0]
+          .toLowerCase()
+          .replace(/^[.-]+/, "")
+          .replace(/[.-]+$/, ""),
+      );
     }
   }
   return achadas.sort();
@@ -536,6 +525,15 @@ function arquivosVarridos(
 describe("catraca de marca hardcoded", () => {
   const porRaiz = new Map(RAIZES_VARRIDAS.map((r) => [r, arquivosVarridos(r)]));
   const alvos = [...porRaiz.values()].flat();
+  it("a marca Estallo também nasce só no padrão central", () => {
+    const vazamentos = alvos.filter((arquivo) => {
+      if (arquivo === "lib/branding.ts" || /\.(test|spec)\.tsx?$/.test(arquivo)) return false;
+      return linhasQueContam(fs.readFileSync(path.join(RAIZ, arquivo), "utf8")).some((linha) =>
+        /estallo\s*crm/i.test(linha),
+      );
+    });
+    expect(vazamentos, "Use o resolvedor de marca; não fixe Estallo nas saídas.").toEqual([]);
+  });
   const encontrado = new Map<string, string[]>();
   for (const arquivo of alvos) {
     const marcas = marcasNoTexto(fs.readFileSync(path.join(RAIZ, arquivo), "utf8"));
@@ -590,7 +588,9 @@ describe("catraca de marca hardcoded", () => {
       const atual = encontrado.get(arquivo) ?? [];
       const congelado = [...entrada.marcas].sort();
       if (JSON.stringify(atual) !== JSON.stringify(congelado)) {
-        divergentes.push(`  ${arquivo}\n    lista: ${JSON.stringify(congelado)}\n    disco: ${JSON.stringify(atual)}`);
+        divergentes.push(
+          `  ${arquivo}\n    lista: ${JSON.stringify(congelado)}\n    disco: ${JSON.stringify(atual)}`,
+        );
       }
     }
     expect(
@@ -618,10 +618,13 @@ describe("catraca de marca hardcoded", () => {
     const ruins = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => !validas.includes(e.categoria) || e.motivo.trim().length < 40)
       .map(([f]) => f);
-    expect(ruins, `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`).toEqual([]);
+    expect(
+      ruins,
+      `entrada sem categoria válida ou sem justificativa escrita:\n  ${ruins.join("\n  ")}`,
+    ).toEqual([]);
   });
 
-  it("a Fase 4 fechou: sobra uma dívida, e ela declara por que sobrou", () => {
+  it("não há dívida de marca nos textos emitidos", () => {
     // As três regras acima forçam a lista a ENCOLHER, mas nada impedia que ela
     // voltasse a CRESCER: uma `DIVIDA` nova entra sem ninguém notar, porque
     // acrescentar linha à allowlist é o caminho de menor resistência de quem
@@ -635,7 +638,7 @@ describe("catraca de marca hardcoded", () => {
       "a Fase 4 zerou as dívidas de marca, exceto o alarme de orçamento de IA " +
         "(que não tem caminho de produção). Dívida nova aqui precisa de decisão, " +
         "não de mais uma linha na lista.",
-    ).toEqual(["lib/email/templates/ai-budget-alarm.tsx"]);
+    ).toEqual([]);
   });
 
   it("toda DIVIDA nomeia a fase que a resolve, e só DIVIDA tem fase", () => {
@@ -644,7 +647,10 @@ describe("catraca de marca hardcoded", () => {
     const semFase = Object.entries(MARCA_CONGELADA)
       .filter(([, e]) => (e.categoria === "DIVIDA") !== (typeof e.fase === "number"))
       .map(([f]) => f);
-    expect(semFase, `DIVIDA sem fase, ou fase declarada onde não é dívida:\n  ${semFase.join("\n  ")}`).toEqual([]);
+    expect(
+      semFase,
+      `DIVIDA sem fase, ou fase declarada onde não é dívida:\n  ${semFase.join("\n  ")}`,
+    ).toEqual([]);
   });
 });
 
@@ -718,7 +724,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     for (const { arquivo } of ALVOS) {
       expect(fs.existsSync(path.join(RAIZ, arquivo)), `${arquivo} sumiu`).toBe(true);
     }
-    for (const modelo of ["supabase/templates/confirmation.html", "supabase/templates/recovery.html"]) {
+    for (const modelo of [
+      "supabase/templates/confirmation.html",
+      "supabase/templates/recovery.html",
+    ]) {
       const texto = fs.readFileSync(path.join(RAIZ, modelo), "utf8");
       expect(texto, `${modelo} não substitui a marca`).toContain("__APP_NAME__");
       expect(texto, `${modelo} não substitui o accent`).toContain("__ACCENT__");
@@ -727,13 +736,17 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("comentário de HTML não conta, e `-->` no meio da linha não engole o resto", () => {
     expect(marcasNoTexto(semComentariosHtml("<!-- fala do DeskcommCRM -->"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->"))).toEqual([]);
+    expect(
+      marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->")),
+    ).toEqual([]);
     // O caso que a regra de `//` erraria: marca REAL depois do fecho.
     expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no DeskcommCRM"))).toEqual([
       "deskcommcrm",
     ]);
     // E a marca fora de comentário nenhum continua contando.
-    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual([
+      "deskcommcrm",
+    ]);
   });
 
   it("comentário de TOML não conta, mas `#` dentro de string não vira comentário", () => {
@@ -741,7 +754,9 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # DeskcommCRM'))).toEqual([
       "deskcommcrm",
     ]);
-    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual([
+      "deskcommcrm",
+    ]);
   });
 
   it("nenhum arquivo do GoTrue fixa a marca fora da lista", () => {
@@ -756,7 +771,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("a lista do GoTrue não guarda arquivo que já não tem marca", () => {
     const obsoletos = Object.keys(CONGELADO_SUPABASE).filter((f) => !encontradoAqui.has(f));
-    expect(obsoletos, `apague a linha destes de CONGELADO_SUPABASE:\n  ${obsoletos.join("\n  ")}`).toEqual([]);
+    expect(
+      obsoletos,
+      `apague a linha destes de CONGELADO_SUPABASE:\n  ${obsoletos.join("\n  ")}`,
+    ).toEqual([]);
   });
 
   it("arquivo congelado do GoTrue não mudou de conjunto sem a lista acompanhar", () => {
@@ -834,7 +852,8 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   },
   "datamanager.googleapis.com": {
     categoria: "FORNECEDOR",
-    motivo: "endpoint oficial da Google Data Manager API: recebe conversões e consulta o processamento na conta autorizada pela própria organização. O destino pertence ao fornecedor e não à instalação do CRM.",
+    motivo:
+      "endpoint oficial da Google Data Manager API: recebe conversões e consulta o processamento na conta autorizada pela própria organização. O destino pertence ao fornecedor e não à instalação do CRM.",
   },
   "meet.googleapis.com": {
     categoria: "FORNECEDOR",
@@ -870,6 +889,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "PROTOCOLO",
     motivo:
       "sufixo do JID do WhatsApp. Aparece em `lib/waha/resolve-contact-whatsapp-id.ts` desde antes desta régua existir, num `endsWith` que distingue `@lid`, `@c.us` e `@s.whatsapp.net` — é o protocolo do WhatsApp falando, não endereço que o produto chama nem palavra de interface. Trocar pela marca do revendedor faz o CRM deixar de reconhecer o identificador que o próprio WhatsApp manda.",
+  },
+  "www.w3.org": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "namespace XML do SVG inline (`xmlns=\"http://www.w3.org/2000/svg\"`) em `components/chat-suspenso/IconeWhatsapp.tsx`. É um identificador que o navegador reconhece, não um endereço: o código não faz requisição para ele e ele não aparece na tela.",
   },
   // ── destino de chamada: o código fala com eles, sempre foi assim ──────────
   "api.openai.com": {
@@ -1254,6 +1278,8 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // AUTORIDADE, porque não é painel, amostra nem plataforma: é o endereço
       // a que a lei manda o titular ir. País novo com lei revisada traz a sua.
       "www.cnpd.pt",
+      // Decisão escrita: namespace XML de SVG inline (`xmlns`), identificador de fio como o `s.whatsapp.net`.
+      "www.w3.org",
     ]);
   });
 

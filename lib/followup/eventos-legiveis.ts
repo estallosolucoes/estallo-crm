@@ -24,7 +24,7 @@ import {
   CONDITION_TRUE_BRANCH_ID,
   FALLBACK_BRANCH_ID,
   NO_REPLY_BRANCH_ID,
-  nodeBranches,
+  branchesForShape,
   type FlowEdge,
   type FlowNode,
 } from "./graph-schema";
@@ -139,6 +139,14 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   // #2065 — as duas ações que também não falam com o cliente.
   move_lead: "Mover no funil",
   edit_lead_tag: "Editar tag",
+  map_data: "Mapear dados",
+  assign_lead_owner: "Atribuir responsável",
+  add_note: "Nota interna",
+  update_lead_field: "Atualizar campo do negócio",
+  lead_product: "Produto do negócio",
+  http_request: "Requisição HTTP",
+  find_or_create_contact: "Buscar ou criar contato",
+  find_or_create_lead: "Buscar ou criar negócio",
   end: "Fim",
 };
 
@@ -165,7 +173,11 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
       return {
         ...base,
         resumo:
-          node.config.mode === "fixed"
+          node.config.mode === "until"
+            ? node.config.data
+              ? `espera até ${node.config.data} às ${node.config.hora} (fuso da organização)`
+              : `espera até as ${node.config.hora} (fuso da organização)`
+            : node.config.mode === "fixed"
             ? `espera ${duracaoLegivel(node.config.duration_ms)}`
             : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
       };
@@ -201,7 +213,9 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
             ? "o agente escreve e envia a mensagem"
             : node.config.mode === "text"
               ? "envia um texto fixo"
-              : "envia uma mensagem de modelo pronto",
+              : node.config.mode === "messages"
+                ? `envia ${node.config.items.length} ${node.config.items.length === 1 ? "mensagem" : "mensagens"} em sequência (texto e anexos)`
+                : "envia uma mensagem de modelo pronto",
       };
     case "internal_task": {
       const prazo = node.config.vence_em_dias === 0 ? "hoje" : `em ${node.config.vence_em_dias} dia(s)`;
@@ -213,8 +227,65 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
       return {
         ...base,
         resumo: node.config.tags.length
-          ? `grava a(s) tag(s) ${node.config.tags.join(", ")} no lead — sem mensagem ao cliente`
+          ? node.config.acao === "remove"
+            ? `remove a(s) tag(s) ${node.config.tags.join(", ")} — sem mensagem ao cliente`
+            : `grava a(s) tag(s) ${node.config.tags.join(", ")} no lead — sem mensagem ao cliente`
           : "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente",
+      };
+    case "find_or_create_contact":
+      return {
+        ...base,
+        resumo: `procura um contato pelo ${node.config.busca === "email" ? "e-mail" : "telefone"}${node.config.criar ? " e cria se não achar" : ""} — sem mensagem ao cliente`,
+      };
+    case "find_or_create_lead":
+      return {
+        ...base,
+        resumo: `procura o negócio aberto do contato no funil escolhido${node.config.criar ? " e cria se não achar" : ""} — sem mensagem ao cliente`,
+      };
+    case "http_request":
+      return {
+        ...base,
+        resumo: `chama ${node.config.metodo} ${node.config.caminho || "/"} num sistema externo, pela conexão escolhida — sem mensagem ao cliente`,
+      };
+    case "lead_product":
+      return {
+        ...base,
+        resumo:
+          node.config.acao === "remove"
+            ? "tira um produto do negócio — sem mensagem ao cliente"
+            : `acrescenta ${node.config.quantidade} unidade(s) de um produto do catálogo ao negócio — sem mensagem ao cliente`,
+      };
+    case "update_lead_field":
+      return {
+        ...base,
+        resumo:
+          node.config.alvo === "deal_value"
+            ? "atualiza o valor do negócio — sem mensagem ao cliente"
+            : node.config.alvo === "contact_field"
+              ? `atualiza o campo «${node.config.chave || "a escolher"}» do contato — sem mensagem ao cliente`
+            : `atualiza o campo «${node.config.chave || "a escolher"}» do negócio — sem mensagem ao cliente`,
+      };
+    case "add_note":
+      return {
+        ...base,
+        resumo:
+          node.config.destino === "conversation_notes"
+            ? "registra uma nota interna na conversa — o cliente não vê"
+            : "registra uma nota na linha do tempo do negócio — o cliente não vê",
+      };
+    case "assign_lead_owner":
+      return {
+        ...base,
+        resumo: node.config.usuario_id
+          ? "troca o responsável do negócio — sem mensagem ao cliente"
+          : "troca o responsável do negócio, ainda sem pessoa escolhida — sem mensagem ao cliente",
+      };
+    case "map_data":
+      return {
+        ...base,
+        resumo: node.config.fields.length
+          ? `monta ${node.config.fields.length} ${node.config.fields.length === 1 ? "campo" : "campos"}: ${node.config.fields.map((f) => f.name).join(", ")} — sem mensagem ao cliente`
+          : "monta campos a partir dos blocos anteriores, ainda sem campos — sem mensagem ao cliente",
       };
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
@@ -244,7 +315,7 @@ export function rotuloDaAresta(edge: FlowEdge, origem?: FlowNode, nomes: NomesDe
   if (c.type === "always") {
     // Num nó com saídas específicas, o escape não é o "caminho normal": é o que
     // sobra quando nenhuma das outras serve.
-    return origem !== undefined && nodeBranches(origem).length > 1
+    return origem !== undefined && branchesForShape(origem).length > 1
       ? FRASE_DE_OUTROS_CASOS
       : RAMOS_RESERVADOS_EM_FRASE[FALLBACK_BRANCH_ID];
   }
@@ -479,10 +550,23 @@ export function descreveEvento(
         ...motor,
       };
     }
-    case "flow_dead":
-      return { titulo: "O fluxo parou de tentar", detalhe: texto(p.reason), ...motor };
+    case "flow_dead": {
+      // O envio do bloco esgotou as tentativas: o motivo vem depois do prefixo técnico.
+      const motivo = texto(p.reason);
+      const envio = motivo?.startsWith("action_turn_failed:")
+        ? `O envio deste bloco falhou: ${motivo.slice("action_turn_failed:".length).trim()}`
+        : motivo;
+      return { titulo: "O fluxo parou de tentar", detalhe: envio, ...motor };
+    }
     case "node_failed":
       return { titulo: "Falhou neste passo", detalhe: texto(p.error), ...motor };
+    case "execution_error_routed":
+      // Falha definitiva do bloco, com "Fallback erro" ligado: o fluxo NÃO parou, desviou.
+      return {
+        titulo: "O passo falhou e o fluxo seguiu pela saída de erro",
+        detalhe: `foi para ${refDoNo(texto(p.next_node_id), nos)}${texto(p.code) ? ` (${texto(p.code)})` : ""}`,
+        ...motor,
+      };
     case "move_lead_failed":
       // O card NÃO andou: o motor foi recusado ao mover (ex.: etapa de perda
       // sem motivo) e o fluxo seguiu. Sem esta linha a trilha mostrava só o

@@ -28,6 +28,7 @@
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import { prepararAdicaoDeTags } from "@/lib/leads/tags";
 
 type Destino = "card" | "contato";
 
@@ -40,7 +41,10 @@ type Alvo = {
   kind: "crm_lead" | "contact";
 };
 
-async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
+async function execute(
+  ctx: ActionCtx,
+  config: Record<string, unknown>,
+): Promise<ActionResultDetail> {
   const tags = Array.isArray(config.tags) ? config.tags.map(String) : [];
   if (!tags.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
 
@@ -80,15 +84,11 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   }
 
   const prev = target.row.tags ?? [];
-  const added = tags.filter((t) => !prev.includes(t));
+  const { added, tags: merged } = prepararAdicaoDeTags(prev, tags);
   if (!added.length) return { type: "add_tag", status: "success", detail: { added: [] } };
 
-  const contactId =
-    target.table === "contacts" ? target.row.id : (lead?.contact_id ?? contact?.id);
-  const serviceOrigin = contactId
-    ? await originFromAutomationEvent(ctx, contactId)
-    : null;
-  const merged = [...prev, ...added];
+  const contactId = target.table === "contacts" ? target.row.id : (lead?.contact_id ?? contact?.id);
+  const serviceOrigin = contactId ? await originFromAutomationEvent(ctx, contactId) : null;
   const { error } = await ctx.admin
     .from(target.table)
     .update({ tags: merged, updated_at: new Date().toISOString() })

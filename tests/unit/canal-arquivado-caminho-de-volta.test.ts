@@ -868,48 +868,6 @@ describe("reactivateChannelSession — o desarquivamento mora num lugar só", ()
   });
 });
 
-/**
- * A última resolução operacional que ainda enxergava canal excluído.
- *
- * O GET desta mesma rota já filtrava (a tela some com a conexão excluída), e o
- * PUT continuava aceitando gravar teto diário e knobs de anti-ban nela. O
- * desfecho não é só inútil: é configuração viva pendurada num canal que não
- * envia mais, esperando confundir quem for investigar o próximo envio que não
- * saiu — e, se o canal um dia voltar, os limites de outra época voltam com ele.
- */
-describe("PUT /api/v1/ai/pacing — knobs não se gravam em canal excluído", () => {
-  const put = (corpo: Record<string, unknown>) =>
-    new NextRequest("http://localhost/api/v1/ai/pacing", {
-      method: "PUT",
-      body: JSON.stringify({ channel_session_id: CANAL, ...corpo }),
-      headers: { "content-type": "application/json" },
-    });
-
-  it("⭐ canal ARQUIVADO → 404 e nenhuma escrita", async () => {
-    authOk();
-    const db = makeDb({
-      sessions: [canalQr({ archived_at: ARQUIVADO_EM, daily_message_limit: 250 })],
-    });
-    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
-    const res = await PUT(put({ daily_message_limit: 300 }));
-
-    expect(res.status).toBe(404);
-    expect((await res.json()).error.code).toBe("session_not_found");
-    expect(db.escritas).toEqual([]);
-    expect(db.linhas[0]?.daily_message_limit).toBe(250);
-  });
-
-  it("canal ATIVO continua salvando (a guarda não matou a tela de anti-ban)", async () => {
-    authOk();
-    const db = makeDb({ sessions: [canalQr({ daily_message_limit: 250 })] });
-    const { PUT } = await import("@/app/api/v1/ai/pacing/route");
-    const res = await PUT(put({ daily_message_limit: 300 }));
-
-    expect(res.status).toBe(200);
-    expect(db.linhas[0]?.daily_message_limit).toBe(300);
-  });
-});
-
 describe("metaSessionForOrg — a tela de templates não fala por um canal excluído", () => {
   const WABA = "waba-123";
 

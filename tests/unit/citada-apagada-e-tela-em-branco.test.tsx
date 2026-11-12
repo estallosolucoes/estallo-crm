@@ -129,7 +129,8 @@ describe("no celular sempre há exatamente UMA coluna na tela", () => {
     for (const temSelecao of [false, true]) {
       const { lista, conversa } = colunasDoCelular(temSelecao);
       for (const c of [lista, conversa]) {
-        expect(c.split(/\s+/).includes("hidden") ? c : `${c} md:flex`).toContain("md:flex");
+        // 851px (e não `md`): o corte do modelo do Inbox (16/10/2026).
+        expect(c.split(/\s+/).includes("hidden") ? c : `${c} min-[851px]:flex`).toContain("min-[851px]:flex");
       }
     }
   });

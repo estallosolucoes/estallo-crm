@@ -354,17 +354,6 @@ describe("DELETE /api/v1/channel-sessions/[id]", () => {
     expect(db.escritas.map((e) => e.tipo)).toEqual(["update"]);
   });
 
-  it("ajuste anti-ban do operador (channel_knobs) também impede o hard delete", async () => {
-    authOk();
-    const db = makeDb({
-      rows: { channel_knobs: [{ organization_id: ORG, channel_session_id: CANAL }] },
-    });
-    wahaOk(db);
-    const { DELETE } = await import("./route");
-    expect((await DELETE(reqDelete(), ctx())).status).toBe(200);
-    expect(db.escritas.map((e) => e.tipo)).toEqual(["update"]);
-  });
-
   it("dependência de OUTRA organização não conta — a contagem é por tenant", async () => {
     authOk();
     const db = makeDb({
@@ -607,7 +596,7 @@ describe("GET /api/v1/channel-sessions/[id]", () => {
     expect(body.data.deletion_impact).toEqual({
       outcome: "archive",
       history: { conversations: 1, messages: 0, agent_versions: 0, voice_calls: 2 },
-      configuration: { ai_routers: 1, channel_knobs: 0, before_send_traces: 0 },
+      configuration: { ai_routers: 1, before_send_traces: 0 },
     });
   });
 

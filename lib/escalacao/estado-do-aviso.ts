@@ -55,7 +55,6 @@ export const CODIGOS_DO_ESTADO_DO_AVISO = [
   "casos_desligados",
   "agente_assistido",
   "atendimento_externo",
-  "aquecimento",
   "descarte_acontecendo",
 ] as const;
 export type CodigoDoEstadoDoAviso = (typeof CODIGOS_DO_ESTADO_DO_AVISO)[number];
@@ -97,15 +96,6 @@ export interface ConfiguracaoNaTela {
   ligado: boolean;
 }
 
-/** O que o `pacing_ledger` responde sobre o número que ENVIA os avisos. */
-export interface AquecimentoDoNumero {
-  enviadosHoje: number;
-  /** `null` = número fora do aquecimento, sem teto diário. */
-  teto: number | null;
-  /** ISO do fim do aquecimento; `null` = não dá para dizer quando termina. */
-  fimEm: string | null;
-}
-
 /** Quantos agentes publicados existem, e quantos deles fazem o quê. */
 export interface AgentesPublicados {
   total: number;
@@ -127,8 +117,6 @@ export interface FatosDaTelaDeAviso {
   atendimentoExterno: boolean;
   /** Os contadores do corte da ingestão (onda 6). */
   descarte: { ignoradas: number; ultimaEm: string | null };
-  /** `null` = não há conexão escolhida, ou não deu para ler o ledger. */
-  aquecimento: AquecimentoDoNumero | null;
   agora: Date;
 }
 
@@ -258,18 +246,6 @@ export function avisosDaTela(f: FatosDaTelaDeAviso): AvisoDaTela[] {
   }
 
   // ── Informativos ─────────────────────────────────────────────────────────
-  if (f.aquecimento && f.aquecimento.teto !== null) {
-    alertas.push({
-      codigo: "aquecimento",
-      bloqueia: false,
-      dados: {
-        enviadosHoje: f.aquecimento.enviadosHoje,
-        teto: f.aquecimento.teto,
-        ...(f.aquecimento.fimEm ? { fimEm: f.aquecimento.fimEm } : {}),
-      },
-    });
-  }
-
   // ⚠️ `mensagens_ignoradas` é um contador ACUMULADO desde que o número foi
   // configurado — não uma janela. Por isso a condição é a RECÊNCIA da última
   // (`ultima_mensagem_ignorada_em`), e a frase da tela diz o total e a data,

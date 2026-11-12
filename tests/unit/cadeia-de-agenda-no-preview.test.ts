@@ -14,8 +14,6 @@ import {
   temFerramentaDeAgenda,
 } from '@/lib/agent-engine/agent/inbound-turn';
 import type { GateContext } from '@/lib/agent-engine/guardrails/before-send';
-import { PACING_DEFAULTS } from '@/lib/agent-engine/pacing/defaults';
-import { SPINNING_DEFAULTS } from '@/lib/agent-engine/spinning/defaults';
 
 /** O agente do relato #1019: as três capacidades de agenda ligadas. */
 const LIST = 'crm_list_event_types';
@@ -29,12 +27,6 @@ const gate = (): GateContext => ({
   optedOut: false,
   provider: DEFAULT_CHANNEL_PROVIDER,
   messagingWindow: { lastInboundAt: new Date('2026-09-16T18:00:00Z') },
-  pacing: {
-    knobs: PACING_DEFAULTS,
-    state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
-    crmDailyLimit: null,
-  },
-  spinning: { knobs: SPINNING_DEFAULTS, window: [] },
   promise: { table: null },
   semanticPromise: null,
   disclosure: { template: null, isFirstOutbound: false, mode: 'inject' },

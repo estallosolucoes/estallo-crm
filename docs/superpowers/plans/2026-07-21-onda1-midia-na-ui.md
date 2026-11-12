@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Onda 1 — Mídia Real na UI do Inbox Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -26,10 +28,12 @@
 ### Task 1: Utilitários de mídia (`media-utils.ts`)
 
 **Files:**
+
 - Create: `components/inbox/media/media-utils.ts`
 - Test: `tests/unit/inbox-media-utils.test.ts`
 
 **Interfaces:**
+
 - Produces (consumidos pelas tasks 2-5):
   - `mediaSrc(messageId: string): string` → `/api/v1/messages/${messageId}/media`
   - `formatBytes(bytes: number | null | undefined): string` → `"—"` | `"853 B"` | `"41,6 KB"` | `"12,6 MB"` (pt-BR, 1 casa decimal, base 1024)
@@ -41,11 +45,7 @@
 // tests/unit/inbox-media-utils.test.ts
 import { describe, expect, it } from "vitest";
 
-import {
-  formatBytes,
-  mediaFileLabel,
-  mediaSrc,
-} from "@/components/inbox/media/media-utils";
+import { formatBytes, mediaFileLabel, mediaSrc } from "@/components/inbox/media/media-utils";
 
 describe("mediaSrc", () => {
   it("monta a URL do endpoint da Onda 0", () => {
@@ -104,7 +104,8 @@ export function formatBytes(bytes: number | null | undefined): string {
   if (!bytes || bytes <= 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
   const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} KB`;
+  if (kb < 1024)
+    return `${kb.toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} KB`;
   const mb = kb / 1024;
   return `${mb.toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`;
 }
@@ -136,12 +137,14 @@ git commit -m "feat(inbox-media): utilitários de mídia (mediaSrc, formatBytes,
 ### Task 2: Imagem com lightbox + Figurinha
 
 **Files:**
+
 - Create: `components/inbox/media/ImageMedia.tsx`
 - Create: `components/inbox/media/StickerMedia.tsx`
 - Create: `components/inbox/media/MediaUnavailable.tsx`
 - Test: `tests/unit/inbox-media-image.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `mediaSrc` (Task 1), `Dialog/DialogContent/DialogTitle` de `@/components/ui/dialog`, `ImageIcon` de `@/lib/ui/icons`, `Skeleton` de `@/components/ui/skeleton`.
 - Produces: `<ImageMedia messageId alt />`, `<StickerMedia messageId />`, `<MediaUnavailable kind="Imagem" | ... />` (fallback compartilhado pelas tasks 3-5).
 
@@ -307,10 +310,12 @@ git commit -m "feat(inbox-media): ImageMedia com lightbox, StickerMedia e fallba
 ### Task 3: Player de áudio estilo WhatsApp
 
 **Files:**
+
 - Create: `components/inbox/media/AudioPlayer.tsx`
 - Test: `tests/unit/inbox-media-audio.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `mediaSrc` (Task 1), `Play`/`Pause` de `@/lib/ui/icons`, `MediaUnavailable` (Task 2), `cn` de `@/lib/utils`.
 - Produces: `<AudioPlayer messageId isOutbound />` — play/pause, progresso seekável (`<input type="range">`), tempo `m:ss`, velocidade 1x→1.5x→2x.
 
@@ -519,12 +524,14 @@ git commit -m "feat(inbox-media): AudioPlayer estilo WhatsApp (seek, tempo, 1x/1
 ### Task 4: Vídeo + card de documento
 
 **Files:**
+
 - Create: `components/inbox/media/VideoMedia.tsx`
 - Create: `components/inbox/media/DocumentCard.tsx`
 - Modify: `lib/ui/icons.ts` (adicionar `DownloadSimple` ao bloco de exports, em ordem com os vizinhos)
 - Test: `tests/unit/inbox-media-docvideo.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `mediaSrc`/`formatBytes`/`mediaFileLabel` (Task 1), `FileText`/`DownloadSimple` de `@/lib/ui/icons`, `MediaUnavailable` (Task 2).
 - Produces: `<VideoMedia messageId />`, `<DocumentCard messageId mime sizeBytes storagePath isOutbound />`.
 
@@ -674,11 +681,13 @@ git commit -m "feat(inbox-media): VideoMedia e DocumentCard (+ ícone DownloadSi
 ### Task 5: `MediaRenderer` + integração no `MessageBubble`
 
 **Files:**
+
 - Create: `components/inbox/media/MediaRenderer.tsx`
 - Modify: `components/inbox/MessageBubble.tsx` (remover `MediaPlaceholder` L19-34 e o uso na L87; integrar renderer; caso figurinha sem bolha)
 - Test: `tests/unit/inbox-media-renderer.test.tsx`
 
 **Interfaces:**
+
 - Consumes: todos os componentes das tasks 2-4; `Message` de `@/lib/types/messaging`.
 - Produces: `<MediaRenderer message />` — dispatcher por `message.type`; `MessageBubble` renderiza mídia acima do body (caption) e figurinha sem moldura.
 
@@ -813,9 +822,9 @@ Em `components/inbox/MessageBubble.tsx`:
 3. Calcular no corpo do componente (após `isFailed`):
 
 ```tsx
-  const hasMedia = Boolean(message.media_url);
-  // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
-  const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
+const hasMedia = Boolean(message.media_url);
+// Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
+const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
 ```
 
 4. Trocar a moldura externa da bolha — a `div` interna com classes `max-w-[75%] rounded-2xl px-3 py-2...` passa a ser condicional:
@@ -840,15 +849,17 @@ Em `components/inbox/MessageBubble.tsx`:
 5. Substituir o bloco do body + placeholder (L83-87) por: mídia PRIMEIRO, caption depois:
 
 ```tsx
-        {hasMedia && (
-          <div className={cn(message.body && "mb-1")}>
-            <MediaRenderer message={message} />
-          </div>
-        )}
+{
+  hasMedia && (
+    <div className={cn(message.body && "mb-1")}>
+      <MediaRenderer message={message} />
+    </div>
+  );
+}
 
-        {message.body && (
-          <p className="whitespace-pre-wrap break-words leading-snug">{message.body}</p>
-        )}
+{
+  message.body && <p className="leading-snug break-words whitespace-pre-wrap">{message.body}</p>;
+}
 ```
 
 6. O rodapé (hora/ack) permanece como está — em `isBareSticker` ele continua visível abaixo da figurinha (aceitável; WhatsApp faz o mesmo com hora sobreposta, não replicar overlay).
@@ -872,10 +883,12 @@ git commit -m "feat(inbox-media): MediaRenderer integrado ao MessageBubble (capt
 ### Task 6: Prova E2E real (Playwright) + medidas + HANDOFF
 
 **Files:**
+
 - Modify: `HANDOFF-inbox-multimodal.md`
 - Evidência: `.superpowers/evidence/inbox-multimodal-onda1-*.png`
 
 **Interfaces:**
+
 - Consumes: dev server + conversa real da Onda 0 (5 mídias persistidas, conversa `bcb64692-…`).
 
 - [ ] **Step 1: Ambiente e navegação**
@@ -885,6 +898,7 @@ Dev server + WAHA já rodando (Onda 0). Login admin E2E (TOTP em `.e2e-creds.jso
 - [ ] **Step 2: Prova visual + funcional de cada tipo**
 
 Na conversa real, com Playwright:
+
 - Screenshot da thread completa (imagem, vídeo, áudio, figurinha, documento renderizados de verdade).
 - Clicar na imagem → lightbox abre → screenshot → fechar.
 - Clicar play no áudio → aguardar ~2s → `browser_evaluate` em `document.querySelector("audio")`: `currentTime > 0` E `paused === false`. Clicar no botão de velocidade → `playbackRate === 1.5`.

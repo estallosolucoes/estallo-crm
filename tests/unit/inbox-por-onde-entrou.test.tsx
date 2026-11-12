@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 /**
  * POR ONDE a conversa entrou, na lista do inbox.
@@ -17,6 +17,9 @@ import { describe, expect, it } from "vitest";
  */
 import { ConversationListItem } from "@/components/inbox/ConversationListItem";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
+
+// O menu da linha tem teste próprio (menu-da-conversa-no-inbox).
+vi.mock("@/components/inbox/AcoesDaConversa", () => ({ AcoesDaConversa: () => null }));
 
 const base = {
   id: "c1",

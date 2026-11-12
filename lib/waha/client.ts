@@ -648,28 +648,27 @@ export class WahaClient {
   /**
    * URL da foto de perfil do contato, ou null.
    *
-   * NÃO lança quando falha: contato sem foto, com privacidade fechada ou
-   * simplesmente desconhecido é o caso COMUM, não erro. Quem chama é um cron de
-   * varredura — transformar isso em exceção encheria o log de ruído sobre o
-   * estado normal da maioria dos contatos.
+   * Contato sem foto ou com privacidade fechada é o caso COMUM, não erro: volta
+   * `null`. Só a falha do canal lança — quem chama precisa distinguir "não tem
+   * foto" (espera dias) de "não consegui perguntar" (tenta de novo logo).
    *
    * A URL vem assinada pelo CDN do WhatsApp e expira (~9 dias, medido em
    * instalação real). Quem chama baixa e persiste; guardar a URL faz a foto
    * sumir sozinha depois.
    */
   async getProfilePictureUrl(session: string, chatId: string): Promise<string | null> {
-    try {
-      const res = await this.fetchComTeto(
-        `${this.baseUrl}/api/contacts/profile-picture` +
-          `?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
-        { headers: { "X-Api-Key": this.apiKey } },
-      );
-      if (!res.ok) return null;
-      const body = (await res.json()) as { profilePictureURL?: string | null };
-      return body.profilePictureURL ?? null;
-    } catch {
-      return null;
-    }
+    // `null` = o canal RESPONDEU e não há foto (ou a privacidade a esconde).
+    // Falha de verdade (canal fora, sessão caindo, timeout) LANÇA: o cron
+    // carimbava as duas coisas igual, por 7 dias, e uma troca de servidor
+    // deixou 1.561 contatos "sem foto" que tinham foto (medido em 17/10/2026).
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/contacts/profile-picture` +
+        `?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
+      { headers: { "X-Api-Key": this.apiKey } },
+    );
+    if (!res.ok) throw new Error(`profile-picture respondeu ${res.status}`);
+    const body = (await res.json()) as { profilePictureURL?: string | null };
+    return body.profilePictureURL ?? null;
   }
 
   /**

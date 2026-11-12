@@ -1,5 +1,5 @@
 "use client";
-import { ehAFila } from "@/lib/inbox/comando-da-conversa";
+import { listaComRetidas, type Retida } from "@/lib/inbox/lista-com-retidas";
 import { useEffect, useMemo } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
@@ -18,6 +18,8 @@ import type {
   ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
 
+const SEM_RETIDAS: Retida<ConversationWithContact>[] = [];
+
 interface ListResponse {
   data: ConversationWithContact[];
   meta?: { cursor?: string | null; has_more?: boolean };
@@ -33,6 +35,10 @@ interface Props {
   onLimparFiltros?: () => void;
   /** Notifies parent when the visible list changes (used by keyboard nav). */
   onVisibleChange?: (ids: string[]) => void;
+  /** Fecha a conversa aberta (pedido do menu da linha). */
+  onFecharConversa?: () => void;
+  /** Conversas em que o usuário agiu e que a lista segura no lugar (`lista-com-retidas.ts`). */
+  retidas?: Retida<ConversationWithContact>[];
 }
 
 export function ConversationList({
@@ -42,6 +48,8 @@ export function ConversationList({
   onSelect,
   onVisibleChange,
   onLimparFiltros,
+  onFecharConversa,
+  retidas = SEM_RETIDAS,
 }: Props) {
   const t = useT();
   // Só mostra POR ONDE a conversa entrou quando há mais de um número. Com um
@@ -53,12 +61,6 @@ export function ConversationList({
   const canais = useChannelSessions().data ?? [];
   const maisDeUmCanal = canais.length > 1;
 
-  // Fila (G5-03): a lista já vem ordenada por tempo de espera (server), então a
-  // posição é o índice na lista visível. Só mostramos posição/espera nessa visão.
-  // A Fila deixou de mandar `assigned_to=unassigned` (agora pede `comando`), e
-  // sem esta linha a numeração "1º, 2º…" e o tempo de espera sumiriam da única
-  // visão em que servem para alguma coisa — sem erro nenhum, só sumiriam.
-  const isQueue = ehAFila(filters);
   // Uma leitura por lista, compartilhada por todas as linhas (react-query dedupa
   // com o cabeçalho, que faz a mesma pergunta).
   const automaticoDaOrg = useAutomaticoAtivo();
@@ -67,8 +69,12 @@ export function ConversationList({
   // `clientFilter` era o mecanismo que permitia um filtro existir fora do contrato
   // — e foi por ele que "Não lidos" virou ilha, fora da cerca que vigia os demais.
   const items = useMemo(
-    () => (q.data?.pages.flatMap((p) => p.data) ?? []) as ConversationWithContact[],
-    [q.data],
+    () =>
+      listaComRetidas(
+        (q.data?.pages.flatMap((p) => p.data) ?? []) as ConversationWithContact[],
+        retidas,
+      ),
+    [q.data, retidas],
   );
 
   // Notify parent of currently-visible IDs (for j/k nav). Must use effect
@@ -105,8 +111,7 @@ export function ConversationList({
    * já é robô, e repetir o ícone em cada uma vira ruído. Nas outras abas a
    * lista é mista (ou pode ser), então o ícone segue dizendo algo.
    */
-  const mostrarAutomatico =
-    !(filters.comando?.length === 1 && filters.comando[0] === "automatico");
+  const mostrarAutomatico = !(filters.comando?.length === 1 && filters.comando[0] === "automatico");
 
   useEffect(() => {
     if (onVisibleChange) onVisibleChange(items.map((i) => i.id));
@@ -141,12 +146,7 @@ export function ConversationList({
     return (
       <div className="p-4 text-center text-sm text-muted-foreground">
         <p>{t("Erro ao carregar conversas.")}</p>
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2"
-          onClick={() => q.refetch()}
-        >
+        <Button size="sm" variant="outline" className="mt-2" onClick={() => q.refetch()}>
           Tentar novamente
         </Button>
       </div>
@@ -167,7 +167,7 @@ export function ConversationList({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto">
+      <div className="ibx-contact-list">
         {/* Vazio por FILTRO: fica DENTRO do return, nunca como `return` precoce —
             e por isso o bloco do `hasNextPage` abaixo continua sendo alcancado. */}
         {items.length === 0 && filtrosAtivos.length > 0 && (
@@ -182,16 +182,18 @@ export function ConversationList({
             filtros" e acha o botão quebrado (issue #2103). */}
         {items.length === 0 && filters.is_group && (
           <p className="px-6 pb-6 text-center text-xs text-text-subtle">
-            {t("Só entram na inbox os grupos ligados em Conexões › Grupos, e cada um aparece aqui a partir da primeira mensagem recebida depois de ligar (o histórico anterior não entra).")}
+            {t(
+              "Só entram na inbox os grupos ligados em Conexões › Grupos, e cada um aparece aqui a partir da primeira mensagem recebida depois de ligar (o histórico anterior não entra).",
+            )}
           </p>
         )}
-        {items.map((c, i) => (
+        {items.map((c) => (
           <ConversationListItem
             key={c.id}
             conversation={c}
             isSelected={c.id === selectedId}
             onSelect={onSelect}
-            queuePosition={isQueue ? i + 1 : undefined}
+            onFecharConversa={onFecharConversa}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
             mostrarAutomatico={mostrarAutomatico}

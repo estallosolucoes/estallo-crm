@@ -47,7 +47,7 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 const gerarAbordagemDeFormulario = vi.fn();
 const ensureConversation = vi.fn();
 const sendMessageHandler = vi.fn();
-const espacarEnvio = vi.fn();
+const esperarRitmo = vi.fn();
 
 // A chamada PAGA ao modelo. Ela ser observável é metade do teste: a guarda
 // promete parar antes do gasto, e "parou antes" só se mede vendo o gasto não
@@ -67,9 +67,8 @@ vi.mock("@/app/api/v1/messages/_handler", () => ({
 // O espaçamento anti-banimento dorme de verdade entre dois envios da mesma
 // sessão. Nada a provar aqui, e 1,2s por caso é o tipo de lentidão que faz
 // alguém marcar a suíte como flaky.
-vi.mock("@/lib/automation/throttle", () => ({
-  espacarEnvio: (...args: unknown[]) => espacarEnvio(...args),
-  checkDailyLimit: vi.fn(async () => ({ allowed: true })),
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({
+  esperarRitmo: (...args: unknown[]) => esperarRitmo(...args),
 }));
 
 import { getAction } from "@/lib/automation/actions";
@@ -175,7 +174,7 @@ beforeEach(() => {
   gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: "Oi! Em que bairro você procura?" });
   ensureConversation.mockResolvedValue("conversa-1");
   sendMessageHandler.mockResolvedValue({ id: "mensagem-1", status: "sent" });
-  espacarEnvio.mockResolvedValue(undefined);
+  esperarRitmo.mockResolvedValue(undefined);
 });
 
 describe("send_ai_message em canal no modo de teste — número FORA da lista", () => {

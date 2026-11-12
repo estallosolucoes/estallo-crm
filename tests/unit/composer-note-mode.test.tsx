@@ -98,7 +98,7 @@ describe("Composer + modo nota interna", () => {
   it("alterna pra modo nota interna: some rascunho/áudio, muda placeholder — e o ANEXO FICA", () => {
     renderComposer();
     expect(screen.getByRole("button", { name: /anexar/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /sugerir resposta/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /assistência do agente/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /nota interna/i }));
 
@@ -106,7 +106,7 @@ describe("Composer + modo nota interna", () => {
     // aceitar anexo. O que continua sumindo é o que sairia para o cliente:
     // rascunho sugerido (é uma mensagem) e áudio (grava mensagem).
     expect(screen.getByRole("button", { name: /anexar/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /sugerir resposta/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /assistência do agente/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /gravar áudio/i })).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText(/nota interna/i)).toBeInTheDocument();
   });

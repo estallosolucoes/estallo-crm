@@ -13,6 +13,7 @@
 import { randomUUID } from "node:crypto";
 
 import { test } from "./helpers/test";
+import { abrirFichaDoContato } from "./helpers/ficha-do-contato";
 import { randomInt } from "node:crypto";
 
 import {
@@ -194,6 +195,8 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     const rr = await respostaResumo;
     registra(`#944 · GET /crm-summary = ${rr.status()}`);
 
+    // A ficha do contato é gaveta abaixo da faixa 2xl: abre como a pessoa abriria.
+    await abrirFichaDoContato(page);
     // ── #909: o rótulo do botão é o TÍTULO do diálogo que ele abre ─────────
     const botao = page.getByRole("button", { name: "Novo Lead" });
     await expect(botao).toBeVisible({ timeout: 30_000 });
@@ -235,7 +238,9 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     registra(`L12.G2.3 · 1440px "Funil · Etapa": scrollWidth=${linha.scrollWidth} clientWidth=${linha.clientWidth} transborda=${linha.transborda}`);
   });
 
-  test("#946 — a sugestão colapsa caixa mista e duplicata, e não oferece o que o contato já tem", async ({
+  // ESTALLO: a sugestão de tag do contato sai do CADASTRO central de tags (CRM › Tags, migration 0659), não mais do que
+  // os contatos já usam; o caso mede o colapso de caixa mista desse vocabulário antigo, que deixou de existir.
+  test.fixme("#946 — a sugestão colapsa caixa mista e duplicata, e não oferece o que o contato já tem", async ({
     page,
   }) => {
     await login(page, c.users.manager!.email, c.password);
@@ -249,6 +254,7 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     await abreConversa(page, conversaId);
     await expect(page.getByText(`Cliente L12 ${SUFIXO}`).first()).toBeVisible({ timeout: 60_000 });
 
+    await abrirFichaDoContato(page);
     await page.getByRole("button", { name: "Tags do contato", exact: true }).click();
     const rt = await respostaTags;
     const corpoTags = await rt.text();
@@ -258,7 +264,11 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     const campo = page.getByLabel("Adicionar tag ao contato");
     await expect(campo).toBeVisible();
 
-    const chips = await page.getByRole("button", { name: /^\+ / }).allInnerTexts();
+    // No Estallo a sugestão é uma lista (role=option) que abre ao focar o campo, e não mais fileira de chips «+ tag».
+    await campo.click();
+    const lista = page.getByRole("listbox", { name: "Sugestões de tags" });
+    await expect(lista).toBeVisible();
+    const chips = (await lista.getByRole("option").allInnerTexts()).map((x) => `+ ${x.trim()}`);
     registra(`#946 · chips oferecidos = ${JSON.stringify(chips)}`);
     // "VIP", "vip " e "vip" viraram UM chip — e ele não é oferecido, porque o
     // contato desta conversa já tem "VIP".
@@ -278,7 +288,7 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     const resposta = page.waitForResponse(
       (r) => r.url().includes(`/contacts/${contatoId}`) && r.request().method() === "PATCH",
     );
-    await page.getByRole("button", { name: "+ obra", exact: true }).click();
+    await lista.getByRole("option", { name: "obra", exact: true }).click();
     const r = await resposta;
     const { data: depois } = await admin.from("contacts").select("tags").eq("id", contatoId).single();
     registra(`#946 · PATCH = ${r.status()} · antes=${JSON.stringify(antes)} depois=${JSON.stringify(depois)}`);
@@ -294,7 +304,9 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
    * que o marcador com vírgula, parêntese e chave chega inteiro. Pela rota da
    * lista, com a sessão do navegador — a mesma chamada que o Inbox faz.
    */
-  test("#1206 — o filtro por marcador acha a conversa pelas duas caixas", async ({ page }) => {
+  // ESTALLO: a tag deixou de existir na CONVERSA (migration 0659, «tags por entidade e fim da tag na conversa»; a
+  // coluna ganhou a constraint conversations_sem_tags). O caso semeia tags na conversa, que o banco agora recusa.
+  test.fixme("#1206 — o filtro por marcador acha a conversa pelas duas caixas", async ({ page }) => {
     const soNoContato = `l12-contato-${SUFIXO}`;
     const soNaConversa = `l12-conversa-${SUFIXO}`;
     const reservado = `l12, (reservado) {${SUFIXO}}`;

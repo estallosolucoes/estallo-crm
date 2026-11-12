@@ -20,6 +20,20 @@
  */
 import type { EnrollmentRow, NodeResult } from "./node-handlers";
 
+/** Escrita Postgres compartilhada pelo worker e pela conclusão transacional. */
+export const SQL_AVISO_RECUPERACAO_ESGOTADA = `insert into agent_inbox_items
+  (organization_id, kind, severity, title, body, ref_kind, ref_id, appointment_revision)
+ select $1, 'appointment_recovery_review', 'warn',
+   'Cliente faltou e não respondeu à recuperação',
+   'As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.',
+   'appointment', a.id, $3
+ from calendar_appointments a
+ join contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+ where a.organization_id=$1 and a.id=$2 and not c.is_anonymized
+ on conflict (organization_id, ref_id, appointment_revision, kind)
+   where ref_kind='appointment' and appointment_revision is not null
+ do nothing`;
+
 export interface AvisoRecuperacaoEsgotada {
   organization_id: string;
   appointment_id: string;

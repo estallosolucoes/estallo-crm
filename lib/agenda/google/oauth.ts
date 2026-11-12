@@ -65,43 +65,16 @@ export const ESCOPOS_OBRIGATORIOS: readonly string[] = [
 ];
 
 /**
- * Escopos OPCIONAIS que entram no consentimento só quando a organização liga a
- * opção que os exige (#2063).
- *
- * `meetings.space.created` permite criar espaços de reunião abertos pela API do
- * Meet. NÃO vem em `ESCOPOS_OBRIGATORIOS` de propósito: exigir o escopo novo
- * derrubaria toda conexão existente em `scope_missing` e pediria reconexão a
- * cada operador no `update.sh`, o que a doutrina de packaging proíbe. Sem o
- * escopo na conexão, o comportamento atual é preservado byte a byte.
+ * Estallo: o produto não usa o Google Meet. O escopo opcional
+ * `meetings.space.created` (#2063) não é mais pedido no consentimento, e o
+ * executor nunca cria espaço aberto — esta decisão responde sempre `false`,
+ * qualquer que seja o escopo que uma conexão antiga ainda carregue.
  */
-export const ESCOPOS_OPCIONAIS: readonly string[] = [
-  "https://www.googleapis.com/auth/meetings.space.created",
-];
-
-/** O escopo do Meet pedido por #2063, isolado para o gate do executor. */
-export const ESCOPO_MEET_ESPACO_ABERTO: string = ESCOPOS_OPCIONAIS[0]!;
-
-/** Um `scope` concedido contém o escopo do espaço aberto do Meet? */
-export function temEscopoDeEspacoAberto(concedidos: string[] | string | null | undefined): boolean {
-  const lista =
-    typeof concedidos === "string"
-      ? concedidos.split(/\s+/).filter(Boolean)
-      : Array.isArray(concedidos)
-        ? concedidos.filter((s): s is string => typeof s === "string")
-        : [];
-  return lista.map((s) => s.trim()).includes(ESCOPO_MEET_ESPACO_ABERTO);
-}
-
-/**
- * O gate do executor (#2063): o espaço aberto SÓ é criado quando a opção da
- * organização está LIGADA **e** a conexão tem o escopo opcional.
- *
- * Sem o gate duplo a feature ligava (e corria o risco de "quem tiver o link
- * entra") numa conexão que nem pediu o escopo; e sem ele o escopo obrigatório
- * teria que mudar. As duas condições juntas, contrato fechado, nunca lança.
- */
-export function deveCriarEspacoAberto(opcao: { ligada: boolean }, escoposConcedidos: string[] | string | null | undefined): boolean {
-  return opcao.ligada && temEscopoDeEspacoAberto(escoposConcedidos);
+export function deveCriarEspacoAberto(
+  _opcao: { ligada: boolean },
+  _escoposConcedidos: string[] | string | null | undefined,
+): boolean {
+  return false;
 }
 
 export const ENDERECO_DE_CONSENTIMENTO = "https://accounts.google.com/o/oauth2/v2/auth";

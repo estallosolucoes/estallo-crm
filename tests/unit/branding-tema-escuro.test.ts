@@ -5,13 +5,13 @@
  * semente só força UM dos dois temas a um tom que a marca não usa:
  *
  *   | semente       | botão claro  | botão escuro                 |
- *   | `#1c261d`     | `#1c261d`    | `#8a948b` (fora da paleta)   |
+ *   | `#1c261d`     | `#1c261d`    | `#e0e3e0` (quase branco; era `#8a948b` antes da identidade Estallo) |
  *   | `#d9ac62`     | `#655131`    | `#e9b762`                    |
  *
  * Este arquivo cobre os quatro critérios de aceite da issue:
  *
  *   1. SEM a segunda cor, o CSS é o de hoje — os dois casos da tabela acima
- *      são a régua: `#1c261d` no claro e `#8a948b` no escuro, que é
+ *      são a régua: `#1c261d` no claro e `#e0e3e0` no escuro (o tom que o motor devolve hoje; foi `#8a948b` com a paleta Sage), que é
  *      EXATAMENTE o que a issue mediu antes do campo existir.
  *   2. COM as duas, o claro sai `#1c261d` e o escuro sai o tom derivado da
  *      segunda semente (`#d9ac62` ou o mais próximo que passe no piso — o
@@ -49,8 +49,14 @@ const SEMENTE_CLARA = "#1c261d";
 /** Âmbar — a semente ESCURA da tabela da issue. */
 const SEMENTE_ESCURA = "#d9ac62";
 
-/** O tom que o escuro tem HOJE quando só existe a semente verde. */
-const ESCURO_DE_HOJE = "#8a948b";
+/**
+ * O tom que o escuro tem HOJE quando só existe a semente verde.
+ *
+ * Era `#8a948b` com o CSS Sage. Com a identidade Estallo o accent escuro do produto é o stop 700
+ * (ver `DIVIDA_DO_ESCURO` em `branding-contraste.test.ts`), o motor recua mais stops e a semente
+ * `#1c261d` cai em `#e0e3e0`. O número é fotografia do motor, não requisito de produto.
+ */
+const ESCURO_DE_HOJE = "#e0e3e0";
 
 /** O accent do tema escuro derivado da segunda semente, pela mesma régua. */
 const ESCURO_DA_SEGUNDA = derivarMarca(SEMENTE_ESCURA, REGUA_DO_PRODUTO).escuro.accent;
@@ -137,7 +143,7 @@ describe("cor da marca no tema escuro (#2482)", () => {
         // acima provaria um caso e não a regra.
         const css = cssDaMarca(corDe(caso.camada({ accent_hex: SEMENTE_CLARA, accent_dark_hex: SEMENTE_CLARA })), caso.escopo).css;
         const { escuro } = blocos(css);
-        expect(escuro).toContain("--color-accent: #8a948b;");
+        expect(escuro).toContain(`--color-accent: ${ESCURO_DE_HOJE};`);
       });
     });
   }
@@ -173,16 +179,19 @@ describe("o que o sistema ajustou, com as duas cores (#2482)", () => {
     describe(caso.rotulo, () => {
       it("verde + âmbar: só o escuro da âmbar fala, e nenhum alerta de erro ou sucesso sobra", () => {
         const camada = caso.camada({ accent_hex: SEMENTE_CLARA, accent_dark_hex: SEMENTE_ESCURA });
-        expect(sigla(camada)).toEqual(["accent_deslocado|escuro|--color-accent"]);
+        // `accent_sem_contraste_possivel` é a dívida do tema escuro (accent 700) falando a língua do
+        // produto: não há tom da semente que deixe todos os elementos legíveis nesse tema.
+        expect(sigla(camada)).toEqual([
+          "accent_deslocado|escuro|--color-accent",
+          "accent_sem_contraste_possivel|escuro|null",
+          "semantica_deslocada|escuro|warning",
+        ]);
         expect(textos(camada)).not.toMatch(/erro|sucesso/);
       });
 
       it("roxo + cinza: o aviso de cor neutra é do MODO ESCURO, nunca da cor principal", () => {
         const camada = caso.camada({ accent_hex: "#7a5cd6", accent_dark_hex: "#333333" });
-        expect(sigla(camada)).toEqual([
-          "accent_deslocado|claro|--color-accent",
-          "cor_escura_acromatica|escuro|--color-accent",
-        ]);
+        expect(sigla(camada)).toEqual(["cor_escura_acromatica|escuro|--color-accent"]);
         const texto = textos(camada);
         expect(texto).toContain("A cor do modo escuro é um tom neutro");
         expect(texto).not.toContain("reservada ao logo");
@@ -194,7 +203,7 @@ describe("o que o sistema ajustou, com as duas cores (#2482)", () => {
         // avisos do escuro que ele de fato pinta.
         expect(sigla(caso.camada({ accent_hex: SEMENTE_CLARA, accent_dark_hex: null }))).toEqual([
           "accent_deslocado|escuro|--color-accent",
-          "redundancia_nao_cromatica_necessaria|escuro|success",
+          "accent_sem_contraste_possivel|escuro|null",
         ]);
       });
     });

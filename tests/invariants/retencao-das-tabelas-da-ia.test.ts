@@ -25,8 +25,6 @@ const CONVERSA = "05870587-0000-4000-8000-000000000007";
 
 const FUNCOES = [
   "fn_expurgar_telemetria_de_ia_vencida",
-  "fn_expurgar_ritmo_de_envio_vencido",
-  "fn_expurgar_copias_enviadas_vencidas",
   "fn_expurgar_checkpoints_superados",
 ] as const;
 
@@ -83,8 +81,6 @@ beforeEach(() => {
   sql(`
     delete from lead_checkpoints where organization_id = '${ORG}';
     delete from job_queue where organization_id = '${ORG}';
-    delete from pacing_ledger where organization_id = '${ORG}';
-    delete from outbound_copies where organization_id = '${ORG}';
     delete from channel_knobs where organization_id = '${ORG}';
     delete from llm_calls where organization_id = '${ORG}';
     delete from metrics where organization_id = '${ORG}';
@@ -164,57 +160,6 @@ describe("lead_checkpoints — o último de cada fronteira sobrevive", () => {
     checkpoint({ idadeDias: 300 });
     expect(conta(`select public.fn_expurgar_checkpoints_superados(0, 1)`)).toBe(1);
     expect(existe(velho)).toBe(false);
-  });
-});
-
-describe("pacing_ledger — o último envio de cada número fica", () => {
-  it("apaga o velho com envio mais novo, guarda o último mesmo velho, e respeita o piso de 2 dias", () => {
-    sql(`
-      insert into pacing_ledger (organization_id, channel_session_id, sent_at) values
-        ('${ORG}', '${SESSAO}', now() - interval '10 days'),
-        ('${ORG}', '${SESSAO}', now() - interval '3 days'),
-        ('${ORG}', '${SESSAO}', now() - interval '1 day'),
-        ('${ORG}', '${SESSAO}', now() - interval '1 hour'),
-        ('${ORG}', '${SESSAO_2}', now() - interval '20 days'),
-        ('${ORG}', '${SESSAO_2}', now() - interval '15 days');
-    `);
-    // knob 0 → piso 2: saem os de 10 e 3 dias de S1 e o de 20 de S2; o de 1 dia
-    // fica pelo piso, e o de 15 dias de S2 fica por ser o último do número.
-    expect(conta(`select public.fn_expurgar_ritmo_de_envio_vencido(0, 10000)`)).toBe(3);
-    expect(conta(`select count(*) from pacing_ledger where channel_session_id = '${SESSAO}'`)).toBe(2);
-    expect(
-      conta(`select count(*) from pacing_ledger where channel_session_id = '${SESSAO_2}' and sent_at < now() - interval '14 days'`),
-    ).toBe(1);
-  });
-});
-
-describe("outbound_copies — a janela do anti-repetição fica", () => {
-  function copias(sessao: string, n: number, idadeDias: number): void {
-    sql(`
-      insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash, sent_at)
-      select '${ORG}', '${sessao}', 'copia ' || g, md5('copia ' || g), now() - make_interval(days => ${idadeDias}, secs => g)
-        from generate_series(1, ${n}) g;
-    `);
-  }
-
-  it("guarda as últimas 20 do número mesmo velhas e apaga o resto passado do prazo", () => {
-    copias(SESSAO, 25, 60);
-    expect(conta(`select public.fn_expurgar_copias_enviadas_vencidas(0, 10000)`)).toBe(5);
-    expect(conta(`select count(*) from outbound_copies where channel_session_id = '${SESSAO}'`)).toBe(20);
-  });
-
-  it("knob windowSize maior que 20 alarga o que fica", () => {
-    sql(`
-      insert into channel_knobs (organization_id, channel_session_id, spinning_knobs)
-      values ('${ORG}', '${SESSAO_2}', '{"windowSize": 30}'::jsonb);
-    `);
-    copias(SESSAO_2, 25, 60);
-    expect(conta(`select public.fn_expurgar_copias_enviadas_vencidas(0, 10000)`)).toBe(0);
-  });
-
-  it("o piso de 7 dias não é furado, mesmo fora da janela", () => {
-    copias(SESSAO, 25, 3);
-    expect(conta(`select public.fn_expurgar_copias_enviadas_vencidas(1, 10000)`)).toBe(0);
   });
 });
 

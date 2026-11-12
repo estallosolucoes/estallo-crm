@@ -9,6 +9,7 @@ import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "./helpers/test";
+import { abrirFichaDoContato } from "./helpers/ficha-do-contato";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
 import { enviarTextoFixoPendente } from "../../lib/followup/enviar-texto-fixo";
@@ -41,6 +42,8 @@ async function fixture() {
     slug: `presenca-${randomUUID()}`,
     display_name: "Agenda local",
     legal_name: "Agenda local",
+    // A Agenda nasce desligada no Estallo (settings.agenda_habilitada): a org desta spec a liga.
+    settings: { agenda_habilitada: true },
     onboarded_at: new Date().toISOString(),
   });
   orgs.push(org);
@@ -57,20 +60,6 @@ async function fixture() {
     status: "WORKING",
     webhook_secret_encrypted: "\\x00",
   });
-  // #2658 — o atalho inline de texto fixo obedece à janela de disparo do canal.
-  // Sem linha em `channel_knobs` vale o padrão (7h–22h de America/Sao_Paulo) e
-  // este fixture passaria a ser dependente do relógio: rodando de madrugada o
-  // envio seria ADIADO e os `expect(...).toBe(1)` deste arquivo cairiam. O
-  // fixture declara o que ele é — um número de teste que dispara a qualquer
-  // hora — e a suíte mede o que veio medir.
-  const knobs = await db.from("channel_knobs").insert({
-    organization_id: org,
-    channel_session_id: session,
-    window_start_hour: 0,
-    window_end_hour: 24,
-    allow_sunday: true,
-  });
-  if (knobs.error) throw knobs.error;
   const type = await insert("calendar_event_types", {
     organization_id: org,
     name: "Consulta de presença",
@@ -308,6 +297,7 @@ test("Inbox marca cliente/conversa; detalhe antigo confirma presença com evidê
   await inbound(f, p, "Preciso marcar uma consulta");
   await login(page, f.email);
   await page.goto(`/app/inbox/${p.conversation}`);
+  await abrirFichaDoContato(page); // «Marcar compromisso» mora na ficha do contato (gaveta abaixo de 1536 px)
   await page.getByRole("link", { name: "Marcar compromisso", exact: true }).click();
   const panel = page.getByTestId("painel-de-marcacao");
   await expect(panel).toBeVisible();
@@ -511,6 +501,7 @@ test("ir para a Agenda pelo menu apaga o cliente da conversa — \"Novo agendame
   await inbound(f, p, "Preciso marcar uma consulta");
   await login(page, f.email);
   await page.goto(`/app/inbox/${p.conversation}`);
+  await abrirFichaDoContato(page); // «Marcar compromisso» mora na ficha do contato (gaveta abaixo de 1536 px)
   await page.getByRole("link", { name: "Marcar compromisso", exact: true }).click();
   await expect(page.getByTestId("painel-de-marcacao")).toBeVisible();
   await expect(page.getByTestId("quem-sera-atendido")).toHaveAttribute("data-contact-id", p.contact);

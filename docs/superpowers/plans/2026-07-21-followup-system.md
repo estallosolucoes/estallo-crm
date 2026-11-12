@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Sistema de Follow-up Inteligente — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -199,6 +201,7 @@ revoke all on function fn_claim_due_followup_enrollments(int, int) from public, 
 **Files:** Create: `tests/db/followup-schema.test.ts` (padrão dos testes `vitest.db` existentes — ver `tests/db/` para setup helper).
 
 Casos (todos rodando no Postgres efêmero):
+
 - [ ] `rls: org A não lê pointers/enrollments/events/versions da org B` (2 tenants seedados, client com JWT de A consulta, espera 0 rows).
 - [ ] `unique: segundo enrollment vivo do mesmo (pointer, contact) → 23505`; após `status='completed'` do 1º, o 2º insere ok.
 - [ ] `unique: evento com mesmo (enrollment_id, idempotency_key) → 23505`.
@@ -297,18 +300,41 @@ Regras (da spec §6): BFS de alcançabilidade a partir do trigger; DFS de caminh
 
 ```ts
 // engine.ts
-export interface TickDeps { db: AdminClient; clock: () => Date; enqueueJob: (job: FollowupJobRequest) => Promise<void>; }
-export interface TickSummary { claimed: number; advanced: number; scheduled: number; failed: number; dead: number; }
-export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number }): Promise<TickSummary>;
+export interface TickDeps {
+  db: AdminClient;
+  clock: () => Date;
+  enqueueJob: (job: FollowupJobRequest) => Promise<void>;
+}
+export interface TickSummary {
+  claimed: number;
+  advanced: number;
+  scheduled: number;
+  failed: number;
+  dead: number;
+}
+export async function runFollowupTick(
+  deps: TickDeps,
+  opts?: { limit?: number },
+): Promise<TickSummary>;
 
 // node-handlers.ts — puros, testáveis sem DB
 export type NodeResult =
-  | { kind: 'advance'; next_node_id: string; next_eval_at: Date }
-  | { kind: 'wait'; next_eval_at: Date }                       // permanece no nó
-  | { kind: 'enqueue_turn'; purpose: 'send_message'|'classify'|'decide_timing'; wake_status: 'active'|'waiting_reply' }
-  | { kind: 'complete'; outcome: EnrollmentOutcome }
-  | { kind: 'fail'; error: string };
-export function processNode(input: { node: FlowNode; edges: FlowEdge[]; enrollment: EnrollmentRow; lead: LeadFacts; clock: () => Date }): NodeResult;
+  | { kind: "advance"; next_node_id: string; next_eval_at: Date }
+  | { kind: "wait"; next_eval_at: Date } // permanece no nó
+  | {
+      kind: "enqueue_turn";
+      purpose: "send_message" | "classify" | "decide_timing";
+      wake_status: "active" | "waiting_reply";
+    }
+  | { kind: "complete"; outcome: EnrollmentOutcome }
+  | { kind: "fail"; error: string };
+export function processNode(input: {
+  node: FlowNode;
+  edges: FlowEdge[];
+  enrollment: EnrollmentRow;
+  lead: LeadFacts;
+  clock: () => Date;
+}): NodeResult;
 export const BACKOFF_MS = [30_000, 60_000, 300_000, 900_000, 3_600_000] as const;
 export function selectEdge(edges: FlowEdge[], from: string, match: EdgeMatch): FlowEdge | null; // priority desc, always como fallback
 ```

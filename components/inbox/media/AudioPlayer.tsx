@@ -93,7 +93,7 @@ export function AudioPlayer({ messageId, isOutbound, src }: Props) {
         className={cn(
           "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
           isOutbound
-            ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30"
+            ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30 dark:bg-black/15 dark:hover:bg-black/25"
             : "bg-primary/10 text-primary hover:bg-primary/20",
         )}
       >
@@ -115,7 +115,7 @@ export function AudioPlayer({ messageId, isOutbound, src }: Props) {
           onChange={(e) => seek(Number(e.target.value))}
           className="h-1 w-full cursor-pointer accent-current"
         />
-        <span className="text-[10px] tabular-nums opacity-70">
+        <span className={cn("text-[10px] tabular-nums", isOutbound ? "text-primary-foreground" : "opacity-70")}>
           {fmt(current)} / {fmt(safeDuration)}
         </span>
       </div>
@@ -126,7 +126,7 @@ export function AudioPlayer({ messageId, isOutbound, src }: Props) {
         className={cn(
           "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums transition-colors",
           isOutbound
-            ? "bg-primary-foreground/20 text-primary-foreground"
+            ? "bg-primary-foreground/20 text-primary-foreground dark:bg-black/15"
             : "bg-primary/10 text-primary",
         )}
       >

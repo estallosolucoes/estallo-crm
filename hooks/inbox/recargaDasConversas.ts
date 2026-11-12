@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 /**
  * A RECARGA QUE O REALTIME PEDE, AGRUPADA — e sem cancelar a busca em voo.
@@ -46,4 +46,55 @@ function descarregar(qc: QueryClient): void {
   agendadas.delete(qc);
   void qc.invalidateQueries({ queryKey: ["conversations"] });
   void qc.invalidateQueries({ queryKey: ["conversation"] });
+  // O status do chat (Em espera / Em aberto) muda com cada mensagem: o
+  // contador das abas acompanha a lista, não o polling de 30 s.
+  void qc.invalidateQueries({ queryKey: ["conversation-counts"] });
+}
+
+/**
+ * A PRÉVIA NÃO PODE ANDAR NA FRENTE DO FIO.
+ *
+ * A prévia da lista vem do canal `conversations` (a coluna
+ * `last_message_preview`); o fio aberto vem do canal `messages-<id>`. São dois
+ * canais, e quando o segundo perdia um evento (remonte do fio, queda, RLS que
+ * atrasa) o atendente via a mensagem nova NA LISTA e não na conversa aberta —
+ * relatado em 2026-10-17. Aqui o evento da conversa confere o fio que está em
+ * cache: se a conversa diz ter mensagem mais nova que a última do fio, o fio é
+ * relido. Sem polling e sem releitura quando os dois já concordam.
+ */
+export function alinharFioComAPrevia(qc: QueryClient, payload: unknown): void {
+  const nova = (payload as { new?: { id?: unknown; last_message_at?: unknown } } | null)?.new;
+  if (typeof nova?.id !== "string" || typeof nova.last_message_at !== "string") return;
+  const chave = ["messages", nova.id];
+  const fio = qc.getQueryData<InfiniteData<{ data: Array<{ sent_at: string }> }>>(chave);
+  if (!fio) return;
+  const ultima = fio.pages[0]?.data.at(-1)?.sent_at;
+  if (!ultima || Date.parse(nova.last_message_at) > Date.parse(ultima)) {
+    void qc.invalidateQueries({ queryKey: chave });
+  }
+}
+
+/**
+ * A PRÉVIA NA HORA (30/10/2026): grava campos de UMA conversa em toda lista em
+ * cache, sem esperar a recarga. A recarga (que reordena e traz os campos
+ * calculados) continua vindo atrás; isto só tira a defasagem de quem olha.
+ *
+ * Usado pelo Realtime (o `new` do UPDATE — colunas, nunca os joins nem os campos
+ * calculados, que ficam como estavam) e pelo envio otimista (`useSendMessage`).
+ */
+export function gravarNaConversaDaLista(
+  qc: QueryClient,
+  conversationId: string,
+  campos: Record<string, unknown>,
+): void {
+  qc.setQueriesData<InfiniteData<{ data: Array<{ id: string }> }>>({ queryKey: ["conversations"] }, (old) => {
+    if (!old?.pages) return old;
+    let mudou = false;
+    const pages = old.pages.map((page) => {
+      if (!page.data.some((c) => c.id === conversationId)) return page;
+      mudou = true;
+      return { ...page, data: page.data.map((c) => (c.id === conversationId ? { ...c, ...campos } : c)) };
+    });
+    return mudou ? { ...old, pages } : old;
+  });
 }

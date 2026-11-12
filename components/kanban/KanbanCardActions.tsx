@@ -39,7 +39,48 @@ interface KanbanCardActionsProps {
   pipelineId: string;
 }
 
-export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) {
+// O menu permanece visível em mouse, toque e teclado.
+const CLASSE_DO_GATILHO = "h-8 w-8 shrink-0 opacity-100";
+
+/**
+ * O "⋯" do card. Até o primeiro uso é SÓ o botão: o menu completo traz 4
+ * consultas, 6 mutações, um formulário e 4 diálogos, e montá-los em cada um
+ * dos ~1.100 cards de um funil grande travava o scroll e o clique do quadro.
+ * No primeiro toque o menu monta já aberto — e fica montado depois disso.
+ */
+export function KanbanCardActions(props: KanbanCardActionsProps) {
+  const t = useT();
+  const [montado, setMontado] = useState(false);
+  if (montado) return <AcoesDoCard {...props} />;
+  return (
+    <span className="contents" onClick={(e) => e.stopPropagation()}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={CLASSE_DO_GATILHO}
+        aria-label={t("Ações do lead")}
+        aria-haspopup="menu"
+        // O Radix abre no `pointerdown`; aqui é o mesmo gesto que monta o menu.
+        onPointerDown={(e) => {
+          if (e.button !== 0 || e.ctrlKey) return;
+          e.preventDefault();
+          setMontado(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+            e.preventDefault();
+            setMontado(true);
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <DotsThree size={16} weight="bold" className="rotate-90" />
+      </Button>
+    </span>
+  );
+}
+
+function AcoesDoCard({ lead, pipelineId }: KanbanCardActionsProps) {
   const t = useT();
   const [loseOpen, setLoseOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -96,25 +137,20 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
       positivo de que clicar no CARD continua abrindo o dossiê.
     */
     <span className="contents" onClick={(e) => e.stopPropagation()}>
-      <DropdownMenu>
+      {/* Só monta quando alguém já pediu o menu: nasce aberto. */}
+      <DropdownMenu defaultOpen>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
-            // Visível por padrão e escondido até o hover SÓ onde existe hover:
-            // no toque não há hover, e `opacity-0` deixava o menu inalcançável.
-            // Mesmo padrão de `components/inbox/MessageBubble.tsx`.
-            className="h-7 w-7 shrink-0 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+            className={CLASSE_DO_GATILHO}
             onClick={(e) => e.stopPropagation()}
             aria-label={t("Ações do lead")}
           >
-            <DotsThree size={16} weight="bold" />
+            <DotsThree size={16} weight="bold" className="rotate-90" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           <DropdownMenuItem
             onSelect={() => {
               setEditOpen(true);
@@ -182,7 +218,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
           </DropdownMenuItem>
           {/*
             `canAssign` já É `usePermission("pipeline.move_card")` — a MESMA
-            permissão que `POST /api/v1/leads/[id]/clone` exige no servidor
+            permissão que `POST /api/v1/leads/[id]/move-pipeline` exige no servidor
             (`requireRole("agent")`). Mostrar o item a quem o servidor
             recusaria seria prometer o que não se cumpre.
           */}
@@ -192,7 +228,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
                 setMoveOpen(true);
               }}
             >
-              {t("Levar para outro funil")}
+              {t("Mover de funil")}
             </DropdownMenuItem>
           )}
           {canAssign && (
@@ -231,8 +267,9 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
               {propostaEnviada && (
                 <>
                   {" "}
-                  {t("O negócio some; a proposta")} {String(propostaEnviada.numero).padStart(4, "0")}/
-                  {propostaEnviada.ano} {t("continua em Propostas")}.
+                  {t("O negócio some; a proposta")}{" "}
+                  {String(propostaEnviada.numero).padStart(4, "0")}/{propostaEnviada.ano}{" "}
+                  {t("continua em Propostas")}.
                 </>
               )}
             </AlertDialogDescription>
@@ -274,6 +311,7 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
         onOpenChange={setMoveOpen}
         leadId={lead.id}
         pipelineId={pipelineId}
+        expectedUpdatedAt={lead.updated_at}
       />
       <EditLeadDialog
         open={editOpen}

@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
+  // BotaoFixarFunil (fixar funil no topo, do fork) lê a organização ativa por useAuth.
+  useAuth: () => ({ activeOrg: { orgId: "org-1" } }),
   useActiveOrg: () => ({
     orgId: "org-1",
     name: "Clínica",

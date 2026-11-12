@@ -50,6 +50,8 @@ import { Label } from "@/components/ui/label";
 import { PISO_DE_TETO_CENTS } from "@/lib/agent-engine/edge/llm/orcamento";
 import { useAiBudget, useUpdateBudget, type BudgetStatus } from "@/hooks/ai/useAiBudget";
 import { useT } from "@/hooks/i18n/useT";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
+import { centavosParaCampo, parseReaisToCents } from "@/lib/money";
 
 interface Props {
   initialData?: BudgetStatus;
@@ -315,16 +317,14 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const update = useUpdateBudget();
-  const [limitUsd, setLimitUsd] = useState<string>(
-    (status.monthly_limit_cents / 100).toFixed(2),
-  );
+  const [limitUsd, setLimitUsd] = useState<string>(centavosParaCampo(status.monthly_limit_cents));
   const [thresholdPct, setThresholdPct] = useState<number>(status.alarm_threshold_pct);
   const [modo, setModo] = useState<Modo>(status.enforcement_mode);
   const [imediato, setImediato] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setLimitUsd((status.monthly_limit_cents / 100).toFixed(2));
+      setLimitUsd(centavosParaCampo(status.monthly_limit_cents));
       setThresholdPct(status.alarm_threshold_pct);
       setModo(status.enforcement_mode);
       setImediato(false);
@@ -334,9 +334,9 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
   // Campo vazio é INVÁLIDO, e não zero: `Number("")` é 0, e cair em "sem teto"
   // por um campo apagado seria desarmar a proteção sem ninguém escolher isso.
   const digitado = limitUsd.trim();
-  const valorUsd = digitado === "" ? Number.NaN : Number(digitado.replace(",", "."));
-  const centsValidos = Number.isFinite(valorUsd) && valorUsd >= 0;
-  const centsDigitados = centsValidos ? Math.round(valorUsd * 100) : 0;
+  const centsLidos = digitado === "" ? null : parseReaisToCents(digitado);
+  const centsValidos = centsLidos !== null;
+  const centsDigitados = centsLidos ?? 0;
   const tetoParaCopy = centsValidos ? centsDigitados : status.monthly_limit_cents;
 
   // A ESCADA, na tela. O servidor recusa `off → bloquear` com 422; aqui a opção
@@ -445,11 +445,9 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
 
           <div className="space-y-1.5">
             <Label htmlFor="limit-usd">{t("Limite mensal (US$)")}</Label>
-            <Input
+            <CampoDeDinheiro
               id="limit-usd"
-              type="number"
-              min={0}
-              step="0.01"
+              moeda="USD"
               value={limitUsd}
               onChange={(e) => setLimitUsd(e.target.value)}
               aria-invalid={tetoInsuficiente || !centsValidos}

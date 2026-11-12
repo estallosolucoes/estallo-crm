@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NextRequest } from "next/server";
 
@@ -127,10 +126,6 @@ vi.mock("@/lib/api/client", () => ({
 }));
 vi.mock("@/hooks/pipelines/useDefaultPipeline", () => ({ useDefaultPipeline: () => ({ data: null, isError: false }) }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useUpdateConversationTags: () => ({ mutate: vi.fn(), isPending: false }),
-  useConversationTagVocabulary: () => ({ data: [] }),
-}));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({ useContactTagVocabulary: () => ({ data: [] }) }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { support: null } }) }));
@@ -184,71 +179,14 @@ beforeEach(() => {
   post.mockResolvedValue({ data: { updated_count: 1 } });
 });
 
-describe("painel da conversa — Etapa do funil", () => {
-  it("move pelo mesmo caminho do quadro, sem oferecer etapa de perda, e relê o resumo", async () => {
+describe("painel da conversa — sem seletor de etapa", () => {
+  // O Estallo tirou o "Etapa do funil" do bloco Leads recentes: a etapa muda
+  // pelo trilho do dossiê, que o clique no lead abre.
+  it("não desenha o seletor, mesmo com as etapas na resposta", async () => {
     get.mockResolvedValue(resumo({ stage_id: "s-dados", etapas_do_funil: ETAPAS }));
     renderPainel();
-    const user = userEvent.setup();
-
-    const seletor = await screen.findByRole("combobox", { name: "Etapa do funil" });
-    expect(seletor.textContent).toContain("Dados incompletos");
-
-    await user.click(seletor);
-    const opcoes = (await screen.findAllByRole("option")).map((o) => o.textContent);
-    expect(opcoes).toEqual(["Dados incompletos", "Pedido confirmado", "Entregue"]);
-
-    const leiturasAntes = get.mock.calls.length;
-    await user.click(screen.getByRole("option", { name: "Pedido confirmado" }));
-
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith("/api/v1/leads/bulk", {
-        action: "move",
-        lead_ids: ["l-1"],
-        params: { stage_id: "s-confirmado" },
-      }),
-    );
-    // A tela relê o resumo: seletor e "Funil · Etapa" dizem a etapa nova.
-    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(leiturasAntes));
-  });
-
-  it("escolher a etapa em que o negócio já está não chama a rota", async () => {
-    get.mockResolvedValue(resumo({ stage_id: "s-dados", etapas_do_funil: ETAPAS }));
-    renderPainel();
-    const user = userEvent.setup();
-
-    await user.click(await screen.findByRole("combobox", { name: "Etapa do funil" }));
-    await user.click(await screen.findByRole("option", { name: "Dados incompletos" }));
+    await screen.findByTestId("inbox-lead-l-1");
+    expect(screen.queryByTestId("inbox-etapa-select")).toBeNull();
     expect(post).not.toHaveBeenCalled();
-  });
-
-  it("recusa da rota (ex.: campos obrigatórios da etapa) não diz que atualizou", async () => {
-    const { toast } = await import("sonner");
-    vi.mocked(toast.success).mockClear();
-    post.mockRejectedValue(
-      Object.assign(new Error("Preencha os campos obrigatórios antes de continuar: CPF."), {
-        code: "required_fields_missing",
-        status: 422,
-      }),
-    );
-    get.mockResolvedValue(resumo({ stage_id: "s-dados", etapas_do_funil: ETAPAS }));
-    renderPainel();
-    const user = userEvent.setup();
-
-    await user.click(await screen.findByRole("combobox", { name: "Etapa do funil" }));
-    await user.click(await screen.findByRole("option", { name: "Pedido confirmado" }));
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Etapa do funil" })).not.toBeDisabled());
-    expect(toast.success).not.toHaveBeenCalled();
-    expect(screen.getByRole("combobox", { name: "Etapa do funil" }).textContent).toContain("Dados incompletos");
-  });
-
-  it("resposta sem as etapas do funil não desenha seletor vazio", async () => {
-    get.mockResolvedValue(resumo({}));
-    renderPainel();
-
-    // Guarda de vacuidade: o bloco do negócio desenhou — o seletor é que não.
-    await waitFor(() => expect(screen.getByTestId("inbox-campos-lead").textContent).toContain("Pedidos"));
-    expect(screen.queryByTestId("inbox-etapa-do-negocio")).toBeNull();
   });
 });

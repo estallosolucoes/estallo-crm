@@ -40,7 +40,7 @@ export const TOOLS_GOVERNANCA = declararTools([
     category: "write",
     rotulo: "Aplicar marcadores",
     explicacao:
-      "Adiciona ou remove marcadores numa conversa, cliente ou oportunidade, para organizar e filtrar a operação depois.",
+      "Adiciona ou remove marcadores num cliente ou oportunidade, para organizar e filtrar a operação depois.",
     oQueToca: "Organização da operação",
     risco: "atencao",
     pacotes: ["organizar", "atender"],

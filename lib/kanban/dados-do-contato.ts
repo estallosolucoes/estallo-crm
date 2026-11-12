@@ -1,11 +1,18 @@
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import type { Lead } from "@/lib/types/leads";
 
-type DadosDoContato = Pick<Lead, "contact_phone" | "contact_email" | "contact_links">;
+type DadosDoContato = Pick<
+  Lead,
+  "contact_phone" | "contact_email" | "contact_links" | "contact_name" | "contact_has_avatar"
+>;
 
 /** A linha de `contacts` como o quadro a lê — as colunas que esta regra usa. */
 export interface LinhaDoContatoNoQuadro {
   id: string;
+  name?: string | null;
+  display_name?: string | null;
+  avatar_storage_path?: string | null;
   phone_number: string | null;
   email: string | null;
   custom_fields: Record<string, unknown> | null;
@@ -35,7 +42,10 @@ export function anexarDadosDoContato(leads: Lead[], contatos: LinhaDoContatoNoQu
   for (const contato of contatos) {
     if (contato.is_anonymized) continue;
     const links = linksParaExibir(contato.custom_fields);
+    const nome = nomeDoContato(contato);
     const dados: DadosDoContato = {
+      ...(nome ? { contact_name: nome } : {}),
+      ...(contato.avatar_storage_path ? { contact_has_avatar: true } : {}),
       ...(contato.phone_number ? { contact_phone: contato.phone_number } : {}),
       ...(contato.email ? { contact_email: contato.email } : {}),
       ...(links.length > 0 ? { contact_links: links } : {}),

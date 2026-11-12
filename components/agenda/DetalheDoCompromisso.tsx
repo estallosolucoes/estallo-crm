@@ -1,5 +1,4 @@
 "use client";
-import { MeetDoCompromisso, type MeetingDetail } from "./MeetDoCompromisso";
 import { SincronizacaoDoCompromisso, type SyncDetail } from "./SincronizacaoDoCompromisso";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +12,6 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 
 type Detalhe = {
-  meeting?: MeetingDetail | null;
   google_sync?: SyncDetail;
   id: string;
   title: string;
@@ -142,14 +140,6 @@ export function DetalheDoCompromisso({
             key={a.id}
             id={a.id}
             sync={a.google_sync}
-            onSaved={() => void query.refetch()}
-          />
-        )}
-        {a?.meeting && (
-          <MeetDoCompromisso
-            id={a.id}
-            revision={a.google_sync?.revision ?? String(a.revision)}
-            meeting={a.meeting}
             onSaved={() => void query.refetch()}
           />
         )}

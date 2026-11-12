@@ -18,9 +18,13 @@ import {
   CONDITION_TRUE_BRANCH_ID,
   CONDITION_FALSE_BRANCH_ID,
   RESERVED_BRANCH_IDS,
+  ON_ERROR_BRANCH_ID,
+  branchesForShape,
   nodeBranches,
   branchIdForCondition,
   conditionForBranch,
+  GRACE_TIMEOUT_MAX_MS,
+  editLeadTagConfigSchema,
 } from './graph-schema';
 import type { NodeType, FlowGraph, FlowNode, FlowEdge } from './graph-schema';
 import { toReactFlow, fromReactFlow } from './graph-mappers';
@@ -42,6 +46,15 @@ describe('graph-schema', () => {
         // #2065 — dois tipos de ação que não falam com o cliente.
         'move_lead',
         'edit_lead_tag',
+        // Fase 4 — monta campos a partir das saídas anteriores.
+        'map_data',
+        'assign_lead_owner',
+        'add_note',
+        'update_lead_field',
+        'lead_product',
+        'http_request',
+        'find_or_create_contact',
+        'find_or_create_lead',
         'end',
       ]);
     });
@@ -70,12 +83,10 @@ describe('graph-schema', () => {
         expect(result.success).toBe(true);
       });
 
-      it('rejects duration below 5 min', () => {
-        const result = waitConfigSchema.safeParse({
-          mode: 'fixed',
-          duration_ms: 299_999,
-        });
-        expect(result.success).toBe(false);
+      it('accepts a short wait (3 min, 30 s) and rejects below 1 s', () => {
+        for (const duration_ms of [180_000, 30_000, 1_000])
+          expect(waitConfigSchema.safeParse({ mode: 'fixed', duration_ms }).success).toBe(true);
+        expect(waitConfigSchema.safeParse({ mode: 'fixed', duration_ms: 999 }).success).toBe(false);
       });
 
       it('rejects duration above 90 days', () => {
@@ -233,6 +244,18 @@ describe('graph-schema', () => {
         grace_timeout_ms: 899_999,
       });
       expect(result.success).toBe(false);
+    });
+
+    it('still parses a saved grace_timeout above the 365-day publish ceiling (legacy graphs stay readable)', () => {
+      expect(
+        aiClassifyConfigSchema.safeParse({ classes: ['a'], grace_timeout_ms: GRACE_TIMEOUT_MAX_MS + 1 }).success,
+      ).toBe(true);
+      expect(
+        matchReplyConfigSchema.safeParse({
+          branches: [{ id: 'br_sim', label: 'Sim', op: 'contains', pattern: 'sim' }],
+          grace_timeout_ms: 9e15,
+        }).success,
+      ).toBe(true);
     });
 
     it('rejects hint over 500 chars', () => {
@@ -1319,6 +1342,13 @@ describe('graph-schema', () => {
           kind: 'match',
           condition: { type: 'class_match', value: 'no_reply' },
         },
+        {
+          id: ON_ERROR_BRANCH_ID,
+          label: 'Fallback erro',
+          check: null,
+          kind: 'error',
+          condition: { type: 'branch', branch_id: ON_ERROR_BRANCH_ID },
+        },
         { id: FALLBACK_BRANCH_ID, label: 'Outros casos', check: null, kind: 'fallback', condition: { type: 'always' } },
       ]);
     });
@@ -1388,12 +1418,29 @@ describe('graph-schema', () => {
 
     it('leaves a node with a single output with exactly one branch: the fallback', () => {
       const graph = parseLegacy();
-      for (const id of ['t1', 'a1', 'e1']) {
+      for (const id of ['t1', 'e1']) {
         const branches = nodeBranches(graph.nodes.find((n) => n.id === id)!);
         expect(branches).toStrictEqual([
           { id: FALLBACK_BRANCH_ID, label: 'Sempre', check: null, kind: 'fallback', condition: { type: 'always' } },
         ]);
       }
+    });
+
+    it('a block that can fail for good (action here) also offers the optional "Fallback erro" exit, before the fallback', () => {
+      const graph = parseLegacy();
+      const branches = nodeBranches(graph.nodes.find((n) => n.id === 'a1')!);
+      expect(branches.map((b) => [b.id, b.kind])).toStrictEqual([
+        [ON_ERROR_BRANCH_ID, 'error'],
+        [FALLBACK_BRANCH_ID, 'fallback'],
+      ]);
+      expect(branches[0]!.condition).toStrictEqual({ type: 'branch', branch_id: ON_ERROR_BRANCH_ID });
+    });
+
+    it('the shape of a single-output block ignores the error exit (the card stays a simple node)', () => {
+      const graph = parseLegacy();
+      expect(branchesForShape(graph.nodes.find((n) => n.id === 'a1')!).map((b) => b.id)).toStrictEqual([
+        FALLBACK_BRANCH_ID,
+      ]);
     });
   });
 
@@ -1619,7 +1666,13 @@ describe('graph-schema', () => {
           },
         });
         const branches = nodeBranches(node);
-        expect(branches.map((b) => b.id)).toEqual(['br_sim', 'br_nao', NO_REPLY_BRANCH_ID, FALLBACK_BRANCH_ID]);
+        expect(branches.map((b) => b.id)).toEqual([
+          'br_sim',
+          'br_nao',
+          NO_REPLY_BRANCH_ID,
+          ON_ERROR_BRANCH_ID,
+          FALLBACK_BRANCH_ID,
+        ]);
         expect(branches[0]!.condition).toEqual({ type: 'branch', branch_id: 'br_sim' });
         expect(branches[2]!.condition).toEqual({ type: 'branch', branch_id: NO_REPLY_BRANCH_ID });
         expect(branches.at(-1)!.condition).toEqual({ type: 'always' });
@@ -1674,5 +1727,14 @@ describe('graph-schema', () => {
         expect(branchIdForCondition(node, { type: 'class_match', value: 'quente' })).toBe('br_q');
       });
     });
+  });
+});
+
+describe('editLeadTagConfigSchema — destino', () => {
+  it('aceita sem destino, "card" e "contato"; recusa outro valor', () => {
+    expect(editLeadTagConfigSchema.safeParse({ tags: ['vip'] }).success).toBe(true);
+    expect(editLeadTagConfigSchema.safeParse({ tags: ['vip'], destino: 'card' }).success).toBe(true);
+    expect(editLeadTagConfigSchema.safeParse({ tags: ['vip'], destino: 'contato' }).success).toBe(true);
+    expect(editLeadTagConfigSchema.safeParse({ tags: ['vip'], destino: 'lead' }).success).toBe(false);
   });
 });

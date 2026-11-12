@@ -29,7 +29,6 @@ export const LOCAIS_DE_ATENDIMENTO: ReadonlyArray<{ valor: string; rotulo: strin
   { valor: "phone", rotulo: "Telefone" },
   { valor: "whatsapp", rotulo: "WhatsApp" },
   { valor: "video_link", rotulo: "Link de vídeo" },
-  { valor: "google_meet", rotulo: "Google Meet" },
 ];
 
 /**

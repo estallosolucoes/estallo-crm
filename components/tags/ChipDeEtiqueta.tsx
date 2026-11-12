@@ -34,6 +34,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { estiloDoChip } from "@/lib/tags/cor-da-etiqueta";
 import { useCorDaEtiqueta } from "@/components/tags/CoresDasEtiquetas";
+import type { EntidadeDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 
 interface Props extends Omit<BadgeProps, "children"> {
   /** O nome como está no dado — a cor é buscada pela chave canônica. */
@@ -47,10 +48,12 @@ interface Props extends Omit<BadgeProps, "children"> {
   cor?: string | null;
   /** Conteúdo extra ao lado do nome (o botão de remover dos editores). */
   children?: ReactNode;
+  /** De quem é a etiqueta (0659): a mesma pode ter cor diferente em cada entidade. */
+  entidade?: EntidadeDaEtiqueta;
 }
 
-export function ChipDeEtiqueta({ tag, cor, className, children, ...props }: Props) {
-  const corDoProvider = useCorDaEtiqueta(tag);
+export function ChipDeEtiqueta({ tag, cor, entidade, className, children, ...props }: Props) {
+  const corDoProvider = useCorDaEtiqueta(tag, entidade);
   const efetiva = cor === undefined ? corDoProvider : cor;
   return (
     <Badge variant="secondary" className={cn(className)} style={estiloDoChip(efetiva)} {...props}>

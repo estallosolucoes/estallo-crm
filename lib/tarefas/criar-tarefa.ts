@@ -68,6 +68,54 @@ export type ContatoDoPedido = {
   display_name?: string | null;
 };
 
+/** Registro pronto para a escrita comum ou para uma transação de automação. */
+export interface RegistroDaTarefa {
+  organization_id: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  priority: PrioridadeDaTarefa;
+  status: "pending";
+  lead_id: string | null;
+  contact_id: string | null;
+  assigned_to: string | null;
+  created_by: null;
+}
+
+export type PreparacaoDaTarefa =
+  | { ok: true; registro: RegistroDaTarefa }
+  | { ok: false; codigo: "sem_alvo" | "sem_dono" | "titulo_vazio" };
+
+/** Mesmas regras para todos os escritores; não faz I/O nem confirma efeito. */
+export function prepararRegistroDaTarefa(
+  pedido: PedidoDeTarefa,
+  valores: { lead: LeadDoPedido | null; contact: ContatoDoPedido | null },
+  agora: Date,
+): PreparacaoDaTarefa {
+  const { lead, contact } = valores;
+  if (!lead && !contact) return { ok: false, codigo: "sem_alvo" };
+  const recusa = recusaDeConfiguracao(pedido.atribuirA, pedido.titulo, valores);
+  if (recusa) return { ok: false, codigo: recusa };
+  return {
+    ok: true,
+    registro: {
+      organization_id: pedido.organizationId,
+      title: interpolarTitulo(pedido.titulo, valores),
+      description: pedido.descricao ?? null,
+      due_date: new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString(),
+      priority: pedido.prioridade,
+      status: "pending",
+      lead_id: lead?.id ?? null,
+      contact_id: pedido.contactId ?? lead?.contact_id ?? null,
+      assigned_to:
+        typeof pedido.atribuirA === "object"
+          ? pedido.atribuirA.usuario_id
+          : (lead?.owner_user_id ?? null),
+      created_by: null,
+    },
+  };
+}
+
 /**
  * Os placeholders que o título entende, na forma em que o operador os escreve.
  *
@@ -159,33 +207,13 @@ export async function criarTarefaInterna(
       ).data as ContatoDoPedido | null)
     : null;
 
-  if (!lead && !contact) {
-    return { ok: false, codigo: "sem_alvo" };
-  }
-
-  const recusa = recusaDeConfiguracao(pedido.atribuirA, pedido.titulo, { lead, contact });
-  if (recusa) return { ok: false, codigo: recusa };
-
-  const assignedTo =
-    typeof pedido.atribuirA === "object" ? pedido.atribuirA.usuario_id : (lead?.owner_user_id ?? null);
-  const titulo = interpolarTitulo(pedido.titulo, { lead, contact });
-
-  const dueDate = new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString();
+  const preparado = prepararRegistroDaTarefa(pedido, { lead, contact }, agora);
+  if (!preparado.ok) return preparado;
+  const { assigned_to: assignedTo, title: titulo, due_date: dueDate } = preparado.registro;
 
   const { data: criada, error } = await db
     .from("crm_tasks")
-    .insert({
-      organization_id: pedido.organizationId,
-      title: titulo,
-      description: pedido.descricao ?? null,
-      due_date: dueDate,
-      priority: pedido.prioridade,
-      status: "pending",
-      lead_id: lead?.id ?? null,
-      contact_id: contactId,
-      assigned_to: assignedTo,
-      created_by: null,
-    })
+    .insert(preparado.registro)
     .select("id")
     .maybeSingle();
 
@@ -235,24 +263,39 @@ export async function criarTarefaInterna(
     actor: { type: "webhook_source", id: pedido.origem },
   });
 
-  if (assignedTo) {
+  await notificarTarefaCriada({
+    organization_id: pedido.organizationId,
+    task_id: tarefaId,
+    title: titulo,
+    assigned_to: assignedTo,
+  });
+
+  return { ok: true, tarefa_id: tarefaId, assigned_to: assignedTo };
+}
+
+/** Aviso após commit: falha de push não desfaz nem repete o trabalho criado. */
+export async function notificarTarefaCriada(input: {
+  organization_id: string;
+  task_id: string;
+  title: string;
+  assigned_to: string | null;
+}): Promise<void> {
+  if (input.assigned_to) {
     try {
-      await enviarPushAoUsuario(pedido.organizationId, assignedTo, {
+      await enviarPushAoUsuario(input.organization_id, input.assigned_to, {
         title: "Nova tarefa",
-        body: truncar(titulo),
-        tag: `task:${tarefaId}`,
+        body: truncar(input.title),
+        tag: `task:${input.task_id}`,
         href: "/app/tasks",
       });
     } catch (err) {
       logger.warn("task_push_failed", {
-        organization_id: pedido.organizationId,
-        task_id: tarefaId,
+        organization_id: input.organization_id,
+        task_id: input.task_id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
-
-  return { ok: true, tarefa_id: tarefaId, assigned_to: assignedTo };
 }
 
 /** Rótulo do resultado para o `detail` da ação — código, nunca frase solta. */

@@ -13,12 +13,15 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { loadAuthUser } from "@/lib/auth/server";
+import { logger } from "@/lib/logger";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
 import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
+import { aplicarStatusDoChat } from "@/lib/inbox/status-do-chat";
+import { aplicarPendentes } from "@/lib/inbox/pendentes";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "../_handler";
 
@@ -99,6 +102,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sp = req.nextUrl.searchParams;
   const auxiliares = filtrosAuxiliaresDaContagem(sp);
   const soNaoLidas = contagemSoNaoLidas(sp);
+  // O filtro "Minhas" (ao lado de "Não lidos") recorta TODAS as abas, então
+  // recorta todos os badges — mesma razão dos outros auxiliares.
+  const soMinhas = sp.get("assigned_to") === "me";
   // ⚠️ O badge conta o MESMO que a lista mostra, então o marcador é lido com
   // `getAll` e o `modo` viaja junto (#1274). Ler com `get` aqui deixaria o badge
   // de um filtro de duas etiquetas contando uma só — e a aba diria "Fila 3"
@@ -129,6 +135,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     q = aplicarMarcadores(q, marcadores, modo);
     if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
     if (soNaoLidas) q = q.gt("unread_count_for_assignee", 0);
+    if (soMinhas) q = q.eq("assigned_to_user_id", user.id);
     return q;
   };
 
@@ -143,7 +150,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // convenção da regra: assume que há automático.
   const automaticoDaOrg = await orgTemAutomatico(supabase, org);
 
-  const [fila, automatico, mine, all, closed, archived] = await Promise.all([
+  const [fila, automatico, mine, all, closed, archived, pendentes, emEspera, emAberto] = await Promise.all([
     // A FILA DEIXOU DE SER "sem dono + status de espera".
     //
     // Aquele par contava como trabalho humano pendente tudo que o robô estava
@@ -166,23 +173,31 @@ export async function GET(req: NextRequest): Promise<Response> {
     // que diz o tamanho do arquivo — e a sua ausência fazia a aba parecer um
     // lugar vazio. Mesma fábrica: herda organização e filtros.
     //
-    // ⚠️ `eq("closed")`, e NÃO `in(TERMINAIS)` como antes. O par
-    // fechada/arquivada agora tem DUAS abas, e cada badge tem de contar
-    // exatamente a lista da sua aba: `in(TERMINAIS)` somava arquivadas (e, antes
-    // da 0222, resolvidas) no número de "Fechadas", que lista só
-    // `status='closed'` — o badge dizia 120 e a lista mostrava 40. Era a mesma
-    // classe de defeito que este arquivo já conserta desde a Fila, encontrada
-    // aqui no caminho (#923).
-    countExact().eq("status", "closed"),
-    // A aba "Arquivadas" (#923): a pasta do histórico, separada de "Fechadas"
-    // para que arquivar seja reversível e auditável sem se confundir com o
-    // encerramento do atendimento.
+    // O Estallo não tem mais "Arquivar": as arquivadas que existiam antes
+    // aparecem na aba "Fechadas", então o badge conta as duas — o mesmo
+    // `in(TERMINAIS)` que a lista da aba pede (`tabToFilter("closed")`).
+    countExact().in("status", [...CONVERSATION_TERMINAL_STATUSES]),
+    // `archived` segue no corpo: é rota `/api/v1/` versionada, campo não some.
     countExact().eq("status", "archived"),
+    // A aba "Pendentes": a mesma régua da lista (`aplicarPendentes`).
+    aplicarPendentes(countExact()),
+    aplicarStatusDoChat(countExact(), "em_espera"),
+    aplicarStatusDoChat(countExact(), "em_aberto"),
   ]);
 
   const firstErr =
-    fila.error ?? automatico.error ?? mine.error ?? all.error ?? closed.error ?? archived.error;
+    fila.error ??
+    automatico.error ??
+    mine.error ??
+    all.error ??
+    closed.error ??
+    archived.error ??
+    pendentes.error ?? emEspera.error ?? emAberto.error;
   if (firstErr) {
+    // O "ID: …" do toast é este `requestId`: sem a linha no log, ele não leva a
+    // lugar nenhum (30/10/2026 — milhares de 500 por statement timeout, nenhum
+    // rastreável pelo ID que o atendente via).
+    logger.error("conversations.counts falhou", { requestId, organization_id: org, detail: firstErr.message, code: firstErr.code });
     return fail("internal_error", firstErr.message, 500, { requestId });
   }
 
@@ -199,6 +214,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       all: all.count ?? 0,
       closed: closed.count ?? 0,
       archived: archived.count ?? 0,
+      pendentes: pendentes.count ?? 0,
+      em_espera: emEspera.count ?? 0,
+      em_aberto: emAberto.count ?? 0,
     },
     { requestId },
   );

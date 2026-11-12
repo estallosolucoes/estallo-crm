@@ -2,7 +2,7 @@
 
 import { useTheme } from "@/lib/theme";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Sun, Moon, MonitorPlay } from "@/lib/ui/icons";
+import { Sun, Moon } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
@@ -21,23 +21,23 @@ import { useT } from "@/hooks/i18n/useT";
  */
 export function ThemeToggle({ className }: { className?: string }) {
   const t = useT();
-  const { theme, setTheme } = useTheme();
+  // DOIS estados, claro e escuro, a partir do tema EFETIVO. O ciclo antigo
+  // tinha um terceiro ("sistema", ícone de monitor) que, num computador já em
+  // tema claro, não mudava nada na tela ao clicar — parecia botão quebrado
+  // (16/10/2026). Quem nunca escolheu continua seguindo o sistema até o 1º clique.
+  const { resolvedTheme, toggle } = useTheme();
 
-  const cycle = () => {
-    setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light");
-  };
+  useHotkeys("mod+shift+l", toggle, { preventDefault: true }, [toggle]);
 
-  useHotkeys("mod+shift+l", cycle, { preventDefault: true }, [theme]);
-
-  const Icon = theme === "dark" ? Moon : theme === "system" ? MonitorPlay : Sun;
+  const Icon = resolvedTheme === "dark" ? Moon : Sun;
 
   return (
     <Button
       variant="ghost"
       size="icon"
       className={cn(className)}
-      onClick={cycle}
-      aria-label={t(`Tema: ${theme}. Cmd+Shift+L para alternar.`)}
+      onClick={toggle}
+      aria-label={t(`Tema: ${resolvedTheme}. Cmd+Shift+L para alternar.`)}
       // O servidor não sabe a preferência salva no navegador do usuário --
       // renderiza um valor default e o cliente corrige pro valor real assim
       // que hidrata. É o mismatch ESPERADO de todo seletor de tema; React

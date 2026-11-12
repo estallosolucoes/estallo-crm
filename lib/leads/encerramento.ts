@@ -24,6 +24,7 @@ import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import {
@@ -277,10 +278,44 @@ export async function encerraDemanda(
   const finalLead = (fresh ?? lead) as Record<string, unknown>;
 
   // `fn_crm_lead_close_on_stage` atualiza o status e o trigger de eventos grava
-  // lead.won/lead.lost no event_log. Não emitir novamente via emit_event aqui:
+  // lead.won/lead.lost no event_log. Não emitir novamente ESSES via emit_event aqui:
   // event_log não possui chave idempotente e isso duplicaria notificações.
   const a = actorAuditPayload(ctx.actor);
   const eventType = input.desfecho === "won" ? "lead.won" : "lead.lost";
+
+  // O que o trigger NÃO grava é `lead.stage_changed`: ele só avisa do desfecho. Mas o
+  // negócio ENTROU numa etapa — a de ganho ou de perda —, e quem arma algo por etapa
+  // (o gatilho "entrou na etapa" dos fluxos, regras de automação) só escuta esse evento.
+  // Arrastar o card até "Ganhos" o emitia (`leads/[id]/move`); o botão Ganho/Perdido,
+  // que cai na mesma etapa, não — e o fluxo "Formulário de Alunos" nunca disparava.
+  // Mesmo evento, mesmo payload, mesma assinatura do arrasto.
+  await supabase
+    .rpc("emit_event", {
+      p_event_type: "lead.stage_changed",
+      p_entity_kind: "crm_lead",
+      p_entity_id: input.leadId,
+      p_payload: {
+        from_stage_id: (lead as { stage_id: string }).stage_id,
+        to_stage_id: (stage as { id: string }).id,
+        position_in_stage: nextPosition,
+        status: (finalLead as { status?: string }).status ?? input.desfecho,
+      },
+      p_metadata: {
+        request_id: ctx.requestId,
+        ...(a.actorUserId ? { actor_user_id: a.actorUserId } : a.metadataActor),
+      },
+      p_organization_id: ctx.organization_id,
+    })
+    .then(({ error }: { error: { message: string } | null }) => {
+      // Mesma política do arrasto: o negócio já fechou, a falha do aviso não desfaz isso.
+      if (error) {
+        logger.warn("[lead.encerra] emit_event stage_changed falhou", {
+          organizationId: ctx.organization_id,
+          leadId: input.leadId,
+          causa: error.message,
+        });
+      }
+    });
 
   // A LINHA NA TIMELINE — o que faltava. `reason` nomeia o desfecho e, na perda,
   // carrega o motivo, que é justamente o que muda a decisão de quem lê depois

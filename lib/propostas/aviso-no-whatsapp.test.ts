@@ -29,7 +29,6 @@ function deps(over: Partial<{
   canal: unknown;
   urlPublica: string;
   origem: "worker" | "request";
-  pacing: unknown;
   enviaFalha: boolean;
 }> = {}) {
   const envia = vi.fn(async () => {
@@ -37,7 +36,7 @@ function deps(over: Partial<{
     return { externalId: "ext-1" };
   });
   const audita = vi.fn();
-  const registraEnvio = vi.fn(async () => undefined);
+  const esperarRitmo = vi.fn(async () => undefined);
   const d: AvisoDePropostaDeps = {
     db: {
       preferencia: async () => over.preferencia ?? true,
@@ -59,16 +58,13 @@ function deps(over: Partial<{
       resolveDestino: async () => "5511999990000@c.us",
       envia,
     },
-    pacing: {
-      decide: async () => (over.pacing ?? { liberado: true }) as never,
-      registraEnvio,
-    },
+    esperarRitmo,
     clock: () => AGORA,
     urlPublica: over.urlPublica ?? "https://crm.exemplo.com.br",
     origemDoDreno: () => over.origem ?? "worker",
     audita,
   };
-  return { d, envia, audita, registraEnvio };
+  return { d, envia, audita, esperarRitmo };
 }
 
 describe("montarAvisoDeProposta", () => {
@@ -83,12 +79,12 @@ describe("montarAvisoDeProposta", () => {
 });
 
 describe("aplicaAvisoDeProposta", () => {
-  it("caminho feliz: envia ao número da equipe, conta no pacing e audita com destino mascarado", async () => {
-    const { d, envia, audita, registraEnvio } = deps();
+  it("caminho feliz: envia ao número da equipe, espera o ritmo do número e audita com destino mascarado", async () => {
+    const { d, envia, audita, esperarRitmo } = deps();
     const r = await aplicaAvisoDeProposta(d, evento());
     expect(r.status).toBe("ok");
     expect(envia).toHaveBeenCalledWith("org-1", expect.anything(), "5511999990000@c.us", expect.stringContaining("/app/proposals/prop-1"));
-    expect(registraEnvio).toHaveBeenCalled();
+    expect(esperarRitmo).toHaveBeenCalledWith("canal-1");
     expect(audita).toHaveBeenCalledWith(
       expect.objectContaining({ action: "proposal.aviso_whatsapp_enviado", metadata: expect.objectContaining({ destino_mascarado: "••••0000" }) }),
     );
@@ -152,13 +148,6 @@ describe("aplicaAvisoDeProposta", () => {
     expect(await aplicaAvisoDeProposta(d, evento())).toMatchObject({ status: "skipped", detail: "canal_desativado" });
     expect(envia).not.toHaveBeenCalled();
     expect(audita).toHaveBeenCalledWith(expect.objectContaining({ action: "proposal.aviso_whatsapp_falhou" }));
-  });
-
-  it("espaçamento anti-bloqueio: tenta de novo quando o pacing libera", async () => {
-    const liberaEm = new Date("2026-09-26T12:00:07.000Z");
-    const { d, envia } = deps({ pacing: { liberado: false, motivo: "espacamento", liberaEm } });
-    expect(await aplicaAvisoDeProposta(d, evento())).toMatchObject({ status: "retry", retry_at: liberaEm.toISOString() });
-    expect(envia).not.toHaveBeenCalled();
   });
 
   it("envio recusado: tenta de novo; na 3ª desiste e audita", async () => {

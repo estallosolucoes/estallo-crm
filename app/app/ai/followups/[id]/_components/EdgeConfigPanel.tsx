@@ -16,6 +16,7 @@ import type { FlowEdge, FlowNode } from "@/lib/followup/graph-schema";
 import { rotuloDoRamo } from "@/lib/followup/rotulo-do-ramo";
 import { useT } from "@/hooks/i18n/useT";
 import { useEtapasDoFluxo } from "./EtapasDoFluxo";
+import { useSaidaDeErroHabilitada } from "./SaidaDeErro";
 
 interface Props {
   sourceNode: FlowNode | undefined;
@@ -38,9 +39,13 @@ interface Props {
 export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange, onDelete }: Props) {
   const t = useT();
   const { nomes } = useEtapasDoFluxo();
+  const saidaDeErroHabilitada = useSaidaDeErroHabilitada();
   const options = nodeBranches(
     sourceNode ?? { type: "trigger", config: {} },
-  ).map((branch) => ({
+  )
+    // "Fallback erro" só é oferecida onde existe (motor novo) ou onde a aresta já a usa.
+    .filter((branch) => branch.kind !== "error" || saidaDeErroHabilitada || branch.id === branchIdForCondition(sourceNode, condition))
+    .map((branch) => ({
     key: conditionKey(branch.condition),
     label: t(rotuloDoRamo(branch, nomes)),
     condition: branch.condition,

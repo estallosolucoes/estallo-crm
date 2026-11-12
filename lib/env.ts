@@ -535,12 +535,9 @@ const schema = z.object({
   /**
    * As tabelas append-only da IA (migration 0587). `z.string()` pela MESMA razão
    * das irmãs — quem interpreta é `lib/retencao/politica.ts`, onde lixo cai no
-   * padrão em vez de derrubar o app. Padrões/pisos: telemetria 400/100, ritmo de
-   * envio 2/2, cópias enviadas 30/7, checkpoints superados 180/30.
+   * padrão em vez de derrubar o app. Padrões/pisos: telemetria 400/100, checkpoints superados 180/30.
    */
   AI_TELEMETRY_RETENTION_DAYS: z.string().optional().default(""),
-  PACING_LEDGER_RETENTION_DAYS: z.string().optional().default(""),
-  OUTBOUND_COPIES_RETENTION_DAYS: z.string().optional().default(""),
   LEAD_CHECKPOINT_RETENTION_DAYS: z.string().optional().default(""),
 
   // LGPD export (S-08.04)

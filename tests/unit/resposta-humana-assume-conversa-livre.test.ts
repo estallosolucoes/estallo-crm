@@ -20,6 +20,16 @@ const rpc = vi.fn();
 /** O `settings` da organização, lido pela rota antes de assumir. */
 let settings: unknown = null;
 const from = vi.fn((tabela: string) => {
+  // Responder a conversa FECHADA reabre o atendimento (bc9013f0a): antes do envio a rota lê a revisão
+  // em `conversations` (status closed). Aqui a conversa está livre, então não há fechada: nenhuma linha.
+  if (tabela === "conversations") {
+    const cadeiaConversa = {
+      select: () => cadeiaConversa,
+      eq: () => cadeiaConversa,
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    return cadeiaConversa;
+  }
   expect(tabela).toBe("organizations");
   const cadeia = {
     select: () => cadeia,
@@ -63,7 +73,7 @@ beforeEach(() => {
   settings = { routing: { mode: "manual", conversation_stays_with_attendant: true } };
 });
 
-describe("POST /messages após resposta humana, com o ajuste LIGADO", () => {
+describe("POST /messages após resposta humana numa conversa livre", () => {
   it("assume somente se a conversa ainda estiver livre", async () => {
     const { POST } = await import("@/app/api/v1/messages/route");
     const response = await POST(req());
@@ -111,28 +121,30 @@ describe("POST /messages após resposta humana, com o ajuste LIGADO", () => {
 });
 
 /**
- * O PADRÃO, e o de toda empresa que já existia: responder NÃO assume a
- * conversa. A IA segue calada só pelos minutos de sempre, que o envio aplica.
+ * Desde 2026-10-15 (decisão do dono do produto) a primeira resposta humana numa
+ * conversa sem responsável a passa para quem respondeu em QUALQUER empresa —
+ * "a conversa fica com quem atendeu" passou a governar só a reabertura de
+ * conversa encerrada. Antes, com o ajuste desligado, responder não assumia.
  */
-describe("POST /messages após resposta humana, com o ajuste DESLIGADO", () => {
+describe("POST /messages — assumir não depende mais do ajuste da empresa", () => {
   it.each([
     ["sem settings", null],
     ["sem a chave", { routing: { mode: "round_robin" } }],
     ["com false", { routing: { conversation_stays_with_attendant: false } }],
-    ["com texto \"true\"", { routing: { conversation_stays_with_attendant: "true" } }],
-  ])("não assume a conversa (%s)", async (_nome, valor) => {
+  ])("assume a conversa livre (%s)", async (_nome, valor) => {
     settings = valor;
-    // A rota engole erro do claim (falha dele não pode virar falha do envio).
-    // Sem esta espia, um erro ANTES da leitura do ajuste passaria por "desligado".
+    // A rota engole erro do claim (falha dele não pode virar falha do envio):
+    // sem esta espia, um erro no caminho passaria por "assumiu".
     const erro = vi.spyOn(console, "error").mockImplementation(() => {});
     const { POST } = await import("@/app/api/v1/messages/route");
     const response = await POST(req());
     expect(response.status).toBe(201);
-    expect(from).toHaveBeenCalledWith("organizations");
     expect(erro).not.toHaveBeenCalled();
     erro.mockRestore();
-    expect(rpc).not.toHaveBeenCalled();
-    expect(audit).not.toHaveBeenCalled();
-    expect(registrarTrocaDeComando).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "fn_conversation_assign",
+      expect.objectContaining({ p_to_user_id: userId, p_enforce_expected: true }),
+    );
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "conversation.claimed" }));
   });
 });

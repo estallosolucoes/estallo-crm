@@ -28,6 +28,21 @@ export const NODE_TYPES = [
   // fora desta fatia e é o passo seguinte da issue.
   'move_lead',
   'edit_lead_tag',
+  // Fase 4: monta campos novos a partir das saídas dos blocos anteriores (`lib/followup/mapear-dados.ts`). Sem efeito.
+  'map_data',
+  // Fase 5: troca o responsável do negócio (a mesma régua da ação `assign_owner`). Não transfere o atendimento.
+  'assign_lead_owner',
+  // Fase 5: nota interna no negócio (linha do tempo) ou na conversa (notas internas), no destino escolhido.
+  'add_note',
+  // Fase 5: grava um campo personalizado do negócio (do catálogo) ou o valor do negócio.
+  'update_lead_field',
+  // Fase 5: adiciona ou remove um produto do catálogo no negócio (o valor é recalculado pelo banco).
+  'lead_product',
+  // Fase 5: chama um sistema externo por uma conexão protegida (o segredo nunca está no fluxo).
+  'http_request',
+  // Fase 5: acham (e, se pedido, criam) contato e negócio; os blocos seguintes miram o resultado por «Aplicar em».
+  'find_or_create_contact',
+  'find_or_create_lead',
   'end',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -63,6 +78,11 @@ export const CONDITION_FALSE_BRANCH_ID = 'false';
 export const REPEAT_BODY_BRANCH_ID = 'body';
 /** Saída do `repeat` quando o contador chegou a zero. */
 export const REPEAT_DONE_BRANCH_ID = 'done';
+/**
+ * "Fallback erro": por onde o fluxo CONTINUA quando o bloco falha de vez (sem nova tentativa
+ * possível) no motor novo. Opcional — sem ela, a falha para a inscrição e abre aviso na Central.
+ */
+export const ON_ERROR_BRANCH_ID = 'on_error';
 
 /** Branch ids the contract owns — a user-declared branch may not claim one. */
 export const RESERVED_BRANCH_IDS = [
@@ -72,6 +92,7 @@ export const RESERVED_BRANCH_IDS = [
   CONDITION_FALSE_BRANCH_ID,
   REPEAT_BODY_BRANCH_ID,
   REPEAT_DONE_BRANCH_ID,
+  ON_ERROR_BRANCH_ID,
 ] as const;
 
 /** Id of a branch the user declared (a check, an AI class) — opaque, stable across renames. */
@@ -102,7 +123,10 @@ export const waitConfigSchema = z
   .discriminatedUnion('mode', [
     z.strictObject({
       mode: z.literal('fixed'),
-      duration_ms: z.number().int().min(300_000).max(7_776_000_000),
+      // Piso de 1 s: quem escolhe a espera é quem monta o fluxo (3 min entre o agradecimento e o áudio).
+      // A precisão real é a do tick do motor (~1 min); o ciclo sem espera segue barrado na publicação
+      // (`MIN_CYCLE_WAIT_MS`, validate-publish).
+      duration_ms: z.number().int().min(1_000).max(7_776_000_000),
       /**
        * A espera NÃO é encurtada nem cancelada quando o contato manda mensagem.
        *
@@ -122,6 +146,13 @@ export const waitConfigSchema = z
        * do alcance da reatividade e libera o slot único anti-spam.
        */
       immune_to_reply: z.boolean().optional(),
+    }),
+    // Fase 5 — «aguardar até»: a hora (e, opcional, a data) no fuso da organização (`lib/followup/espera-ate.ts`).
+    // Data/hora inexistente falha na execução; data já passada segue para o próximo bloco.
+    z.strictObject({
+      mode: z.literal('until'),
+      hora: z.string().regex(/^\d{2}:\d{2}$/, 'Use HH:MM.'),
+      data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use AAAA-MM-DD.').optional(),
     }),
     z.strictObject({
       mode: z.literal('smart'),
@@ -167,12 +198,28 @@ export const replySaveToSchema = z.discriminatedUnion('kind', [
       .max(60)
       .regex(/^[a-z][a-z0-9_{}]*$/i, 'Use letras, números, underscore ou {{volta}}'),
   }),
+  // Campo personalizado do CONTATO (cadastro central, migration 0657).
+  z.strictObject({
+    kind: z.literal('contact_custom'),
+    key: z
+      .string()
+      .min(1)
+      .max(60)
+      .regex(/^[a-z][a-z0-9_{}]*$/i, 'Use letras, números, underscore ou {{volta}}'),
+  }),
 ]);
 export type ReplySaveTo = z.infer<typeof replySaveToSchema>;
 
 /** O que fazer quando o destino de `save_to` já tem valor (captação, ficha…). */
 export const ifExistsSchema = z.enum(["skip", "overwrite", "confirm"]);
 export type IfExists = z.infer<typeof ifExistsSchema>;
+
+/**
+ * Teto da carência (365 dias) cobrado só na PUBLICAÇÃO: acima disso `Date`/`interval` estouram e
+ * nenhum fluxo real espera tanto. Fica fora do parse de propósito — grafo já salvo com valor maior
+ * continua legível (o parse estrito derrubaria todo gatilho e inscrição desse fluxo).
+ */
+export const GRACE_TIMEOUT_MAX_MS = 365 * 24 * 3600_000;
 
 /**
  * Text-match node: parks in `waiting_reply` like `ai_classify`, then routes on
@@ -218,7 +265,7 @@ export const aiClassifyConfigSchema = z
       .min(1)
       .max(8),
     branches: z.array(aiClassBranchSchema).min(1).max(8).optional(),
-    grace_timeout_ms: z.number().int().min(900_000), // 15 min minimum
+    grace_timeout_ms: z.number().int().min(900_000), // 15 min .. 365 dias
     target: z.enum(['last_reply', 'summary']).default('last_reply'),
     hint: z.string().max(500).optional(),
   })
@@ -243,10 +290,47 @@ export const aiClassifyConfigSchema = z
  * - ai_message: generate a message using AI with a prompt hint
  * - template: send a canned message from Ajustes → Modelos
  */
+/** Tipos de anexo que um bloco de mensagens envia — os mesmos do envio da caixa de entrada. */
+export const TIPOS_DE_ANEXO = ['image', 'video', 'audio', 'document'] as const;
+export type TipoDeAnexo = (typeof TIPOS_DE_ANEXO)[number];
+
+/** 50 MB, o teto do envio de mídia (`MAX_MEDIA_BYTES`). Escrito aqui para o esquema não importar o módulo de mensagens. */
+const TAMANHO_MAXIMO_DO_ANEXO = 50 * 1024 * 1024;
+
+/**
+ * Um envio dentro do bloco de mensagens: um texto OU um anexo. O anexo guarda o CAMINHO do arquivo
+ * (o upload da tela devolve `{org}/flow-assets/{uuid}/{arquivo}`), nunca URL nem bytes — quem copia
+ * para a pasta da conversa e assina a URL curta é o envio, como em toda mídia.
+ */
+export const itemDeEnvioSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('text'),
+    body: z.string().min(1, 'Escreva o texto ou remova este envio.').max(4000),
+  }),
+  z.strictObject({
+    kind: z.enum(TIPOS_DE_ANEXO),
+    path: z.string().min(1).max(400),
+    mime: z.string().min(1).max(120),
+    filename: z.string().min(1).max(200),
+    size_bytes: z.number().int().positive().max(TAMANHO_MAXIMO_DO_ANEXO),
+    /** Legenda (imagem, vídeo, documento). Áudio não tem legenda no WhatsApp. */
+    caption: z.string().max(1024).optional(),
+  }),
+]);
+export type ItemDeEnvio = z.infer<typeof itemDeEnvioSchema>;
+
+/** Quantos envios cabem num bloco: acima disso é outro fluxo, e o canal estranha rajada. */
+export const MAX_ITENS_DO_ENVIO = 10;
+
 export const actionConfigSchema = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('text'),
     body: z.string().min(1).max(4000),
+  }),
+  /** Vários envios em sequência no mesmo bloco: texto, imagem, vídeo, áudio, documento. */
+  z.strictObject({
+    mode: z.literal('messages'),
+    items: z.array(itemDeEnvioSchema).min(1, 'Adicione ao menos um envio.').max(MAX_ITENS_DO_ENVIO),
   }),
   z.strictObject({
     mode: z.literal('ai_message'),
@@ -267,6 +351,20 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
  * `atribuir_a` é nominal (`dono_do_lead`) porque o fluxo é publicado sem saber
  * quem vai atender amanhã — o dono muda, o fluxo não.
  */
+/** «Aplicar em» (Fase 5): uma única marca `{{nodes.<bloco>.<lead_id|contact_id>}}`; ausente = negócio/contato da execução. */
+export const aplicarEmSchema = z.string().max(200).optional();
+
+/** Os blocos de efeito que aceitam «Aplicar em» (a tela mostra o seletor; o diário resolve o alvo). */
+export const NODES_COM_APLICAR_EM: ReadonlySet<string> = new Set([
+  "internal_task",
+  "edit_lead_tag",
+  "move_lead",
+  "assign_lead_owner",
+  "add_note",
+  "update_lead_field",
+  "lead_product",
+]);
+
 export const internalTaskConfigSchema = z.strictObject({
   /** Título com `{{lead.title}}` e `{{contact.name}}`. */
   titulo: z.string().min(1).max(200),
@@ -277,6 +375,8 @@ export const internalTaskConfigSchema = z.strictObject({
     z.strictObject({ usuario_id: z.string().uuid() }),
   ]),
   prioridade: z.enum(PRIORIDADES_DA_TAREFA),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
 });
 
 /**
@@ -301,6 +401,9 @@ export const internalTaskConfigSchema = z.strictObject({
 export const moveLeadConfigSchema = z.strictObject({
   stage_id: z.string().max(64),
   lost_reason: z.string().max(500).optional(),
+  won_reason: z.string().max(500).optional(),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
 });
 
 /**
@@ -317,6 +420,120 @@ export const editLeadTagConfigSchema = z.strictObject({
   tags: z
     .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
     .max(10, "No máximo 10 tags por caixa."),
+  /**
+   * Onde gravar. Sem a chave (ou `card`) é o negócio da inscrição. `contato` grava no contato — para
+   * fluxo que etiqueta quem ainda não tem negócio; é o mesmo `destino` da ação `add_tag`.
+   */
+  destino: z.enum(["card", "contato"]).optional(),
+  /** Fase 5 — `remove` tira as tags listadas (as outras ficam). Sem a chave: adicionar, como sempre. */
+  acao: z.enum(["add", "remove"]).optional(),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
+});
+
+/**
+ * Nó `map_data` (Fase 4) — seleciona, renomeia, compõe texto e converte tipos a partir das saídas dos blocos
+ * anteriores. O nome do campo é o que os blocos seguintes citam (`{{nodes.<bloco>.fields.<nome>}}`), por isso é
+ * identificador simples e único no bloco. Sem campos é rascunho; o publish recusa (`mapa_sem_campos`).
+ */
+export const mapDataFieldSchema = z.strictObject({
+  name: z
+    .string()
+    .min(1)
+    .max(40)
+    .regex(/^[a-z_][a-z0-9_]*$/, "Use letras minúsculas, números e _ (começando por letra)."),
+  value: z.string().max(2000),
+  type: z.enum(['text', 'number', 'boolean', 'list']),
+  fallback: z.string().max(500).optional(),
+});
+/**
+ * Nó `assign_lead_owner` (Fase 5) — troca o responsável do NEGÓCIO. Responsável pela conversa é outra coisa e não
+ * muda aqui. Vazio é rascunho; o publish recusa (`responsavel_ausente`). Membro ativo e não-viewer é conferido na
+ * execução, na mesma transação da escrita.
+ */
+export const assignLeadOwnerConfigSchema = z.strictObject({
+  usuario_id: z.union([z.literal(''), z.string().uuid()]),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
+});
+
+/**
+ * Nó `add_note` (Fase 5) — nota interna no destino ESCOLHIDO: `lead_timeline` (linha do tempo do negócio) ou `conversation_notes`
+ * (notas internas da conversa, que o cliente nunca vê). Texto aceita `{{nodes.<bloco>.<campo>}}`; vazio é rascunho e
+ * o publish recusa (`nota_sem_texto`).
+ */
+export const addNoteConfigSchema = z.strictObject({
+  destino: z.enum(['lead_timeline', 'conversation_notes']),
+  texto: z.string().max(2000, 'Nota muito longa: máximo de 2000 caracteres.'),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
+});
+
+/**
+ * Nó `update_lead_field` (Fase 5) — grava um campo personalizado do NEGÓCIO (chave do catálogo da organização,
+ * convertido pelo tipo da definição) ou o valor do negócio. O texto aceita `{{nodes.<bloco>.<campo>}}`.
+ * Sem chave (campo personalizado) ou sem valor é rascunho; o publish recusa (`campo_do_negocio_incompleto`).
+ */
+export const updateLeadFieldConfigSchema = z.strictObject({
+  // `contact_field`: campo personalizado do CONTATO (catálogo entity contact) — não precisa de negócio.
+  alvo: z.enum(['custom_field', 'deal_value', 'contact_field']),
+  chave: z.string().max(40),
+  valor: z.string().max(2000),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
+});
+
+/**
+ * Nó `lead_product` (Fase 5) — produto do CATÁLOGO no negócio: `add` vincula (nome e preço copiados do catálogo,
+ * como a rota do CRM), `remove` tira todos os itens desse produto. Sem produto é rascunho (`produto_ausente`).
+ */
+export const leadProductConfigSchema = z.strictObject({
+  acao: z.enum(['add', 'remove']),
+  product_id: z.union([z.literal(''), z.string().uuid()]),
+  quantidade: z.number().int().min(1).max(10_000),
+  /** Fase 5 — «Aplicar em»: `{{nodes.<bloco>.lead_id|contact_id}}` de um Buscar ou criar anterior. Vazio = o da execução. */
+  aplicar_em: aplicarEmSchema,
+});
+
+/**
+ * Nó `find_or_create_contact` (Fase 5) — procura um contato da organização pelo telefone (variantes do nono dígito)
+ * ou e-mail; com `criar`, cria quando não acha (nome opcional). Valor e nome aceitam `{{nodes.<bloco>.<campo>}}`.
+ */
+export const findOrCreateContactConfigSchema = z.strictObject({
+  busca: z.enum(['phone', 'email']),
+  valor: z.string().max(500),
+  criar: z.boolean(),
+  nome: z.string().max(200),
+});
+
+/**
+ * Nó `find_or_create_lead` (Fase 5) — procura o negócio ABERTO do contato no funil escolhido; com `criar`, cria na
+ * etapa escolhida. `contato` vazio = o contato da execução; senão uma marca `{{nodes.<bloco>.contact_id}}`.
+ */
+export const findOrCreateLeadConfigSchema = z.strictObject({
+  contato: z.string().max(200),
+  pipeline_id: z.union([z.literal(''), z.string().uuid()]),
+  stage_id: z.union([z.literal(''), z.string().uuid()]),
+  titulo: z.string().max(200),
+  criar: z.boolean(),
+});
+
+/** Métodos do bloco Requisição HTTP — aqui (e não em requisicao-http.ts) porque o construtor roda no navegador. */
+export const METODOS_HTTP = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+
+/**
+ * Nó `http_request` (Fase 5) — cita uma CONEXÃO protegida (origem + credencial cifrada, no servidor); o caminho e o
+ * corpo JSON aceitam `{{nodes.<bloco>.<campo>}}`. Sem conexão é rascunho (`conexao_http_ausente`).
+ */
+export const httpRequestConfigSchema = z.strictObject({
+  connection_id: z.union([z.literal(''), z.string().uuid()]),
+  metodo: z.enum(METODOS_HTTP),
+  caminho: z.string().max(2000),
+  corpo: z.string().max(20_000),
+});
+
+export const mapDataConfigSchema = z.strictObject({
+  fields: z.array(mapDataFieldSchema).max(30, "No máximo 30 campos por bloco."),
 });
 
 /**
@@ -333,9 +550,16 @@ export const conditionCheckSchema = z.strictObject({
     'tag',
     'steps_taken',
     'last_outcome',
+    // Nomes dos produtos do negócio (crm_lead_products); lista, como `tag`.
+    'product',
+    // Fase 5 — a saída de um bloco ANTERIOR desta execução (`source` = `{{nodes.<bloco>.<caminho>}}`).
+    'variavel',
   ]),
-  op: z.enum(['eq', 'neq', 'gte', 'lte', 'contains']),
+  // `exists`/`not_exists` (Fase 5): o dado tem ou não tem valor — ausente, nulo, texto vazio e lista vazia não têm.
+  op: z.enum(['eq', 'neq', 'gte', 'lte', 'contains', 'exists', 'not_exists']),
   value: z.union([z.string(), z.number()]),
+  /** Só com `field: 'variavel'`: a marca do dado comparado. */
+  source: z.string().max(200).optional(),
 });
 
 export type ConditionCheck = z.infer<typeof conditionCheckSchema>;
@@ -586,6 +810,87 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
     }),
     config: editLeadTagConfigSchema,
   }),
+  // Fase 5: produto do catálogo no negócio
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('lead_product'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: leadProductConfigSchema,
+  }),
+  // Fase 5: buscar ou criar contato / negócio
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('find_or_create_contact'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({ x: z.number(), y: z.number() }),
+    config: findOrCreateContactConfigSchema,
+  }),
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('find_or_create_lead'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({ x: z.number(), y: z.number() }),
+    config: findOrCreateLeadConfigSchema,
+  }),
+  // Fase 5: requisição HTTP por conexão protegida
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('http_request'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: httpRequestConfigSchema,
+  }),
+  // Fase 5: grava campo do negócio
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('update_lead_field'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: updateLeadFieldConfigSchema,
+  }),
+  // Fase 5: nota interna no destino escolhido
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('add_note'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: addNoteConfigSchema,
+  }),
+  // Fase 5: troca o responsável do negócio
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('assign_lead_owner'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: assignLeadOwnerConfigSchema,
+  }),
+  // Fase 4: monta campos a partir das saídas anteriores, sem efeito
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('map_data'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: mapDataConfigSchema,
+  }),
   // End node: terminal state
   z.strictObject({
     id: z.string().min(1),
@@ -696,6 +1001,8 @@ export const flowGraphSchema = z
     nodes: z.array(flowNodeSchema).min(2).max(60),
     edges: z.array(flowEdgeSchema).max(120),
     settings: flowSettingsSchema.optional(),
+    /** Ausência preserva integralmente o contrato de execuções legadas. */
+    execution_contract: z.literal(1).optional(),
   })
   .superRefine((grafo, ctx) => {
     const idsDeNo = new Set<string>();
@@ -773,8 +1080,11 @@ export type BranchableNode = {
   [K in NodeType]: Pick<Extract<FlowNode, { type: K }>, 'type' | 'config'>;
 }[NodeType];
 
-/** `fallback` is the mandatory catch-all: exactly one per node, never deletable in the builder. */
-export type FlowBranchKind = 'match' | 'fallback';
+/**
+ * `fallback` is the mandatory catch-all: exactly one per node, never deletable in the builder.
+ * `error` is the OPTIONAL failure exit ("Fallback erro"): it needs no edge to publish.
+ */
+export type FlowBranchKind = 'match' | 'fallback' | 'error';
 
 export type FlowBranch = {
   /** Stable within the node. Reserved ids are contract-owned; the rest come from the user's config. */
@@ -808,6 +1118,35 @@ const FALLBACK_OTHERS_LABEL = 'Outros casos';
 /** O mesmo escape num nó cujas saídas são REGRAS: "o resto", dito com a palavra das regras. */
 const FALLBACK_NONE_LABEL = 'Nenhuma delas';
 const NO_REPLY_LABEL = 'Sem resposta';
+const ON_ERROR_LABEL = 'Fallback erro';
+
+/** Blocos que podem falhar de vez no motor novo, e por isso oferecem a saída de erro. */
+export const NODES_WITH_ERROR_BRANCH: ReadonlySet<NodeType> = new Set<NodeType>([
+  'action',
+  'internal_task',
+  'move_lead',
+  'edit_lead_tag',
+  'ai_classify',
+  'match_reply',
+  'map_data',
+  'assign_lead_owner',
+  'add_note',
+  'update_lead_field',
+  'lead_product',
+  'http_request',
+  'find_or_create_contact',
+  'find_or_create_lead',
+]);
+
+function errorBranch(): FlowBranch {
+  return {
+    id: ON_ERROR_BRANCH_ID,
+    label: ON_ERROR_LABEL,
+    check: null,
+    kind: 'error',
+    condition: { type: 'branch', branch_id: ON_ERROR_BRANCH_ID },
+  };
+}
 
 function fallbackBranch(label: string): FlowBranch {
   return {
@@ -891,6 +1230,7 @@ export function nodeBranches(node: BranchableNode): FlowBranch[] {
             ? { type: 'branch', branch_id: NO_REPLY_BRANCH_ID }
             : { type: 'class_match', value: NO_REPLY_BRANCH_ID },
         },
+        errorBranch(),
         fallbackBranch(FALLBACK_OTHERS_LABEL),
       ];
     }
@@ -912,6 +1252,7 @@ export function nodeBranches(node: BranchableNode): FlowBranch[] {
           kind: 'match',
           condition: { type: 'branch', branch_id: NO_REPLY_BRANCH_ID },
         },
+        errorBranch(),
         fallbackBranch(FALLBACK_OTHERS_LABEL),
       ];
     }
@@ -936,8 +1277,20 @@ export function nodeBranches(node: BranchableNode): FlowBranch[] {
       ];
 
     default:
-      return [fallbackBranch(FALLBACK_ALWAYS_LABEL)];
+      return NODES_WITH_ERROR_BRANCH.has(node.type)
+        ? [errorBranch(), fallbackBranch(FALLBACK_ALWAYS_LABEL)]
+        : [fallbackBranch(FALLBACK_ALWAYS_LABEL)];
   }
+}
+
+/**
+ * As saídas que dão FORMA ao cartão do nó (altura, corredor lateral, frase da aresta). Num nó de
+ * saída única, "Fallback erro" é só uma bolinha a mais ao lado — o cartão continua um nó simples e
+ * o fio normal continua saindo pelo rodapé. Nos nós que já têm linhas de saída ele é mais uma linha.
+ */
+export function branchesForShape(node: BranchableNode): FlowBranch[] {
+  const all = nodeBranches(node);
+  return all.length === 2 && all[0]?.kind === 'error' ? all.slice(1) : all;
 }
 
 /**

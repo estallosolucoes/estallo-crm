@@ -76,3 +76,29 @@ describe("entregarAviso", () => {
     expect(opcoes?.action).toBeUndefined();
   });
 });
+
+describe("entregarAviso — com o Inbox aberto", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("não mostra o toast de mensagem, mas mantém o som (push)", () => {
+    vi.stubGlobal("window", {
+      location: { pathname: "/app/inbox", assign: vi.fn(), origin: "https://app.teste" },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    });
+    entregarAviso({ category: "message", kind: "message_inbound", title: "Maria", body: "oi" });
+    expect(toast).not.toHaveBeenCalled();
+    expect(emitNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("fora do Inbox o toast de mensagem continua", () => {
+    vi.stubGlobal("window", {
+      location: { pathname: "/app/crm", assign: vi.fn(), origin: "https://app.teste" },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    });
+    entregarAviso({ category: "message", kind: "message_inbound", title: "Maria", body: "oi" });
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+});

@@ -8,6 +8,8 @@ confidence: média-alta (métricas de código são CONFIRMADO; estado de épico 
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-29)
 ---
 
+> **Direção atual do fork:** [Estallo CRM SaaS](estallo-produto.md). Marca fixa, Stripe futuro e planos demonstrativos. Textos históricos de monetização/self-host do upstream não definem a oferta Estallo.
+
 # Estado atual — DeskcommCRM
 
 > # ⚠️ ESTE DOCUMENTO É UM RETRATO, NÃO O ESTADO DE HOJE
@@ -33,15 +35,13 @@ audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-29)
 > pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit && pnpm test:shell
 > ```
 
-
-
 Este documento existe porque "o que está pronto" estava espalhado em 5 `HANDOFF-*.md`
 na raiz, `plan/progress.md`, `loop/checkpoints/`, `tasks/todo.md` e o roadmap do README —
 sem lugar único. Um agente novo (ou o dono, depois de uma semana) não conseguia responder
 "posso subir isso?" sem ler ~1500 linhas.
 
-**Aviso de método:** o estado de épico abaixo vem dos HANDOFFs, que são *auto-relatados
-pelas sessões que fizeram o trabalho*. Estão densos em evidência (outputs de teste,
+**Aviso de método:** o estado de épico abaixo vem dos HANDOFFs, que são _auto-relatados
+pelas sessões que fizeram o trabalho_. Estão densos em evidência (outputs de teste,
 screenshots), o que é bom sinal, mas nada aqui foi re-verificado por execução nesta
 auditoria — a auditoria é read-only por instrução. Métricas de código, contagem de
 arquivos, conteúdo de CI e cobertura de padrão **foram** verificados diretamente.
@@ -58,22 +58,22 @@ Onde a régua divergiu, ela passou a ser declarada junto do número. O estado de
 **Versão:** `1.0.0`, marcada em 2026-07-27 (`CHANGELOG.md`). Primeira release versionada;
 o projeto vinha sendo desenvolvido publicamente desde abril de 2026 sem tags.
 
-| Métrica | Valor |
-|---|---|
-| Arquivos TS/TSX em `app`+`lib`+`components`+`workers` | 987 |
-| Route handlers (`app/api/**/route.ts`) | 169 |
-| Migrations em `supabase/migrations/` | 81 arquivos, até `0092_stage_names_acentos` |
-| Testes unitários (`*.test.ts(x)`) | 221 arquivos |
-| Invariantes de banco (`tests/invariants/`) | 56 arquivos |
-| Specs E2E (`tests/e2e/`) | 19 |
-| Documentos `.md` em `docs/` | 119 (em 23 subpastas) |
-| Import cycles | **0** (graphify, medido em árvore anterior) |
-| `console.log` fora de `lib/logger.ts` | **0** |
-| `: any` / `as any` | 7 |
+| Métrica                                               | Valor                                       |
+| ----------------------------------------------------- | ------------------------------------------- |
+| Arquivos TS/TSX em `app`+`lib`+`components`+`workers` | 987                                         |
+| Route handlers (`app/api/**/route.ts`)                | 169                                         |
+| Migrations em `supabase/migrations/`                  | 81 arquivos, até `0092_stage_names_acentos` |
+| Testes unitários (`*.test.ts(x)`)                     | 221 arquivos                                |
+| Invariantes de banco (`tests/invariants/`)            | 56 arquivos                                 |
+| Specs E2E (`tests/e2e/`)                              | 19                                          |
+| Documentos `.md` em `docs/`                           | 119 (em 23 subpastas)                       |
+| Import cycles                                         | **0** (graphify, medido em árvore anterior) |
+| `console.log` fora de `lib/logger.ts`                 | **0**                                       |
+| `: any` / `as any`                                    | 7                                           |
 
 **Higiene de código é boa.** Zero ciclos de import, logger centralizado respeitado,
 quase nenhum `any`. Os god nodes do grafo (`fail` 325 arestas, `createAdminClient` 323,
-`ok` 305, `audit` 290, `requireRole` 230) são *helpers canônicos* — indicam convenção
+`ok` 305, `audit` 290, `requireRole` 230) são _helpers canônicos_ — indicam convenção
 sendo aplicada, não acoplamento acidental.
 
 **Doutrina de migrations está sendo cumprida** — CONFIRMADO: o apêndice idempotente de
@@ -117,14 +117,14 @@ o contrato de governança para agentes de IA externos.
 
 ## 3. O que está incompleto — por épico
 
-| Épico | Estado relatado | O que falta |
-|---|---|---|
-| **Follow-up inteligente** (`docs/handoffs/HANDOFF.md`) | Ondas 1–7 ✅; Onda 8 **em andamento** (8.1 gatilho de silêncio ✅, 8.3 jornada E2E ✅) | gatilho `stage_change`, flywheel, e o fechamento do checklist DoD/PRD da 8.3 |
-| **Evolução do harness** (`docs/handoffs/HANDOFF-harness-evolution.md`) | **ÉPICO COMPLETO** — Fases 0–4 fecharam, a última (Painel de Evolução) em 2026-07-27. Mais duas continuações entregues: mapeamento de funil do agente (27/jul) e gerenciar etapas do funil (28/jul) | **uma prova em aberto, e é do dono:** ninguém mandou uma mensagem real de WhatsApp fechando o ciclo completo. Receita de 1 min no fim do HANDOFF |
-| **Operação visível** (`docs/handoffs/HANDOFF-operacao-visivel.md`) | F1, F2(i), F2(ii), F3 ✅ localhost com evidência Playwright | prova na VPS após publicar (cada feature exige prova dupla: localhost **e** VPS) |
-| **Casos humanos** (`docs/handoffs/HANDOFF-casos-humanos.md`) | Waves 1–6 ✅ e revisadas; Wave 7 (prova E2E) relatada PARCIAL — interrompida por limite de API, não por bug | **A CONFIRMAR** se fechou: o HANDOFF saiu da raiz para `docs/handoffs/`, o que normalmente sinaliza épico encerrado |
-| **Inbox multimodal** (`docs/handoffs/HANDOFF-inbox-multimodal.md`) | Ondas 0–3.1 ✅ com prova real (WhatsApp real, mídia real) | **A CONFIRMAR** o estado das ondas 4–6. **Bloqueios externos que valem revalidar:** chave Google era de gateway (gemini real inacessível) e credencial Anthropic era placeholder (`last4 1234`) — o agente multimodal foi provado só em OpenAI/gpt-4o |
-| **Fase FG / Vendaval** | Não iniciada | O gatilho era a aprovação de G6, que existe (`G6.approved`). O README **não lista mais** a Fase FG em "Próximo" — **A CONFIRMAR** se saiu de escopo ou foi absorvida |
+| Épico                                                                  | Estado relatado                                                                                                                                                                                     | O que falta                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Follow-up inteligente** (`docs/handoffs/HANDOFF.md`)                 | Ondas 1–7 ✅; Onda 8 **em andamento** (8.1 gatilho de silêncio ✅, 8.3 jornada E2E ✅)                                                                                                              | gatilho `stage_change`, flywheel, e o fechamento do checklist DoD/PRD da 8.3                                                                                                                                                                          |
+| **Evolução do harness** (`docs/handoffs/HANDOFF-harness-evolution.md`) | **ÉPICO COMPLETO** — Fases 0–4 fecharam, a última (Painel de Evolução) em 2026-07-27. Mais duas continuações entregues: mapeamento de funil do agente (27/jul) e gerenciar etapas do funil (28/jul) | **uma prova em aberto, e é do dono:** ninguém mandou uma mensagem real de WhatsApp fechando o ciclo completo. Receita de 1 min no fim do HANDOFF                                                                                                      |
+| **Operação visível** (`docs/handoffs/HANDOFF-operacao-visivel.md`)     | F1, F2(i), F2(ii), F3 ✅ localhost com evidência Playwright                                                                                                                                         | prova na VPS após publicar (cada feature exige prova dupla: localhost **e** VPS)                                                                                                                                                                      |
+| **Casos humanos** (`docs/handoffs/HANDOFF-casos-humanos.md`)           | Waves 1–6 ✅ e revisadas; Wave 7 (prova E2E) relatada PARCIAL — interrompida por limite de API, não por bug                                                                                         | **A CONFIRMAR** se fechou: o HANDOFF saiu da raiz para `docs/handoffs/`, o que normalmente sinaliza épico encerrado                                                                                                                                   |
+| **Inbox multimodal** (`docs/handoffs/HANDOFF-inbox-multimodal.md`)     | Ondas 0–3.1 ✅ com prova real (WhatsApp real, mídia real)                                                                                                                                           | **A CONFIRMAR** o estado das ondas 4–6. **Bloqueios externos que valem revalidar:** chave Google era de gateway (gemini real inacessível) e credencial Anthropic era placeholder (`last4 1234`) — o agente multimodal foi provado só em OpenAI/gpt-4o |
+| **Fase FG / Vendaval**                                                 | Não iniciada                                                                                                                                                                                        | O gatilho era a aprovação de G6, que existe (`G6.approved`). O README **não lista mais** a Fase FG em "Próximo" — **A CONFIRMAR** se saiu de escopo ou foi absorvida                                                                                  |
 
 ### Próximo no roadmap (não iniciado — CONFIRMADO no README)
 
@@ -162,10 +162,10 @@ Resolvido publicando `deskcomm-worker` e `deskcomm-scheduler` como imagens, com 
 [`doctrine/packaging.md`](doctrine/packaging.md); decisões em
 [`adr/0001-packaging-e-distribuicao.md`](adr/0001-packaging-e-distribuicao.md).
 
-**O que continua aberto:** não existe ensaio *automatizado* de atualização numa VPS real — o
+**O que continua aberto:** não existe ensaio _automatizado_ de atualização numa VPS real — o
 caso U6 de [`testing/user-journey-map.md`](testing/user-journey-map.md), que foi executado à
-mão em 2026-08-13. *(O `imagens-ok` estava listado aqui como pendente; entrou na branch
-protection em 2026-08-13 e saiu desta lista em 2026-08-14.)*
+mão em 2026-08-13. _(O `imagens-ok` estava listado aqui como pendente; entrou na branch
+protection em 2026-08-13 e saiu desta lista em 2026-08-14.)_
 
 ### 4.1 Os E2E quase não rodam no CI 🟠 — parcialmente resolvido em 2026-07-30
 
@@ -204,8 +204,8 @@ O que continua fora (2026-08-14): **1 das 46 specs Playwright**. A
 rodar** no `e2e.yml`. Mas a `vps-fresh-onboarding.spec.ts` — a jornada que a doutrina de QA
 Visual classifica como o caminho mais crítico do produto — continua fora, porque exige WAHA +
 Redis + Resend + Nuvemshop no runner. Regressão nela passa sem detecção (issue #63), e é por
-isso que **`e2e` verde não prova a instalação fresca**. *(Superado em 2026-09-19 pelo PR #983 —
-ver a atualização no topo desta seção.)*
+isso que **`e2e` verde não prova a instalação fresca**. _(Superado em 2026-09-19 pelo PR #983 —
+ver a atualização no topo desta seção.)_
 
 O `e2e` **é** check obrigatório desde 2026-08-08; um PR que o quebre não entra na `main`.
 
@@ -280,7 +280,7 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
 ## 5. Riscos técnicos abertos
 
 1. **89 dos 169 handlers usam `createAdminClient`** (service role, bypassa RLS). A regra
-   "filtre `organization_id` manualmente, nunca do body" não tem *enforcement automático* na
+   "filtre `organization_id` manualmente, nunca do body" não tem _enforcement automático_ na
    escrita — é revisão humana. Os 56 arquivos de invariante cobrem isolamento a sério e
    **rodam em CI**, o que mitiga muito; o que falta é o gate que impede um handler novo de
    nascer errado (lint rule ou teste de diff). Erro aqui é vazamento cross-tenant, o pior
@@ -369,7 +369,6 @@ Duas lições que valem para quem mantiver este documento:
 2. **Este arquivo apodrece rápido.** O repo moveu 556 commits em poucos dias. Trate as datas
    do frontmatter como prazo de validade, não como enfeite — e prefira reconferir os números
    com os comandos citados a confiar na tabela.
-
 
 ### Conversões de anúncios: confirmação e reprocessamento
 

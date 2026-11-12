@@ -220,12 +220,12 @@ describe("crm_manage_tags", () => {
   it("add/remove normaliza (lowercase) e persiste; audit action por kind", async () => {
     const cap = makeCap();
     const res = (await crmManageTags.handler(
-      { target_kind: "conversation", target_id: CONV, add: ["VIP"], remove: ["a"] },
-      makeCtx(withTags("conversations", ["a", "b"]), cap),
+      { target_kind: "contact", target_id: CONV, add: ["VIP"], remove: ["a"] },
+      makeCtx(withTags("contacts", ["a", "b"]), cap),
     )) as { tags: string[] };
 
     expect(res.tags.sort()).toEqual(["b", "vip"]);
-    expect(cap.updates).toContainEqual({ table: "conversations", values: { tags: ["b", "vip"] } });
+    expect(cap.updates).toContainEqual({ table: "contacts", values: { tags: ["b", "vip"] } });
   });
 
   it("contact: usa tabela contacts", async () => {
@@ -255,8 +255,8 @@ describe("crm_manage_tags", () => {
     const cap = makeCap();
     await expect(
       crmManageTags.handler(
-        { target_kind: "conversation", target_id: CONV, add: ["x".repeat(41)], remove: undefined },
-        makeCtx(withTags("conversations", []), cap),
+        { target_kind: "contact", target_id: CONV, add: ["x".repeat(41)], remove: undefined },
+        makeCtx(withTags("contacts", []), cap),
       ),
     ).rejects.toThrow();
   });
@@ -266,8 +266,8 @@ describe("crm_manage_tags", () => {
     const existing = Array.from({ length: 20 }, (_, i) => `t${i}`);
     await expect(
       crmManageTags.handler(
-        { target_kind: "conversation", target_id: CONV, add: ["extra"], remove: undefined },
-        makeCtx(withTags("conversations", existing), cap),
+        { target_kind: "contact", target_id: CONV, add: ["extra"], remove: undefined },
+        makeCtx(withTags("contacts", existing), cap),
       ),
     ).rejects.toThrow();
   });
@@ -286,8 +286,8 @@ describe("crm_manage_tags", () => {
     const cap = makeCap();
     await expect(
       crmManageTags.handler(
-        { target_kind: "conversation", target_id: CONV, add: undefined, remove: undefined },
-        makeCtx(withTags("conversations", []), cap),
+        { target_kind: "contact", target_id: CONV, add: undefined, remove: undefined },
+        makeCtx(withTags("contacts", []), cap),
       ),
     ).rejects.toThrow();
   });
@@ -371,13 +371,8 @@ describe("crm_manage_tags emite tag_added como a tela", () => {
     expect(emitidos(cap)).toEqual([]);
   });
 
-  it("conversa não tem evento de tag: não emite", async () => {
-    const cap = makeCap();
-    await crmManageTags.handler(
-      { target_kind: "conversation", target_id: CONV, add: ["vca"], remove: undefined },
-      makeCtx(linha("conversations", { id: CONV, tags: [] }), cap),
-    );
-    expect(emitidos(cap)).toEqual([]);
+  it("conversa não é alvo de tag (Estallo, 0659): o schema recusa", () => {
+    expect(crmManageTags.inputSchema.target_kind.safeParse("conversation").success).toBe(false);
   });
 
   it("falha ao emitir não desfaz a tag gravada", async () => {

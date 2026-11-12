@@ -341,11 +341,11 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
       <Card className="space-y-4 p-4" data-testid="conversa-fica-com-quem-atendeu">
         <div>
           <h2 className="text-sm font-semibold">
-            {t("Quando alguém responde, a conversa fica com essa pessoa?")}
+            {t("Conversa encerrada volta para quem atendeu?")}
           </h2>
           <p className="text-xs text-muted-foreground">
             {t(
-              "Desligado, vale a regra de sempre: responder pela tela cala a IA por alguns minutos, e a conversa encerrada que recebe mensagem nova volta para a fila.",
+              "Responder pelo Inbox numa conversa sem responsável sempre a passa para quem respondeu. Desligado, a conversa encerrada que recebe mensagem nova volta para a fila.",
             )}
           </p>
         </div>
@@ -364,7 +364,7 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
             <span className="block text-sm font-medium">{t("A conversa fica com quem atendeu")}</span>
             <span className="block text-xs text-muted-foreground">
               {t(
-                "Responder pelo Inbox numa conversa sem dono passa a assumi-la, e a IA fica calada até alguém devolver. Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe.",
+                "Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe.",
               )}
             </span>
           </span>

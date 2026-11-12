@@ -37,7 +37,7 @@
  * viraria 500 com stack, e quem opera leria "erro inesperado" sobre a única
  * coisa que ele queria saber — por que o aviso não sai.
  */
-import type { AvisoDb, CanalDoAviso, PacingDoAviso, TransporteDoAviso } from "./aviso-ao-suporte";
+import type { AvisoDb, CanalDoAviso, TransporteDoAviso } from "./aviso-ao-suporte";
 import { mascara } from "./aviso-ao-suporte";
 import { montarAvisoDeTeste } from "./texto-do-aviso";
 import { urlPublicaUsavel } from "./url-publica";
@@ -54,7 +54,7 @@ import type { ErroDaEntregaDeAviso } from "./vocabulario-do-aviso";
 export interface DepsDoAvisoDeTeste {
   db: Pick<AvisoDb, "carregaCanal" | "marcaDaOrganizacao" | "destinoEhDaPropriaOrganizacao">;
   transporte: TransporteDoAviso;
-  pacing: PacingDoAviso;
+  esperarRitmo: (channelSessionId: string) => Promise<void>;
   clock: () => Date;
   /** `env.NEXT_PUBLIC_APP_URL` já lido pelo chamador — este módulo não importa `env`. */
   urlPublica: string;
@@ -120,14 +120,6 @@ export async function enviarAvisoDeTeste(
   // ── 10. O transporte desta instalação está de pé? ────────────────────────
   if (!(await deps.transporte.configurado(orgId, canal))) return recusa("transporte_ausente");
 
-  // ── 11. Espaçamento e teto diário — o mesmo anti-ban do aviso real ───────
-  const pacing = await deps.pacing.decide(orgId, channelSessionId, agora);
-  if (!pacing.liberado) {
-    return recusa(pacing.motivo === "teto_diario" ? "teto_diario_do_numero" : "espacamento", {
-      liberaEm: pacing.liberaEm.toISOString(),
-    });
-  }
-
   // ── 11b. O destino ainda é de fora? — a mesma pergunta do motor ─────────
   // Sem ela, depois de reativar a conexão cujo número é o destino, o teste
   // mandaria para um número da própria conta e apareceria verde enquanto o
@@ -153,6 +145,8 @@ export async function enviarAvisoDeTeste(
   });
 
   // ── 14. O transporte ─────────────────────────────────────────────────────
+  // Ritmo fixo do número, o mesmo do aviso real — só depois das recusas, porque recusado não gasta envio.
+  await deps.esperarRitmo(channelSessionId);
   let externalId: string | null = null;
   try {
     const resposta = await deps.transporte.envia(orgId, canal, to, body);
@@ -161,11 +155,6 @@ export async function enviarAvisoDeTeste(
     const causa = err instanceof Error ? err.message : String(err);
     return recusa("falha_no_envio", { detalhe: causa.slice(0, 300) });
   }
-
-  // ── 15. Saiu: o número pagou por ela ─────────────────────────────────────
-  // Falha ABERTA, como no motor: a mensagem já está no celular de alguém, e
-  // derrubar a rota depois do envio faria a pessoa clicar de novo.
-  await deps.pacing.registraEnvio(orgId, channelSessionId, agora);
 
   // O destino volta MASCARADO. Quem clicou é admin e conhece o número, mas a
   // resposta de uma rota entra em log de proxy e fica numa aba aberta.

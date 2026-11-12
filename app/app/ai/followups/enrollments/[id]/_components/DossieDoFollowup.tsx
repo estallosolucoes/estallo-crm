@@ -40,10 +40,12 @@ import {
   type NoDoDossie,
 } from "@/lib/followup/eventos-legiveis";
 import { DESFECHOS } from "@/lib/followup/vocabulario";
+import { CANCELAVEL, PAUSAVEL } from "@/lib/followup/intervencao-possivel";
 import { useFollowupEnrollment, useIntervirNoFollowup } from "@/hooks/followup/useFollowupEnrollment";
 import { useCancelFollowupEnrollment } from "@/hooks/followup/useFollowupQueue";
 import { useT } from "@/hooks/i18n/useT";
 
+import { CaminhoPercorrido } from "./CaminhoPercorrido";
 import { PlanoDeTempoBloco } from "./PlanoDeTempo";
 
 interface Props {
@@ -51,9 +53,6 @@ interface Props {
   canWrite: boolean;
 }
 
-const PAUSAVEL = new Set(["active", "waiting_reply"]);
-/** Pausado por uma pessoa também se cancela — sem ter de retomar antes só para encerrar. */
-const CANCELAVEL = new Set(["active", "waiting_reply", "paused_handoff", "paused_manual"]);
 
 function absoluta(iso: string | null, locale: Locale): string {
   if (!iso) return "—";
@@ -367,6 +366,14 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
         plano={data.plano_de_tempo}
         nos={data.nos}
         decididoRelativo={relativa(data.plano_de_tempo?.decidido_em ?? null, localeDaData)}
+      />
+
+      <CaminhoPercorrido
+        passos={data.passos ?? []}
+        nos={data.nos}
+        arestas={data.arestas ?? []}
+        verDados={data.pode_ver_dados === true}
+        grafo={data.grafo ?? null}
       />
 
       <section className="rounded-md border border-border p-4">

@@ -1,48 +1,25 @@
-/**
- * A régua do design system, congelada em módulo — a fonte da derivação em RUNTIME.
- *
- * POR QUE ESTE ARQUIVO EXISTE, e não um `readFileSync("app/globals.css")`:
- *
- * A imagem de produção é `output: "standalone"` (next.config.ts) e o Dockerfile
- * copia para o runner apenas `.next/standalone`, `.next/static` e `public/`. O
- * `app/globals.css` NÃO existe no contêiner que o self-hoster roda. Um
- * `readFileSync` no caminho de render do `app/layout.tsx` daria ENOENT — 500 em
- * todas as telas, na VPS de quem a feature existe para servir, e verde em dev,
- * em teste e na Vercel. É o mesmo modo de falha que `lib/branding.ts` documenta
- * para o `NEXT_PUBLIC_*`.
- *
- * A separação também é a certa conceitualmente: a RÉGUA é do produto e nasce
- * congelada no build; a COR é da instalação e só existe em runtime. Só a segunda
- * precisa ser lida do ambiente.
- *
- * ESTE ARQUIVO É GERADO. Não edite à mão: ele é o `extrairRegua()` aplicado ao
- * `app/globals.css`. `tests/unit/branding-regua-do-produto.test.ts` compara os
- * dois a cada run e imprime o literal novo na mensagem de falha — mexeu na
- * paleta, o teste reprova e entrega o texto para colar aqui.
- */
-
+/** Gerado por extrairRegua(app/globals.css); conferido por branding-regua-do-produto.test.ts. */
 import type { Regua } from "./contraste";
-
 export const REGUA_DO_PRODUTO: Regua = {
   rampaDoProduto: [
-    "#f3f6f1",
-    "#e4ebe0",
-    "#c8d6c1",
-    "#a4ba9a",
-    "#82a077",
-    "#67885d",
-    "#506d48",
-    "#41573b",
-    "#374731",
-    "#2f3c2b",
-    "#171f15",
+    "#e7f5fc",
+    "#d9effa",
+    "#b3e0f3",
+    "#8fd9f5",
+    "#54bce8",
+    "#1099d3",
+    "#0b6e9a",
+    "#095a7f",
+    "#084866",
+    "#07384f",
+    "#051e2b",
   ],
   claro: {
     nome: "claro",
     base: [
       {
         chave: "--color-bg",
-        hex: "#faf9f6",
+        hex: "#f8fafb",
       },
       {
         chave: "--color-surface",
@@ -50,7 +27,7 @@ export const REGUA_DO_PRODUTO: Regua = {
       },
       {
         chave: "--color-surface-elevated",
-        hex: "#f5f3ee",
+        hex: "#f1f4f6",
       },
     ],
     tingidas: [
@@ -108,7 +85,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         tipo: "componente",
         fonte: {
           tipo: "grau",
-          indice: 5,
+          indice: 6,
           alfa: 1,
         },
         contra: null,
@@ -134,7 +111,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         tipo: "componente",
         fonte: {
           tipo: "grau",
-          indice: 5,
+          indice: 6,
           alfa: 1,
         },
         contra: null,
@@ -143,33 +120,33 @@ export const REGUA_DO_PRODUTO: Regua = {
     semanticas: [
       {
         nome: "success",
-        hex: "#5a8a5f",
+        hex: "#087653",
       },
       {
         nome: "warning",
-        hex: "#b07a2b",
+        hex: "#895800",
       },
       {
         nome: "error",
-        hex: "#a94a3c",
+        hex: "#bc3038",
       },
       {
         nome: "info",
-        hex: "#4a7a93",
+        hex: "#0b6e9a",
       },
     ],
     neutros: [
-      "#faf9f6",
-      "#f3f1ec",
-      "#e7e3da",
-      "#d2cdbf",
-      "#a9a395",
-      "#7d786c",
-      "#5d594f",
-      "#46433b",
-      "#2e2c26",
-      "#1c1a16",
-      "#0e0d0a",
+      "#f8fafb",
+      "#f1f4f6",
+      "#e2e7eb",
+      "#c4cdd4",
+      "#92a0ab",
+      "#647480",
+      "#536573",
+      "#3e4e5a",
+      "#34424e",
+      "#26333d",
+      "#17232c",
     ],
     indices: {
       accent: 6,
@@ -183,15 +160,15 @@ export const REGUA_DO_PRODUTO: Regua = {
     base: [
       {
         chave: "--color-bg",
-        hex: "#161510",
+        hex: "#17232c",
       },
       {
         chave: "--color-surface",
-        hex: "#1d1c17",
+        hex: "#26333d",
       },
       {
         chave: "--color-surface-elevated",
-        hex: "#272620",
+        hex: "#34424e",
       },
     ],
     tingidas: [
@@ -199,7 +176,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         chave: "--color-accent-soft",
         fonte: {
           tipo: "literal",
-          hex: "#82a077",
+          hex: "#54bce8",
           alfa: 0.16,
         },
       },
@@ -210,7 +187,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         tipo: "componente",
         fonte: {
           tipo: "grau",
-          indice: 4,
+          indice: 7,
           alfa: 1,
         },
         contra: null,
@@ -222,14 +199,14 @@ export const REGUA_DO_PRODUTO: Regua = {
           tipo: "frenteCalculada",
           sobre: {
             tipo: "grau",
-            indice: 4,
+            indice: 7,
             alfa: 1,
           },
         },
         contra: [
           {
             tipo: "grau",
-            indice: 4,
+            indice: 7,
             alfa: 1,
           },
         ],
@@ -239,7 +216,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         tipo: "componente",
         fonte: {
           tipo: "grau",
-          indice: 3,
+          indice: 8,
           alfa: 1,
         },
         contra: null,
@@ -284,39 +261,39 @@ export const REGUA_DO_PRODUTO: Regua = {
     semanticas: [
       {
         nome: "success",
-        hex: "#82a077",
+        hex: "#52d6a6",
       },
       {
         nome: "warning",
-        hex: "#d09455",
+        hex: "#f7c46c",
       },
       {
         nome: "error",
-        hex: "#c87263",
+        hex: "#ff8e95",
       },
       {
         nome: "info",
-        hex: "#7da9bf",
+        hex: "#8fd9f5",
       },
     ],
     neutros: [
-      "#f5f4ef",
-      "#e6e4dc",
-      "#bbb8ac",
-      "#8e8b7f",
-      "#605e54",
-      "#444239",
-      "#33312a",
-      "#272620",
-      "#1d1c17",
-      "#161510",
-      "#0c0b08",
+      "#f8fafb",
+      "#f1f4f6",
+      "#c4cdd4",
+      "#92a0ab",
+      "#647480",
+      "#536573",
+      "#3e4e5a",
+      "#34424e",
+      "#26333d",
+      "#17232c",
+      "#101820",
     ],
     indices: {
-      accent: 4,
-      hover: 3,
+      accent: 7,
+      hover: 8,
       soft: null,
     },
     alfaDoSoft: 0.16,
   },
-} as const;
+};

@@ -14,6 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -28,6 +29,7 @@ import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
@@ -251,11 +253,8 @@ async function withScores(
  * Ordena por `last_message_at` e fica com a primeira de cada contato — as
  * conversas já vêm ordenadas, então o primeiro visto é o mais recente.
  *
- * A MESMA consulta traz os marcadores de TODAS as conversas do contato
- * (`conversation_tags`, a terceira caixa — decisão do dono, doc 40, 19/09).
- * Aqui e não numa função própria porque ela já lê cada conversa do contato:
- * uma coluna a mais custa bytes; outra consulta com a mesma lista de ids na URL
- * custaria outra ida ao banco por quadro aberto.
+ * Estallo (0659): conversa não tem mais etiqueta, então não há mais a "terceira
+ * caixa" (`conversation_tags`) nos marcadores do card.
  */
 async function withConversas(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -271,7 +270,7 @@ async function withConversas(
   const { data, error } = await buscaEmLotes(contactIds, (lote) =>
     supabase
       .from("conversations")
-      .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee, tags")
+      .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee, channel")
       .eq("organization_id", organizationId)
       .in("contact_id", lote)
       .order("last_message_at", { ascending: false, nullsFirst: false }),
@@ -279,21 +278,14 @@ async function withConversas(
   if (error) return { leads, error: error.message };
 
   const porContato = new Map<string, NonNullable<Lead["conversa"]>>();
-  const marcadoresPorContato = new Map<string, Set<string>>();
   for (const row of (data ?? []) as Array<{
     id: string;
     contact_id: string;
     last_message_preview: string | null;
     last_message_at: string | null;
     unread_count_for_assignee: number | null;
-    tags: string[] | null;
+    channel?: string;
   }>) {
-    // Os marcadores somam TODAS as conversas; a linha do card é só a mais recente.
-    for (const tag of row.tags ?? []) {
-      const doContato = marcadoresPorContato.get(row.contact_id) ?? new Set<string>();
-      doContato.add(tag);
-      marcadoresPorContato.set(row.contact_id, doContato);
-    }
     // Primeira vista vence: a consulta já veio ordenada por atividade.
     if (porContato.has(row.contact_id)) continue;
     porContato.set(row.contact_id, {
@@ -301,6 +293,7 @@ async function withConversas(
       preview: row.last_message_preview,
       last_message_at: row.last_message_at,
       unread: row.unread_count_for_assignee ?? 0,
+      channel: row.channel,
     });
   }
 
@@ -308,15 +301,12 @@ async function withConversas(
     leads: leads.map((lead) => {
       if (!lead.contact_id) return lead;
       const conversa = porContato.get(lead.contact_id);
-      const marcadores = marcadoresPorContato.get(lead.contact_id);
       return {
         ...lead,
         // `null`, nunca ausente: contato sem conversa é "não há conversa", e é
         // assim que o card e o dossiê sabem mostrar "Abrir conversa" (#1993).
         // Ausente (`undefined`) fica para o lead SEM contato, que sai acima.
         conversa: conversa ?? null,
-        // Vazio não vira campo, como `contact_tags`: o payload não engorda.
-        ...(marcadores && marcadores.size > 0 ? { conversation_tags: [...marcadores] } : {}),
       };
     }),
     error: null,
@@ -353,7 +343,7 @@ async function withMarcadoresDoContato(
   const { data, error } = await buscaEmLotes(contactIds, (lote) =>
     supabase
       .from("contacts")
-      .select("id, tags, phone_number, email, custom_fields, is_anonymized")
+      .select("id, tags, phone_number, email, custom_fields, is_anonymized, name, display_name, avatar_storage_path")
       .eq("organization_id", organizationId)
       .in("id", lote),
   );
@@ -475,20 +465,110 @@ async function withTarefas(
   };
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+/**
+ * Anexa os produtos do catálogo de cada negócio (0660) — o filtro por produto
+ * do quadro. Uma leitura para o quadro inteiro, em lotes, como as tarefas.
+ *
+ * Lê com o cliente de SERVIÇO, e isso é deliberado (15/10/2026). A policy de
+ * SELECT de `crm_lead_products` roda, POR LINHA, um `EXISTS` em `crm_leads` mais
+ * `fn_can_view_lead` (SECURITY DEFINER, não inlinável, com 4-5 subconsultas) —
+ * e a policy de `crm_leads` dentro do EXISTS roda a mesma função de novo. Medido
+ * no banco de produção: 3,2s de média por lote de 100, 595 chamadas, e o pico de
+ * um quadro grande saturava o banco a ponto de o `/auth/v1/user` de todo mundo
+ * pendurar. A autorização já aconteceu: os ids saem da leitura de `crm_leads`
+ * feita COM a RLS do usuário, e a organização vem do pipeline que a RLS deixou
+ * ver — nunca do request. O filtro de `organization_id` continua explícito.
+ */
+async function withProdutos(
+  supabase: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  leads: Lead[],
+): Promise<{ leads: Lead[]; error: string | null }> {
+  const leadIds = leads.map((l) => l.id);
+  if (leadIds.length === 0) return { leads, error: null };
+
+  const { data, error } = await buscaEmLotes(leadIds, (lote) =>
+    supabase
+      .from("crm_lead_products")
+      .select("lead_id, product_id")
+      .eq("organization_id", organizationId)
+      .in("lead_id", lote)
+      .not("product_id", "is", null),
+  );
+  if (error) return { leads, error: error.message };
+
+  const porLead = new Map<string, string[]>();
+  for (const linha of (data ?? []) as { lead_id: string; product_id: string }[]) {
+    const lista = porLead.get(linha.lead_id) ?? [];
+    if (!lista.includes(linha.product_id)) lista.push(linha.product_id);
+    porLead.set(linha.lead_id, lista);
+  }
+  return {
+    leads: leads.map((l) => (porLead.has(l.id) ? { ...l, produtos_ids: porLead.get(l.id) } : l)),
+    error: null,
+  };
+}
+
+/**
+ * Os negócios do funil, em páginas. O PostgREST devolve no máximo `max_rows`
+ * (1.000 no Supabase) por consulta, em silêncio: o "Funil de Vendas" da Prática
+ * tinha 1.135 e o quadro mostrava só os 1.000 primeiros. A ordem global sai de
+ * `position_in_stage` com `id` de desempate, para a paginação não repetir nem
+ * pular linha.
+ */
+const LEADS_POR_PAGINA = 1000;
+async function leadsDoFunil(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  pipelineId: string,
+  soOLead: string | null,
+): Promise<{ data: Lead[]; error: { message: string } | null }> {
+  const todos: Lead[] = [];
+  for (let desde = 0; ; desde += LEADS_POR_PAGINA) {
+    let consulta = supabase
+      .from("crm_leads")
+      .select("*")
+      .eq("pipeline_id", pipelineId)
+      .neq("status", "archived");
+    if (soOLead) consulta = consulta.eq("id", soOLead);
+    const { data, error } = await consulta
+      .order("position_in_stage")
+      .order("id")
+      .range(desde, desde + LEADS_POR_PAGINA - 1);
+    if (error) return { data: [], error };
+    todos.push(...((data ?? []) as Lead[]));
+    if ((data ?? []).length < LEADS_POR_PAGINA) return { data: todos, error: null };
+  }
+}
+
+/**
+ * `?lead_id=` — O QUADRO DE UM NEGÓCIO SÓ. O dossiê aberto fora do quadro
+ * (Inbox › Leads recentes) precisa do lead no MESMO formato e com o MESMO
+ * enriquecimento do card (responsável, conversa, score, tarefas, produtos…),
+ * mas não do funil inteiro: baixar 1.000+ negócios para mostrar um fazia a
+ * gaveta esperar segundos. Mesma rota, mesma RLS, mesmo shape — só a lista
+ * de leads vem com um item (ou nenhum, se ele não é visível a quem pede).
+ */
+const leadIdSchema = z.string().uuid();
+
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
+  const leadIdBruto = req.nextUrl.searchParams.get("lead_id");
+  const leadIdParse = leadIdBruto === null ? null : leadIdSchema.safeParse(leadIdBruto);
+  const soOLead = leadIdParse?.success ? leadIdParse.data : null;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // Uma ida ao GoTrue só: `loadAuthUser` já valida o JWT (`getUser()`), e o
+  // `getUser()` próprio que vinha antes dele repetia a chamada a cada abertura
+  // de lead. Sem usuário, o mesmo 401 de antes.
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  if (leadIdParse && !leadIdParse.success) {
+    return fail("validation_failed", t("lead_id inválido."), 400, { requestId });
+  }
 
   const [
     { data: pipeline, error: pipelineErr },
@@ -502,12 +582,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .eq("pipeline_id", pipelineId)
       .eq("is_archived", false)
       .order("position"),
-    supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .neq("status", "archived")
-      .order("position_in_stage"),
+    leadsDoFunil(supabase, pipelineId, soOLead),
   ]);
 
   if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
@@ -515,92 +590,58 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
   if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
 
+  const organizationId = (pipeline as Pipeline).organization_id;
+
   // Contato pessoal some do board mas a linha continua no banco (spec 21, etapa
   // 8, decisão 2 — critério 4): o card não é listado e volta ao desmarcar, com
   // o histórico intacto. Filtro em memória sobre a lista já lida: o board não
   // pagina, então nada se perde por filtrar depois de ler. NUNCA `delete`.
-  const pessoais = await idsDeContatosPessoais(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-  );
+  const [pessoais, { data: pipelinePadrao }] = await Promise.all([
+    idsDeContatosPessoais(supabase, organizationId),
+    supabase
+      .from("crm_pipelines")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("is_default", true)
+      .maybeSingle(),
+  ]);
   const leadsVisiveis =
     pessoais.length > 0
-      ? ((leads ?? []) as Lead[]).filter(
-          (l) => l.contact_id === null || !pessoais.includes(l.contact_id),
-        )
-      : ((leads ?? []) as Lead[]);
+      ? leads.filter((l) => l.contact_id === null || !pessoais.includes(l.contact_id))
+      : leads;
 
-  const leadsWithOwner = await withOwnerAgents(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsVisiveis,
+  // As etapas de enriquecimento correm EM PARALELO, todas sobre a mesma lista:
+  // cada uma só acrescenta o próprio campo ao lead (e preserva ordem e tamanho),
+  // então o resultado é a soma dos campos, posição a posição. Em fila, um funil de
+  // 1.135 negócios (Prática, 15/10/2026) somava 7 rodadas de ~12 lotes e passava
+  // dos 10s do cliente. A resposta continua saindo com os campos de
+  // `withMarcadoresDoContato`, que as cercas do quadro vigiam
+  // (`kanban-atalho-conversa`, `funil-mostra-dados-do-cliente`,
+  // `funil-filtro-de-tag-le-as-duas-caixas`).
+  const etapas = await Promise.all([
+    withOwnerAgents(supabase, organizationId, leadsVisiveis),
+    withNextActions(
+      supabase,
+      organizationId,
+      leadsVisiveis,
+      (pipelinePadrao as { id: string } | null)?.id ?? null,
+    ),
+    withScores(supabase, organizationId, leadsVisiveis),
+    withTarefas(supabase, organizationId, leadsVisiveis),
+    withProdutos(createAdminClient(), organizationId, leadsVisiveis),
+    withConversas(supabase, organizationId, leadsVisiveis),
+    withMarcadoresDoContato(supabase, organizationId, leadsVisiveis),
+  ]);
+  const erro = etapas.find((e) => e.error)?.error;
+  if (erro) return fail("internal_error", erro, 500, { requestId });
+  const leadsEnriquecidos = leadsVisiveis.map((lead, i) =>
+    Object.assign({}, lead, ...etapas.map((e) => e.leads[i])),
   );
-  if (leadsWithOwner.error) {
-    return fail("internal_error", leadsWithOwner.error, 500, { requestId });
-  }
-
-  const { data: pipelinePadrao } = await supabase
-    .from("crm_pipelines")
-    .select("id")
-    .eq("organization_id", (pipeline as Pipeline).organization_id)
-    .eq("is_default", true)
-    .maybeSingle();
-
-  const leadsComAcao = await withNextActions(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsWithOwner.leads,
-    (pipelinePadrao as { id: string } | null)?.id ?? null,
-  );
-  if (leadsComAcao.error) {
-    return fail("internal_error", leadsComAcao.error, 500, { requestId });
-  }
-
-  const leadsComScore = await withScores(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsComAcao.leads,
-  );
-  if (leadsComScore.error) {
-    return fail("internal_error", leadsComScore.error, 500, { requestId });
-  }
-
-  // As tarefas entram NO MEIO da cadeia, e não no fim: a resposta continua
-  // saindo de `withMarcadoresDoContato`, a última etapa que as cercas do quadro
-  // vigiam (`kanban-atalho-conversa`, `funil-mostra-dados-do-cliente`,
-  // `funil-filtro-de-tag-le-as-duas-caixas`). A ordem não muda o resultado: cada
-  // etapa só acrescenta o próprio campo ao lead.
-  const leadsComTarefas = await withTarefas(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsComScore.leads,
-  );
-  if (leadsComTarefas.error) {
-    return fail("internal_error", leadsComTarefas.error, 500, { requestId });
-  }
-
-  const leadsComConversa = await withConversas(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsComTarefas.leads,
-  );
-  if (leadsComConversa.error) {
-    return fail("internal_error", leadsComConversa.error, 500, { requestId });
-  }
-
-  const leadsComMarcadores = await withMarcadoresDoContato(
-    supabase,
-    (pipeline as Pipeline).organization_id,
-    leadsComConversa.leads,
-  );
-  if (leadsComMarcadores.error) {
-    return fail("internal_error", leadsComMarcadores.error, 500, { requestId });
-  }
 
   const board: BoardData = {
     pipeline: pipeline as Pipeline,
     stages: (stages ?? []) as Stage[],
-    leads: leadsComMarcadores.leads,
+    leads: leadsEnriquecidos,
   };
 
   return ok(board, { requestId });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dayStartInTz } from "@/lib/agent-engine/pacing/engine";
+import { inicioDoDiaNoFuso as dayStartInTz } from "@/lib/tempo/inicio-do-dia";
 
 import { estadoDeEnvio } from "./rodada";
 

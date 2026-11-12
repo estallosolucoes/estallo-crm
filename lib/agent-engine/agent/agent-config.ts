@@ -71,6 +71,16 @@ export interface PublishedAgentConfig {
    * antigo em vez de emudecer a busca por causa de um schema desatualizado.
    */
   activeKbVersionId: string | null;
+  /**
+   * O atraso de resposta "como uma pessoa" (`ai_agents.config.atraso_*`). Ausente = os defaults de
+   * `agent/atraso-humano.ts`. Opcional porque nasce depois das fixtures que montam esta interface à mão.
+   */
+  atrasoDeResposta?: {
+    atrasoNotarMs: number;
+    msPorCaractere: number;
+    atrasoMinimoMs: number;
+    atrasoMaximoMs: number;
+  };
   /** knobs de RAG do ai_agents.config (defaults calibrados na 0097: 5 / 0.40). */
   ragTopK: number;
   ragSimilarityThreshold: number;
@@ -186,7 +196,23 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
-  const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
+  const cfg = (r.config ?? {}) as {
+    rag_top_k?: unknown;
+    rag_similarity_threshold?: unknown;
+    atraso_notar_ms?: unknown;
+    atraso_ms_por_caractere?: unknown;
+    atraso_minimo_ms?: unknown;
+    atraso_maximo_ms?: unknown;
+  };
+  // Número válido dentro da faixa, senão o default: jsonb livre nunca vira atraso absurdo (nem negativo).
+  const atraso = (v: unknown, padrao: number, max: number): number =>
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? Math.round(v) : padrao;
+  const atrasoDeResposta = {
+    atrasoNotarMs: atraso(cfg.atraso_notar_ms, 900, 60_000),
+    msPorCaractere: atraso(cfg.atraso_ms_por_caractere, 22, 200),
+    atrasoMinimoMs: atraso(cfg.atraso_minimo_ms, 1200, 60_000),
+    atrasoMaximoMs: atraso(cfg.atraso_maximo_ms, 7500, 60_000),
+  };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
     Number.isInteger(cfg.rag_top_k) &&
@@ -233,6 +259,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // legado abaixo em vez de ficar sem material nenhum.
     knowledgeSourceIds: r.knowledge_source_ids ?? [],
     activeKbVersionId: r.active_kb_version_id,
+    atrasoDeResposta,
     ragTopK,
     ragSimilarityThreshold,
     // `?? false` cobre o clone que ainda não aplicou a 0111: coluna ausente vem

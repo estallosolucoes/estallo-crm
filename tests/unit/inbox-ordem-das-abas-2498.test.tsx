@@ -1,30 +1,7 @@
-/**
- * A ORDEM DAS ABAS DO INBOX — só a ordem muda (#2498).
- *
- * ─── O defeito ─────────────────────────────────────────────────────────────
- *
- * "Automático" ficava FORA da faixa, no fim dela, depois de "Arquivadas" — o
- * valor que o operador mais olha era o último, atrás de dois passados. A ordem
- * pedida pela issue é a do trabalho: primeiro o que o robô conduz, depois a
- * fila de quem precisa de gente, depois o histórico.
- *
- * ─── O que este arquivo trava ──────────────────────────────────────────────
- *
- * A ordem NOVA renderizada na tela, e nada além dela. Os controles ao redor
- * são o que torna a troca inofensiva, e cada um vira caso próprio porque cada
- * um teria um sintoma silencioso se sumisse:
- *
- *   - rótulos e `value` — um valor novo nasceria `?filter=` que a rota não lê;
- *   - permissões (`visibleInboxTabs`) — reordenar filtrando de novo esconderia
- *     "Todas" de quem tem direito a vê-la;
- *   - contadores — o badge lê `counts` por CHAVE (`fila`, `automatico`, …), e
- *     a ordem nova não muda quem conta o quê;
- *   - as seis na mesma quantidade — uma aba perdida na remontagem do array não
- *     quebra nada visível para quem já estava na primeira.
- */
+/** Categorias do Inbox na ordem solicitada em 16/10/2026, com contadores próprios e RLS. */
 import { readFileSync } from "node:fs";
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InboxFilters, visibleInboxTabs, type InboxFiltersValue } from "@/components/inbox/InboxFilters";
@@ -39,9 +16,6 @@ vi.mock("@/hooks/channels/useChannelSessions", () => ({
   useChannelSessions: () => ({ data: [] }),
   channelLabel: () => "canal",
 }));
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useConversationTagVocabulary: () => ({ data: [] }),
-}));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
   useContactTagVocabulary: () => ({ data: [] }),
 }));
@@ -49,11 +23,11 @@ vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
 // chave: `automatico` é a da "Automático", `fila` é a da "Fila".
 vi.mock("@/hooks/inbox/useConversationCounts", () => ({
   useConversationCounts: () => ({
-    data: { fila: 3, mine: 2, all: 5, automatico: 7, closed: 4, archived: 1 },
+    data: { em_aberto: 3, mine: 9, pendentes: 2, all: 5, em_espera: 7, closed: 4, archived: 1 },
   }),
 }));
 
-const VALUE: InboxFiltersValue = { tab: "ai", search: "", onlyUnread: false };
+const VALUE: InboxFiltersValue = { tab: "all", search: "", onlyUnread: false };
 
 /** O rótulo de cada aba, sem o contador que vem colado no `textContent`. */
 function abasRenderizadas(): string[] {
@@ -67,16 +41,17 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("as seis abas, na ordem pedida pela #2498", () => {
-  it("Automático, Fila, Minhas, Todas, Fechadas, Arquivadas — nessa ordem", () => {
+describe("as cinco categorias do atendimento", () => {
+  // 16/10/2026: a ordem do MODELO do Inbox do dono substitui a da #2498 —
+  // Fila primeiro, Automático depois de Pendentes. Valores e contadores iguais.
+  it("Todas, Sem resposta, Em espera, Em aberto, Fechadas — nessa ordem", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
     expect(abasRenderizadas()).toEqual([
-      "Automático",
-      "Fila",
-      "Minhas",
       "Todas",
+      "Sem resposta",
+      "Em espera",
+      "Em aberto",
       "Fechadas",
-      "Arquivadas",
     ]);
   });
 
@@ -91,58 +66,53 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
       ([, value, label]) => `${value}=${label}`,
     );
     expect(pares).toEqual([
-      "ai=Automático",
-      "unassigned=Fila",
-      "mine=Minhas",
       "all=Todas",
+      "pending=Sem resposta",
+      "waiting=Em espera",
+      "open=Em aberto",
       "closed=Fechadas",
-      "archived=Arquivadas",
     ]);
   });
 
   it("cada aba continua com o SEU contador (nada trocou de chave)", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /^Automático/ })).toHaveTextContent("7");
-    expect(screen.getByRole("tab", { name: /^Fila/ })).toHaveTextContent("3");
-    expect(screen.getByRole("tab", { name: /^Minhas/ })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /^Em espera/ })).toHaveTextContent("7");
+    expect(screen.getByRole("tab", { name: /^Em aberto/ })).toHaveTextContent("3");
+    expect(screen.getByRole("tab", { name: /^Sem resposta/ })).toHaveTextContent("2");
     expect(screen.getByRole("tab", { name: /^Todas/ })).toHaveTextContent("5");
     expect(screen.getByRole("tab", { name: /^Fechadas/ })).toHaveTextContent("4");
-    expect(screen.getByRole("tab", { name: /^Arquivadas/ })).toHaveTextContent("1");
   });
 });
 
 describe("só a ordem muda — as permissões continuam quem eram", () => {
   it("manager vê as seis, com 'Todas' no meio", () => {
     expect(visibleInboxTabs("manager", "all")).toEqual([
-      "ai",
-      "unassigned",
-      "mine",
       "all",
+      "pending",
+      "waiting",
+      "open",
       "closed",
-      "archived",
     ]);
   });
 
-  it("agent em modo own* segue SEM 'Todas' — e com as outras cinco na ordem nova", () => {
-    // A regra de visão é filtrar, não reordenar: quem perde 'all' perde só ela,
-    // e a ordem que sobra é a mesma que todo mundo vê.
+  it("agent em modo own* vê as mesmas abas, na mesma ordem (Minhas virou filtro)", () => {
+    // Sem a aba "Minhas", 'Todas' (recortada pela RLS) é a caixa do agent.
     expect(visibleInboxTabs("agent", "own")).toEqual([
-      "ai",
-      "unassigned",
-      "mine",
+      "all",
+      "pending",
+      "waiting",
+      "open",
       "closed",
-      "archived",
     ]);
   });
 
   it("agent com visibility 'all' tem as seis, 'Todas' na posição dela", () => {
     expect(visibleInboxTabs("agent", "all")).toEqual([
-      "ai",
-      "unassigned",
-      "mine",
       "all",
+      "pending",
+      "waiting",
+      "open",
       "closed",
-      "archived",
     ]);
   });
 
@@ -153,4 +123,20 @@ describe("só a ordem muda — as permissões continuam quem eram", () => {
     const ativa = screen.getByRole("tab", { selected: true });
     expect(ativa.textContent ?? "").toMatch(/^Fechadas/);
   });
+});
+
+it("a ajuda abre descrições curtas dos cinco status", () => {
+  render(<InboxFilters value={VALUE} onChange={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "O que significa cada status do chat?" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("Primeiro contato: ainda não recebeu nenhuma resposta.");
+  expect(screen.getByRole("dialog")).toHaveTextContent("Já foi respondido e escreveu novamente.");
+});
+it("escolher a ordem só a aplica ao confirmar o filtro", () => {
+  const onChange = vi.fn();
+  render(<InboxFilters value={VALUE} onChange={onChange} />);
+  fireEvent.click(screen.getByRole("button", { name: "Filtrar conversas" }));
+  fireEvent.change(screen.getByLabelText("Ordem"), { target: { value: "antigo" } });
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ ordem: "antigo" }));
 });

@@ -7,7 +7,7 @@
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
-import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { env } from "@/lib/env";
 import { createSupabaseAvisoDb } from "@/lib/escalacao/aviso-ao-suporte";
@@ -69,7 +69,7 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
             marcaDaOrganizacao: (orgId) => doCaso.marcaDaOrganizacao(orgId),
           },
           transporte: await criarTransporteDoAviso(admin),
-          pacing: await criarPacingDoCanal(admin),
+          esperarRitmo,
           clock: () => new Date(),
           urlPublica: env.NEXT_PUBLIC_APP_URL,
           origemDoDreno,

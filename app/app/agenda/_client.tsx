@@ -638,7 +638,7 @@ export function AgendaClient({
                   "min-h-11 rounded-sm px-3 py-1 text-xs transition-colors duration-fast ease-out lg:min-h-0 lg:px-2.5",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
                   visao === v.id
-                    ? "bg-accent font-semibold text-accent-foreground"
+                    ? "bg-accent dark:bg-accent-700 font-semibold text-accent-foreground"
                     : "text-text-muted hover:bg-surface-elevated hover:text-text",
                 )}
               >
@@ -774,7 +774,7 @@ export function AgendaClient({
                       className={cn(
                         "rounded-full border px-3 py-1 text-xs transition-colors duration-fast",
                         opcao.id === tipo?.id
-                          ? "border-transparent bg-accent text-accent-foreground"
+                          ? "border-transparent bg-accent dark:bg-accent-700 text-accent-foreground"
                           : "border-border text-text-muted hover:border-border-strong hover:text-text",
                       )}
                     >

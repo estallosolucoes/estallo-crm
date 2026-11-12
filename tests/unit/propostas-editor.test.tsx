@@ -97,9 +97,10 @@ describe("editor de propostas", () => {
       itens: [{ ...mockProposalData.itens[0]!, product_id: null }],
     });
     render(await ProposalPage({ params: Promise.resolve({ id: "proposta-a" }) }));
-    const priceInputs = await screen.findAllByDisplayValue("50");
+    const priceInputs = await screen.findAllByDisplayValue("50,00");
     await user.clear(priceInputs[0]!);
-    await user.type(priceInputs[0]!, "100");
+    // Máscara de dinheiro: os dígitos entram da direita (10000 → 100,00).
+    await user.type(priceInputs[0]!, "10000");
     await waitFor(() => {
       const totalText = screen.getByText(/Total/).parentElement;
       expect(totalText?.textContent || "").toContain("1.000,00");
@@ -108,16 +109,16 @@ describe("editor de propostas", () => {
 
   it("trava o preço de item de catálogo na tela (o servidor resolve do catálogo)", async () => {
     render(await ProposalPage({ params: Promise.resolve({ id: "proposta-a" }) }));
-    const priceInputs = await screen.findAllByDisplayValue("50");
+    const priceInputs = await screen.findAllByDisplayValue("50,00");
     expect(priceInputs[0]).toBeDisabled();
   });
 
   it("recalcula o total ao editar desconto", async () => {
     const user = userEvent.setup();
     render(await ProposalPage({ params: Promise.resolve({ id: "proposta-a" }) }));
-    const descontoInputs = await screen.findAllByDisplayValue("0");
+    const descontoInputs = await screen.findAllByDisplayValue("0,00");
     await user.clear(descontoInputs[0]!);
-    await user.type(descontoInputs[0]!, "10");
+    await user.type(descontoInputs[0]!, "1000");
     await waitFor(() => {
       const totalText = screen.getByText(/Total/).parentElement;
       expect(totalText?.textContent || "").toContain("490,00");

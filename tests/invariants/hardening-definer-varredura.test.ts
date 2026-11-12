@@ -286,7 +286,7 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "função recusa tudo que não seja admin da própria organização.",
   },
   {
-    fn: "fn_vocabulario_de_tags_operar(uuid,text,text,text,text)",
+    fn: "fn_vocabulario_de_tags_operar(uuid,text,text,text,text,text)",
     razao:
       "POST app/api/v1/tags/vocabulario/route.ts chama com createClient da " +
       "sessão (a tela de Tags é manager+, com suporte de escrita e MFA). A " +

@@ -45,14 +45,7 @@ import type { ChannelSendResult } from '../channel-adapter';
 import type { Logger } from '../obs/logger';
 import { emitVetoActivity } from '@/lib/leads/veto-activity';
 import type { Queryable } from '../queue/queue';
-import { decidePacing } from '../pacing/engine';
-import type { PacingState } from '../pacing/engine';
-import type { PacingKnobs } from '../pacing/defaults';
-import { loadChannelKnobs, loadPacingState, recordSend } from '../pacing/store';
-import { decideSpinning } from '../spinning/engine';
-import type { RecentCopy } from '../spinning/engine';
-import { loadRecentCopies, loadSpinningKnobs, recordCopy } from '../spinning/store';
-import type { SpinningKnobs } from '../spinning/defaults';
+import { reservarRitmo } from '@/lib/messaging/ritmo-entre-envios';
 import { decidePromise } from './promise/engine';
 import { loadPromiseTable } from './promise/table';
 import type { PromiseTable } from './promise/table';
@@ -121,30 +114,6 @@ export interface GateContext {
      * inteira — e aí template viraria bypass de opt-out, LGPD e horário.
      */
     isTemplate?: boolean;
-  };
-  pacing: {
-    knobs: PacingKnobs;
-    state: PacingState;
-    crmDailyLimit: number | null;
-    rng?: () => number;
-    /**
-     * Este envio é RESPOSTA a uma mensagem recebida, ou disparo/retomada?
-     *
-     * ⚠️ OMITIDO = disparo (janela `window*`, 7h-22h). É o default que mantém
-     * todo chamador que não conhece a 0495 no comportamento antigo, e é a
-     * direção segura: quem esquece o campo continua preso ao horário comercial
-     * em vez de abrir o número às 3h.
-     *
-     * O `inbound_turn` (cliente escreveu) e o `case_reply_turn` passam `true` e leem
-     * `resposta*`. O disparo em massa NÃO passa por este gate — ele usa
-     * `decidePacing` direto (`lib/prospecting/worker.ts`) — então o valor aqui
-     * só distingue resposta de retomada por follow-up.
-     */
-    resposta?: boolean;
-  };
-  spinning: {
-    knobs: SpinningKnobs;
-    window: RecentCopy[];
   };
   /**
    * Tabela de preços/promessas versionada da org (F4-01), carregada por ponteiro
@@ -242,31 +211,6 @@ export interface GateContext {
    */
   clinicalClaimEnforced?: boolean;
   /**
-   * Arma o `spinningGate`. **Ausente = ARMADO** — a direção segura aqui é a
-   * oposta do `internalVocabularyEnforced` logo acima, e a assimetria é
-   * deliberada: aquele protege o CLIENTE de uma palavra feia, este protege o
-   * NÚMERO de um banimento. Um default desarmado desligaria a proteção
-   * anti-ban em todo chamador que não conhece este campo.
-   *
-   * O único que o desarma é o AVISO DE ESCALAÇÃO
-   * (`lib/agent-engine/agent/aviso-de-escalacao.ts`), e a razão é aritmética,
-   * não preferência. `decideSpinning` conta as candidatas idênticas ou
-   * quase-idênticas (Jaccard ≥ 0,8) nas últimas `windowSize` (20) mensagens do
-   * NÚMERO — janela que cruza leads — e veta a partir da terceira
-   * (`repetitionThreshold: 2`). O aviso é texto de código: por mais variantes
-   * que tenha, a terceira pessoa a pedir um atendente na mesma janela cairia no
-   * veto, e veto ali é DROP SILENCIOSO — exatamente o silêncio que o aviso
-   * existe para acabar, produzido pelo guardrail. Medido antes de escrever esta
-   * linha: com 3 variantes, 14 de 20 avisos seguidos eram vetados
-   * (`tests/unit/aviso-ao-lead.test.ts` congela a conta).
-   *
-   * O risco de ban que isto abre é coberto do outro lado: as variantes seguem
-   * existindo (o número não repete UMA frase), o aviso é UM por escalação e
-   * responde a quem acabou de escrever — o oposto do blast de template que este
-   * gate persegue —, e ele continua contando no cap diário (`recordSend`).
-   */
-  spinningEnforced?: boolean;
-  /**
    * Arma o `agendaStallGate`. Ausente = no-op — mesma direção segura de
    * `internalVocabularyEnforced` (caller que não conhece o campo não arma nada).
    *
@@ -323,7 +267,6 @@ export type GateVerdict =
   // de produção.
   | {
       pass: true;
-      waitMs?: number;
       amendBody?: string;
       skipped?: 'not_applicable' | 'sandbox_send_embargo' | 'nao_conferido';
     }
@@ -777,45 +720,6 @@ export const disclosureGate: Gate = {
 };
 
 /**
- * Gate 2 — anti-ban: janela/warm-up/cap vetam; throttle vira `waitMs` (espera, não veto).
- *
- * A capability `banRisk` do canal decide se a parte ANTI-BAN arma. Ela entra em
- * `decidePacing` em vez de curto-circuitar o gate porque a janela horária/domingo/fuso
- * que vive no mesmo motor é CORTESIA e vale em todo canal (invariante 3 da doutrina):
- * um `return` antes da decisão desarmaria o horário comercial junto e faria a IA acordar
- * cliente às 3h. Quando o anti-ban não se aplica, o veredito carrega
- * `skipped: 'not_applicable'` — o trace registra a inaplicabilidade (invariante 4); se a
- * cortesia vetar, o veredito é veto normal e o skipped nem existe.
- */
-export const pacingGate: Gate = {
-  name: 'pacing',
-  evaluate: (ctx) => {
-    const { banRisk } = capabilitiesOf(ctx.provider);
-    const decision = decidePacing({
-      now: ctx.now,
-      knobs: ctx.pacing.knobs,
-      state: ctx.pacing.state,
-      crmDailyLimit: ctx.pacing.crmDailyLimit,
-      banRisk,
-      resposta: ctx.pacing.resposta,
-      rng: ctx.pacing.rng,
-    });
-    if (!decision.allow) {
-      return {
-        pass: false,
-        code: decision.code,
-        reason: decision.reason,
-        nextAllowedAt: decision.nextAllowedAt,
-      };
-    }
-    return banRisk
-      ? { pass: true, waitMs: decision.waitMs }
-      : { pass: true, waitMs: decision.waitMs, skipped: 'not_applicable' };
-  },
-};
-
-/** Gate 3 — spinning: template idêntico em massa na janela do número → veto ("varie"). */
-/**
  * Gate 3.5 — janela de atendimento. **Irmão do anti-ban, com física invertida.**
  *
  * O anti-ban é auto-restrição: posso falar quando quiser, mas o canal me bane se eu
@@ -851,24 +755,6 @@ export const messagingWindowGate: Gate = {
         'a janela de 24 horas com este contato fechou; o canal vai recusar texto livre. ' +
         'Use um template aprovado (ferramenta send_template) ou encerre o turno sem enviar.',
     };
-  },
-};
-
-const spinningGate: Gate = {
-  name: 'spinning',
-  evaluate: (ctx) => {
-    // Desarmado explicitamente: `skipped`, nunca `pass` silencioso — a diferença
-    // entre "não vetou" e "nem chegou a olhar" é esta linha no trace (a mesma
-    // disciplina do `messagingWindowGate` com canal sem janela).
-    if (ctx.spinningEnforced === false) return { pass: true, skipped: 'not_applicable' };
-    const decision = decideSpinning({
-      candidate: ctx.body,
-      window: ctx.spinning.window,
-      knobs: ctx.spinning.knobs,
-    });
-    return decision.allow
-      ? { pass: true }
-      : { pass: false, code: decision.code, reason: decision.reason };
   },
 };
 
@@ -908,7 +794,7 @@ const spinningGate: Gate = {
  * do agente de uma organização que ligou a camada `afirmacao_clinica`, então a v8 não
  * muda o destino de nenhum envio de quem não ligou.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 9;
+export const BEFORE_SEND_CHAIN_VERSION = 10;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -966,9 +852,7 @@ export const factualClaimGate: Gate = {
 export const BEFORE_SEND_GATES: readonly Gate[] = [
   stopGate,
   lgpdGate,
-  pacingGate,
   messagingWindowGate,
-  spinningGate,
   promiseGate,
   semanticPromiseGate,
   factualClaimGate,
@@ -1032,18 +916,6 @@ export interface RunBeforeSendArgs {
    * de envio nasce de um agente identificado.
    */
   agentId?: string | null;
-  /**
-   * channel_sessions.daily_message_limit do CRM (fonte única do cap absoluto). null =
-   * ainda não lido do CRM no runtime → os degraus de warm-up (conservadores) seguram
-   * o cap. Ponto de injeção: quando o drain expuser o limite da sessão, passar aqui.
-   */
-  crmDailyLimit: number | null;
-  /**
-   * Este envio é RESPOSTA a uma mensagem recebida (janela `resposta*`, 0495) ou
-   * disparo/retomada (janela `window*`)? OMITIDO = disparo — o default que deixa
-   * todo chamador anterior à 0495 no comportamento antigo.
-   */
-  resposta?: boolean;
   now: Date;
   /** injeções de teste (jitter determinístico + espera sem relógio real). */
   rng?: () => number;
@@ -1101,16 +973,6 @@ export interface RunBeforeSendArgs {
    */
   enforceClinicalClaim?: boolean;
   /**
-   * Desarma o `spinningGate` para ESTA tentativa. Ausente = armado (ver
-   * `GateContext.spinningEnforced` para a razão da assimetria e para a conta que
-   * obriga o único chamador que o desarma).
-   *
-   * Desarmar também tira a candidata da JANELA: um corpo que a cadeia não julga
-   * pelo histórico não pode entrar no histórico que julga os outros. O cap
-   * diário (`recordSend`) continua valendo — o aviso é uma mensagem de verdade.
-   */
-  enforceSpinning?: boolean;
-  /**
    * Arma o `agendaStallGate` para ESTA tentativa — ver `GateContext.agenda`. Ausente = gate
    * no-op (retrocompatível com todo caller que não conhece agenda, ex.: `followup-turn.ts`).
    */
@@ -1140,7 +1002,6 @@ export function evaluateBeforeSend(
   const ctx = { ...initial };
   const trace: GateTraceEntry[] = [];
   let veto: { gate: string; code: string; message: string; nextAllowedAt?: Date } | null = null;
-  let throttleWaitMs = 0;
   for (const gate of gates) {
     if (veto !== null) {
       trace.push({ gate: gate.name, verdict: 'skipped' });
@@ -1156,8 +1017,6 @@ export function evaluateBeforeSend(
           ? { gate: gate.name, verdict: 'skipped', code: verdict.skipped }
           : { gate: gate.name, verdict: 'pass' },
       );
-      if (verdict.waitMs !== undefined && verdict.waitMs > throttleWaitMs)
-        throttleWaitMs = verdict.waitMs;
       // Emenda de corpo (F4-05 inject): o corpo a enviar passa a ser o emendado; gates
       // seguintes na cadeia o veem (ex.: spinning avalia o texto que de fato vai ao lead).
       if (verdict.amendBody !== undefined) ctx.body = verdict.amendBody;
@@ -1176,7 +1035,7 @@ export function evaluateBeforeSend(
       };
     }
   }
-  return { body: ctx.body, trace, veto, throttleWaitMs };
+  return { body: ctx.body, trace, veto };
 }
 
 /**
@@ -1346,29 +1205,6 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         args.leadId,
         meetingPolicy?.humanCommand === true || replyPolicy !== null,
       ));
-    const pacingCfg = await loadChannelKnobs(
-      client,
-      args.tenantId,
-      args.channelSessionId,
-      args.log,
-    );
-    const pacingState = await loadPacingState(client, args.tenantId, args.channelSessionId, {
-      now: args.now,
-      timezone: pacingCfg.knobs.timezone,
-      numberActivatedAt: pacingCfg.numberActivatedAt,
-    });
-    const spinningKnobs = await loadSpinningKnobs(
-      client,
-      args.tenantId,
-      args.channelSessionId,
-      args.log,
-    );
-    const window = await loadRecentCopies(
-      client,
-      args.tenantId,
-      args.channelSessionId,
-      spinningKnobs.windowSize,
-    );
     // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
@@ -1394,15 +1230,6 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       optedOut,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
-      pacing: {
-        knobs: pacingCfg.knobs,
-        state: pacingState,
-        crmDailyLimit: args.crmDailyLimit,
-        rng: args.rng,
-        ...(args.resposta !== undefined ? { resposta: args.resposta } : {}),
-      },
-      spinning: { knobs: spinningKnobs, window },
-      ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
       promise: {
         table: promise?.table ?? null,
         ...(promise?.versionId !== undefined ? { versionId: promise.versionId } : {}),
@@ -1428,7 +1255,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
     };
 
-    const { body: evaluatedBody, trace: traceDaCadeia, veto, throttleWaitMs } = evaluateBeforeSend(ctx, gates);
+    const { body: evaluatedBody, trace: traceDaCadeia, veto } = evaluateBeforeSend(ctx, gates);
     // Reescrever o texto do modelo sem deixar rastro é mudar o que o cliente lê
     // sem ninguém poder auditar depois. A linha entra ANTES da cadeia porque a
     // reescrita acontece antes dela, e leva só rótulos — nunca o corpo (sem PII).
@@ -1487,8 +1314,11 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       return { status: 'vetoed', trace, ...veto };
     }
 
-    // Throttle: espera o gap restante (bounded pelos knobs) antes do envio.
-    if (throttleWaitMs > 0) await (args.sleep ?? realSleep)(throttleWaitMs);
+    // Ritmo fixo do número (0,3–0,8 s) — só onde há risco de banimento por volume. Canal oficial passa direto.
+    if (capabilitiesOf(provider).banRisk) {
+      const esperaMs = reservarRitmo(args.channelSessionId, Date.now(), args.rng);
+      if (esperaMs > 0) await (args.sleep ?? realSleep)(esperaMs);
+    }
 
     // ctx.body é o corpo FINAL (emendado pelo disclosureGate F4-05 quando aplicável).
     if (args.approvedReply && ctx.body !== args.body)
@@ -1499,12 +1329,6 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // já foram (ou serão) contabilizados na tentativa original — o ledger F2-06 faz as
     // repetições curto-circuitarem, então re-registrar aqui inflaria o cap.
     if (outcome.kind === 'sent') {
-      await recordSend(client, args.tenantId, args.channelSessionId, args.now);
-      // Simetria com o gate desarmado: quem não é julgado pela janela não entra
-      // nela. Ver `GateContext.spinningEnforced`.
-      if (args.enforceSpinning !== false) {
-        await recordCopy(client, args.tenantId, args.channelSessionId, ctx.body, args.now);
-      }
     }
     await client.query('commit');
     return { status: 'sent', outcome, trace };
@@ -1606,26 +1430,6 @@ function emitTrace(log: Logger, channelSessionId: string, trace: GateTraceEntry[
   }
 }
 
-/**
- * O TIPO do envio que a tentativa representava — vocabulário fechado da coluna
- * `before_send_traces.tipo_envio` (migration 0535, #2112).
- *
- * A cadeia já SABIA o tipo (`RunBeforeSendArgs.resposta`, 0495): o que faltava
- * era gravá-lo. Sem ele, o aviso de retenção da conversa tratava TODO veto como
- * resposta e avaliava a janela errada para um disparo de follow-up — e o
- * histórico não tinha por onde responder "seguramos um DISPARO às 3h".
- */
-export type TipoDeEnvio = 'resposta' | 'disparo';
-
-/**
- * `resposta` verdadeiro vira `resposta`; TODO o resto (omitido = disparo, que é
- * o default da cadeia) vira `disparo`. O `true` explícito porque é a direção
- * que fecha: um valor inesperado não pode cair no lado que abre a janela de
- * resposta às 3h para quem não escreveu nada.
- */
-export function tipoDeEnvio(resposta: boolean | undefined): TipoDeEnvio {
-  return resposta === true ? 'resposta' : 'disparo';
-}
 
 /**
  * Persiste o trace da tentativa em `before_send_traces` para export por run (F4-08 acc 3).
@@ -1642,8 +1446,8 @@ async function persistTrace(
   try {
     const { rows } = await args.pool.query<{ id: string }>(
       `insert into before_send_traces
-         (organization_id, job_id, contact_id, channel_session_id, trace, vetoed_gate, vetoed_code, tipo_envio)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+         (organization_id, job_id, contact_id, channel_session_id, trace, vetoed_gate, vetoed_code)
+       values ($1, $2, $3, $4, $5, $6, $7)
        returning id`,
       [
         args.tenantId,
@@ -1653,9 +1457,6 @@ async function persistTrace(
         JSON.stringify(trace),
         veto?.gate ?? null,
         veto?.code ?? null,
-        // #2112: o TIPO da tentativa vai junto com o veto — é o que permite ao
-        // aviso de retenção avaliar a janela certa (resposta × disparo).
-        tipoDeEnvio(args.resposta),
       ],
     );
     return rows[0]?.id ?? null;

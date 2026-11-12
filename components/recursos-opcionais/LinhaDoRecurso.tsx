@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,8 +21,9 @@ const VARIANTE: Record<EstadoDoRecurso, "success" | "neutral" | "info" | "warnin
 };
 
 /**
- * Uma linha do mapa de recursos opcionais. Só LEITURA: o botão leva à tela onde
- * a chave mora, e é lá que se liga — nunca aqui (doc 80).
+ * Uma linha do mapa de recursos opcionais. O botão leva à tela onde a chave
+ * mora (doc 80). Exceção: recurso sem tela de assunto (a Agenda) traz a chave
+ * como `children` — é o único caminho de escrita dela, não um segundo.
  */
 export function LinhaDoRecurso({
   recurso,
@@ -29,6 +31,7 @@ export function LinhaDoRecurso({
   rotuloDoEstado,
   ajustar,
   idioma,
+  children,
 }: {
   recurso: RecursoOpcional;
   estado: EstadoDoRecurso;
@@ -37,6 +40,8 @@ export function LinhaDoRecurso({
   /** `null` = sem botão (não há tela, ou quem vê não pode abri-la). */
   ajustar: string | null;
   idioma: Idioma;
+  /** Controle que mora na própria linha (ex.: a chave da Agenda). */
+  children?: ReactNode;
 }) {
   return (
     <li
@@ -63,6 +68,7 @@ export function LinhaDoRecurso({
             </Link>
           </Button>
         )}
+        {children}
       </div>
     </li>
   );

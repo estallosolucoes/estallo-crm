@@ -29,7 +29,9 @@
  * decide com dado.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import * as React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render as renderSemQuery, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { Contact } from "@/lib/types/contacts";
@@ -45,15 +47,42 @@ vi.mock("@/hooks/contacts/useContactList", () => ({
   useContactList: (filtros: { search?: string }) => busca(filtros),
 }));
 
+vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
+  useAssignableMembers: () => ({
+    data: [
+      { user_id: "0b000000-0000-4000-8000-0000000000aa", role: "agent", full_name: "Quem cria" },
+    ],
+  }),
+}));
+vi.mock("@/hooks/leads/useProdutosDoNegocio", () => ({
+  useCatalogoDeProdutos: () => ({ data: [] }),
+}));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useActiveOrg: () => ({ currency: "BRL", country: null }),
+  useAuth: () => ({ activeOrg: { orgId: "org-1" } }),
+  useUser: () => ({ id: "0b000000-0000-4000-8000-0000000000aa", full_name: "Quem cria" }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 
+// O diálogo lê a cache do react-query (seletor de tags, quadro a reler).
+function ComQuery({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+const render = (ui: React.ReactElement) => renderSemQuery(ui, { wrapper: ComQuery });
+
 const ETAPAS = [
-  { id: "11111111-1111-4111-8111-111111111111", name: "Novo", is_won: false, is_lost: false, is_archived: false },
+  {
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "Novo",
+    is_won: false,
+    is_lost: false,
+    is_archived: false,
+  },
 ] as unknown as Stage[];
 
 const MICHELLE = {

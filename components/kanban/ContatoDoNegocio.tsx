@@ -6,10 +6,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useContact } from "@/hooks/contacts/useContact";
+import { useCamposPersonalizados } from "@/hooks/campos/useCamposPersonalizados";
+import { campoVisivelNoLead } from "@/lib/campos/definicao";
+import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useT } from "@/hooks/i18n/useT";
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
@@ -25,6 +29,7 @@ import {
   type TipoDeLink,
 } from "@/lib/leads/links-de-contato";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { ArrowSquareOut } from "@/lib/ui/icons";
 import type { Contact } from "@/lib/types/contacts";
 
 interface Props {
@@ -36,6 +41,8 @@ interface Props {
    * `useContatosRelacionados` segura a chamada sem `leadId`.
    */
   leadId?: string | null;
+  /** Onde o negócio está — decide quais campos de CONTATO aparecem (cadastro central). */
+  lead?: { pipeline_id: string; stage_id: string } | null;
 }
 
 /**
@@ -54,12 +61,12 @@ interface Props {
  * As PESSOAS RELACIONADAS são só leitura nesta fatia: escrever (adicionar,
  * remover, dar papel) é a F2 da mesma issue, com `POST`/`DELETE` nesta rota.
  */
-export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
+export function ContatoDoNegocio({ contactId, pipelineId, leadId, lead = null }: Props) {
   const t = useT();
   return (
     <>
       {contactId ? (
-        <ContatoVinculado contactId={contactId} pipelineId={pipelineId} />
+        <ContatoVinculado contactId={contactId} pipelineId={pipelineId} lead={lead} />
       ) : (
         <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
       )}
@@ -68,16 +75,47 @@ export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
   );
 }
 
-function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipelineId: string }) {
+function ContatoVinculado({
+  contactId,
+  pipelineId,
+  lead,
+}: {
+  contactId: string;
+  pipelineId: string;
+  lead: { pipeline_id: string; stage_id: string } | null;
+}) {
   const t = useT();
-  const { data, isLoading, isError } = useContact(contactId);
+  const { data, isLoading, isError, refetch, isFetching } = useContact(contactId);
   const contato = data?.data;
+  const cadastro = useCamposPersonalizados("contact");
+  const camposDoContato: CustomFieldDef[] = (cadastro.data?.definicoes ?? [])
+    .filter((d) => campoVisivelNoLead(d, lead))
+    .map((d) => ({
+      key: d.key,
+      label: d.label,
+      type: d.type,
+      required: d.obrigatorio !== "nao",
+      options: d.options,
+    }));
 
   if (isLoading) {
-    return <p className="text-xs text-text-muted">{t("Carregando…")}</p>;
+    return (
+      <div aria-busy="true" aria-label={t("Carregando…")} className="space-y-2">
+        <Skeleton className="h-8 w-1/2" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    );
   }
   if (isError || !contato) {
-    return <p className="text-xs text-text-muted">{t("Não consegui carregar o contato.")}</p>;
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-text-muted">{t("Não consegui carregar o contato.")}</p>
+        <Button type="button" variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>
+          {t("Tentar de novo")}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -85,6 +123,7 @@ function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipeli
       <TabsList>
         <TabsTrigger value="dados">{t("Dados")}</TabsTrigger>
         <TabsTrigger value="links">{t("Links")}</TabsTrigger>
+        {camposDoContato.length > 0 && <TabsTrigger value="campos">{t("Campos")}</TabsTrigger>}
       </TabsList>
       <TabsContent value="dados">
         <DadosDoContato contato={contato} />
@@ -96,6 +135,11 @@ function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipeli
             pessoa está digitando. */}
         <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
       </TabsContent>
+      {camposDoContato.length > 0 && (
+        <TabsContent value="campos">
+          <CamposDoContato key={contato.updated_at} contato={contato} campos={camposDoContato} />
+        </TabsContent>
+      )}
     </Tabs>
   );
 }
@@ -127,8 +171,8 @@ function PessoasRelacionadas({ leadId }: { leadId: string | null }) {
   const pessoas = data?.data ?? [];
   if (pessoas.length === 0) return null;
   return (
-    <div className="mt-3 space-y-1" data-testid="pessoas-relacionadas">
-      <p className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
+    <div className="mt-3 space-y-1 border-t border-border pt-3" data-testid="pessoas-relacionadas">
+      <p className="text-[11px] leading-4 font-semibold tracking-[0.035em] text-text-muted uppercase">
         {t("Pessoas relacionadas")}
       </p>
       <ul className="space-y-1">
@@ -197,6 +241,44 @@ function DadosDoContato({ contato }: { contato: Contact }) {
   );
 }
 
+/** Os campos personalizados de CONTATO (cadastro central) que valem para este negócio. */
+function CamposDoContato({ contato, campos }: { contato: Contact; campos: CustomFieldDef[] }) {
+  const t = useT();
+  const atualizar = useUpdateContact(contato.id);
+  const [valores, setValores] = useState<Record<string, unknown>>(
+    () => (contato.custom_fields ?? {}) as Record<string, unknown>,
+  );
+
+  async function salvar(e: FormEvent) {
+    e.preventDefault();
+    try {
+      // O PATCH troca o `custom_fields` INTEIRO: mescla com o que já existe
+      // (links e campos de outras etapas ficam).
+      await atualizar.mutateAsync({
+        custom_fields: { ...((contato.custom_fields ?? {}) as Record<string, unknown>), ...valores },
+      });
+      toast.success(t("Campos atualizados"));
+    } catch {
+      // `useUpdateContact` já mostra o erro da API.
+    }
+  }
+
+  return (
+    <form onSubmit={salvar} className="space-y-3" data-testid="campos-do-contato">
+      <CustomFieldsEditor
+        fields={campos}
+        value={valores}
+        onChange={setValores}
+        mode="contact"
+        className="gap-3 md:grid-cols-1"
+      />
+      <Button type="submit" size="sm" disabled={atualizar.isPending}>
+        {atualizar.isPending ? t("Salvando…") : t("Salvar")}
+      </Button>
+    </form>
+  );
+}
+
 function FormularioDeLinks({ contato, pipelineId }: { contato: Contact; pipelineId: string }) {
   const t = useT();
   const qc = useQueryClient();
@@ -261,9 +343,9 @@ function FormularioDeLinks({ contato, pipelineId }: { contato: Contact; pipeline
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`${t("Abrir")} ${t(rotulo)}`}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-text-muted hover:text-text"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-text-muted hover:bg-accent-soft hover:text-accent"
                   >
-                    ↗
+                    <ArrowSquareOut size={16} aria-hidden />
                   </a>
                 )}
               </div>

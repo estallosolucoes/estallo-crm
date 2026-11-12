@@ -21,7 +21,7 @@
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
-import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { env } from "@/lib/env";
 import { origemDoDreno } from "@/lib/event-log/origem-do-dreno";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -49,7 +49,7 @@ export const avisoDeCasoAoSuporteHandler: EventHandler = {
           // conhece provedor. O import é tardio para o topo não arrastar os
           // adapters para dentro do bundle de quem só registra o handler.
           transporte: await criarTransporteDoAviso(admin),
-          pacing: await criarPacingDoCanal(admin),
+          esperarRitmo,
           clock: () => new Date(),
           urlPublica: env.NEXT_PUBLIC_APP_URL,
           origemDoDreno,

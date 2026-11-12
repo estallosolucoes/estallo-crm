@@ -217,7 +217,7 @@ export function CallsClient() {
                         className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                           turn.speaker === "agent"
                             ? "self-start bg-muted"
-                            : "self-end bg-primary text-primary-foreground"
+                            : "self-end bg-primary dark:bg-accent-700 text-primary-foreground"
                         }`}
                       >
                         <div className="mb-1 text-xs opacity-70">

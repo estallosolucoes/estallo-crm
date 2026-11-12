@@ -8,15 +8,11 @@
 
 ## Project Overview
 
-Sistema operacional de vendas open source com agentes de IA nativos, multi-nicho (e-commerce,
-clínicas, imobiliárias, infoprodutos, serviços), WhatsApp como canal primário via WAHA, CRM
-inteiro exposto por MCP. Multi-tenant com RLS desde o dia 1; LGPD nativa. Monetização =
-**self-host em VPS**, não assinatura. Posicionamento: [`VISION.md`](VISION.md); estado real de
-implementação: [`docs/current-state.md`](docs/current-state.md).
+Estallo CRM é o SaaS comercial da Estallo para atendimento e vendas por WhatsApp. A Estallo hospeda e administra a plataforma; cada empresa usa uma organização isolada por RLS. A identidade do produto é fixa, com dados da empresa separados da marca do sistema. A licença MIT e a procedência DeskcommCRM são preservadas.
 
-**Consequência que muda como você trabalha:** o produto é distribuído como código. Quem instala
-numa VPS **é** o usuário. Uma mudança que funciona na máquina do dev e quebra no clone fresco é
-**bug de produto**, não detalhe de ambiente. Nada que exija edição manual de arquivo na VPS entra.
+Direção atual: [`VISION.md`](VISION.md) e [`docs/estallo-produto.md`](docs/estallo-produto.md). Planos exibidos são demonstrativos; integração Stripe, credenciais e preços finais estão pendentes. Nutrigg é a referência comercial, não o módulo de cobrança herdado do upstream.
+
+Os workflows deste fork foram reativados pelo proprietário em 31/10/2026 e, desde a regularização da cobrança (medido em 05/11/2026), os jobs executam. A VPS já tem login no GHCR (os pacotes seguem privados); falta provar a primeira publicação do `publish-image.yml` depois da regularização. Até isso acontecer, o deploy usa as imagens locais de `docs/estallo-vps.md`; confira o estado com `gh workflow list --all` e as anotações do último job. A VPS é operada pela Estallo e o usuário do SaaS não instala o produto.
 
 Stack canônica (major; a versão exata é o `package.json`):
 
@@ -80,21 +76,21 @@ Turno do agente de IA: inbound WhatsApp → HMAC + idempotência → `event_log`
 disparar. Entrada do turno em `lib/agent-engine/agent/inbound-turn.ts`; diagrama em
 `docs/architecture/agent-turn.html`.
 
-| Path | O quê |
-|---|---|
-| `app/api/v1/` | Route handlers REST (versionado por path) — **reconte, não cite**: `git ls-files 'app/api/v1/**/route.ts' \| wc -l` (e `git ls-files 'app/api/**/route.ts' \| wc -l` para o total de `app/api/**`) |
-| `app/api/internal/`, `app/api/mcp/`, `app/api/v1/cron/` | superfícies não-cookie (secret/bearer próprio) |
-| `app/app/` | UI autenticada do tenant · `app/admin/` UI de plataforma |
-| `app/actions/` | Server Actions (auth, onboarding, team, settings) |
-| `lib/agent-engine/`, `lib/ai/` | runtime do agente, guardrails, RAG, dispatcher |
-| `lib/api/wrappers.ts` | `ok()` / `fail()` — **use sempre**, não monte Response na mão |
-| `lib/auth/require-role.ts` | `requireRole()` — guard canônico de RBAC |
-| `lib/supabase/{browser,server,admin}.ts` | clients canônicos |
-| `workers/` | workers de `event_log` + crons |
-| `supabase/migrations/` | schema versionado · `supabase/baseline.sql` = o que o self-host aplica |
-| `proxy.ts` | middleware do Next 16 (auth de borda, `X-Request-Id`) |
-Idempotência de worker: `unique (organization_id, external_id)` + captura de `code === '23505'`.
-Contrato completo em [`docs/specs/07-spec-events-workers.md`](docs/specs/07-spec-events-workers.md).
+| Path                                                                                                 | O quê                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/api/v1/`                                                                                        | Route handlers REST (versionado por path) — **reconte, não cite**: `git ls-files 'app/api/v1/**/route.ts' \| wc -l` (e `git ls-files 'app/api/**/route.ts' \| wc -l` para o total de `app/api/**`) |
+| `app/api/internal/`, `app/api/mcp/`, `app/api/v1/cron/`                                              | superfícies não-cookie (secret/bearer próprio)                                                                                                                                                     |
+| `app/app/`                                                                                           | UI autenticada do tenant · `app/admin/` UI de plataforma                                                                                                                                           |
+| `app/actions/`                                                                                       | Server Actions (auth, onboarding, team, settings)                                                                                                                                                  |
+| `lib/agent-engine/`, `lib/ai/`                                                                       | runtime do agente, guardrails, RAG, dispatcher                                                                                                                                                     |
+| `lib/api/wrappers.ts`                                                                                | `ok()` / `fail()` — **use sempre**, não monte Response na mão                                                                                                                                      |
+| `lib/auth/require-role.ts`                                                                           | `requireRole()` — guard canônico de RBAC                                                                                                                                                           |
+| `lib/supabase/{browser,server,admin}.ts`                                                             | clients canônicos                                                                                                                                                                                  |
+| `workers/`                                                                                           | workers de `event_log` + crons                                                                                                                                                                     |
+| `supabase/migrations/`                                                                               | schema versionado · `supabase/baseline.sql` = o que o self-host aplica                                                                                                                             |
+| `proxy.ts`                                                                                           | middleware do Next 16 (auth de borda, `X-Request-Id`)                                                                                                                                              |
+| Idempotência de worker: `unique (organization_id, external_id)` + captura de `code === '23505'`.     |
+| Contrato completo em [`docs/specs/07-spec-events-workers.md`](docs/specs/07-spec-events-workers.md). |
 
 ## Key Directories
 
@@ -110,10 +106,10 @@ Contrato completo em [`docs/specs/07-spec-events-workers.md`](docs/specs/07-spec
 | `lib/api/`              | `wrappers.ts` (`ok()`/`fail()`) e `errors.ts` (catálogo de códigos)                                             |
 | `lib/auth/`             | `server.ts` (sessão/org), `require-role.ts` (`requireRole`), `public-paths.ts` (borda)                          |
 | `lib/supabase/`         | Clients canônicos: `browser.ts`, `server.ts`, `admin.ts` (service role)                                         |
-| `lib/branding/`         | Marca própria (white-label) — resolve do banco, nunca do .env                                                   |
+| `lib/branding/`         | Identidade fixa do SaaS — política central do produto                                                           |
 | `workers/`              | Workers de `event_log` + crons                                                                                  |
 | `components/`, `hooks/` | React compartilhado; convenções nos README de cada pasta                                                        |
-| `supabase/migrations/`  | Schema versionado (`MANIFEST.md` = histórico); `supabase/baseline.sql` é o que o self-host aplica              |
+| `supabase/migrations/`  | Schema versionado (`MANIFEST.md` = histórico); `supabase/baseline.sql` é o que o self-host aplica               |
 | `hostgator-setup-kit/`  | Kit de instalação/atualização da VPS (`install.sh`, `update.sh`, `diagnostico.sh`, `healthcheck.sh`)            |
 | `scripts/`              | CLIs de operação e QA — ver `scripts/README.md`                                                                 |
 | `tests/`                | `unit/`, `invariants/`, `e2e/`, `shell/`, `journeys/`, `fixtures/`                                              |
@@ -157,7 +153,9 @@ Se a mudança toca schema/RLS/tabela tenant-aware, rode `pnpm test:db`. Se toca 
 usuário, rode `pnpm test:e2e` com evidência visual. Se toca `Dockerfile*`, `docker-compose*` ou
 `hostgator-setup-kit/`, rode `pnpm test:shell` — é o único gate que exercita o kit.
 
-**O que o CI cobre.** `.github/workflows/ci.yml`: `verify` = os passos do job, na ordem —
+**Referência de CI.** Os workflows estão ligados neste fork desde 31/10/2026, e os jobs executam desde a regularização da cobrança (05/11/2026); a publicação de imagens no GHCR ainda não foi provada. A branch protection descrita abaixo é a do upstream (`melgarafael/DeskcommCRM`).
+
+`.github/workflows/ci.yml`: `verify` = os passos do job, na ordem —
 typecheck, lint, `lint:channels`, `test:unit` e `test:shell` hoje, e `pnpm lint` sozinho **não**
 cobre os dois últimos (liste em vez de acreditar nesta linha:
 `awk '/^  verify:/,/^  invariants-majors:/' .github/workflows/ci.yml | grep -A1 'name:'`);
@@ -195,6 +193,7 @@ a pessoa não saiba que ele existe — `tests/unit/skills-embutidas.test.ts` exi
 cite cada um:
 
 **Os cinco são checks obrigatórios** na branch protection da `main` — medido em 2026-08-14 @ `741c4ec8` (o comando exige permissão de **admin** no repositório: com token de contribuidor ele devolve `404`, medido em 2026-09-13):
+
 | Situação                                                                            | Guia                    |
 | ----------------------------------------------------------------------------------- | ----------------------- |
 | Instalar, atualizar ou consertar a instalação numa VPS; domínio, Supabase, WhatsApp | `deskcomm-instalar`     |
@@ -256,11 +255,18 @@ função aparece várias vezes, e quem vale é a **última**. Pergunte ao banco 
 (`pg_get_functiondef`) ou ancore no último `create or replace` (`rfind`, nunca `find`).
 Contar no arquivo responde "o arquivo menciona", não "o banco faz".
 
-**Marca própria (white-label)** — o produto é revendido e o nome não é seu. **Nunca** escreva
-"Deskcomm"/"DeskcommCRM" em código que alcança o usuário: `tests/unit/branding.test.ts` varre
-`app|components|lib|workers|hooks` e reprova (a allowlist só encolhe). A marca resolve do banco
-(`platform_branding`, `organizations.settings.branding`); `APP_NAME`/`APP_LOGO_URL`/`APP_ACCENT_HEX`
-no `.env` são semente e piso de rollback. Fora do DOM (e-mail, ícone, `issuer` do MFA) use
+### Design System Estallo — padrão único
+
+- A única referência visual vigente é o Design System da Estallo, documentado em [`docs/design-system/README.md`](docs/design-system/README.md), a partir do Estallo Brand System v1.0 fornecido pelo proprietário.
+- Usar Sora para títulos, Manrope para leitura e controles, JetBrains Mono para dados técnicos; Estallo Blue para ação, Estallo Green para resultado e Ink para texto e navegação.
+- Tokens do produto vivem em `app/globals.css`; `lib/branding/regua-do-produto.ts` é o espelho runtime. O laboratório em `app/design/` e documentos históricos não são fontes normativas de identidade.
+- Specs, planos e handoffs que mencionam escolhas visuais do upstream estão superados nesse aspecto. Seus contratos técnicos permanecem válidos; não restaurar marca, fontes ou paleta antigas.
+- O padrão vale para todos os módulos. O redesenho é progressivo e a existência de uma tela antiga não autoriza um padrão concorrente. Validar contraste, mobile e ambos os temas ao alterar UI.
+
+**Identidade fixa do SaaS** — a marca pertence à plataforma Estallo. **Nunca** escreva
+"Deskcomm"/"Estallo CRM" em código que alcança o usuário: `tests/unit/branding.test.ts` varre
+`app|components|lib|workers|hooks` e reprova (a allowlist só encolhe). A identidade resolve pela política fixa em `lib/branding/plataforma.ts`.
+Campos de marca herdados no banco/ambiente não substituem a identidade do SaaS. Fora do DOM (e-mail, ícone, `issuer` do MFA) use
 `marcaDaSaida()` de `lib/branding/saida.ts`. O resolvedor **nunca lança** — ele roda em
 `app/layout.tsx` e um throw ali é 500 em todas as telas. O PDF de LGPD não leva marca: ele nomeia
 o controlador (`organizations.legal_name`) e o DPO.
@@ -281,10 +287,10 @@ o controlador (`organizations.legal_name`) e o DPO.
 - **`docker-compose.traefik.yml`** — numa VPS que já tem proxy reverso próprio
   (Hostinger, Coolify, Dokploy…), é o único lugar que dá ao contêiner `app` as labels
   de roteamento. Todo `up -d` leva os **dois** arquivos de compose:
-**Anti-patterns proibidos** — string que deveria ser FK; duplicação sem source of truth declarado;
-feature nomeando um provider de canal (gate `pnpm lint:channels`); tela nova sem porta declarada em
-`lib/navigation/registry.ts` (gate `tests/unit/navegacao-completude.test.ts`); `getSession()` no
-server; segredo em query string; `throw` cru na borda da API.
+  **Anti-patterns proibidos** — string que deveria ser FK; duplicação sem source of truth declarado;
+  feature nomeando um provider de canal (gate `pnpm lint:channels`); tela nova sem porta declarada em
+  `lib/navigation/registry.ts` (gate `tests/unit/navegacao-completude.test.ts`); `getSession()` no
+  server; segredo em query string; `throw` cru na borda da API.
 
 ## Important Files
 
@@ -340,13 +346,13 @@ server; segredo em query string; `throw` cru na borda da API.
 - `lib/database.types.ts` (gerado do schema Supabase — o tamanho de hoje sai de `wc -l lib/database.types.ts`)
 - `graphify-out/` (grafo de conhecimento local; ignorado pelo git e **ausente num clone fresco** — só existe depois de rodar `/graphify .`)
 - `pnpm-lock.yaml`, `tsconfig.tsbuildinfo`, `next-env.d.ts`, `.next/`
-| Camada                        | Comando              | O que cobre                                                                    |
-| ----------------------------- | -------------------- | ------------------------------------------------------------------------------ |
-| Unit (vitest, jsdom)          | `pnpm test:unit`     | `tests/unit/**` + todo `*.test.ts(x)` ao lado do código. Timeout 15s por teste |
-| Invariantes de banco (Docker) | `pnpm test:db`       | Isolamento cross-tenant/RLS, RBAC e governança contra Postgres efêmero         |
-| E2E (Playwright + axe-core)   | `pnpm test:e2e`      | Jornadas reais contra app buildado e o banco do `baseline.sql`                 |
-| Kit self-host (bash)          | `pnpm test:shell`    | `scripts` do kit, `install.sh`, `update.sh` — o único gate do kit              |
-| Jornadas de canal             | `pnpm test:journeys` | `tests/journeys/` (config Playwright própria)                                  |
+  | Camada                        | Comando              | O que cobre                                                                    |
+  | ----------------------------- | -------------------- | ------------------------------------------------------------------------------ |
+  | Unit (vitest, jsdom)          | `pnpm test:unit`     | `tests/unit/**` + todo `*.test.ts(x)` ao lado do código. Timeout 15s por teste |
+  | Invariantes de banco (Docker) | `pnpm test:db`       | Isolamento cross-tenant/RLS, RBAC e governança contra Postgres efêmero         |
+  | E2E (Playwright + axe-core)   | `pnpm test:e2e`      | Jornadas reais contra app buildado e o banco do `baseline.sql`                 |
+  | Kit self-host (bash)          | `pnpm test:shell`    | `scripts` do kit, `install.sh`, `update.sh` — o único gate do kit              |
+  | Jornadas de canal             | `pnpm test:journeys` | `tests/journeys/` (config Playwright própria)                                  |
 
 Convenções: teste ao lado do código (`lib/foo/bar.test.ts`) ou em `tests/{unit,api,invariants,e2e}`.
 `tests/e2e/**` e `tests/invariants/**` são **excluídos** do vitest de propósito — não os mova para
@@ -375,8 +381,8 @@ O `.env.e2e` é obrigatório e é recusado se apontar para Supabase que não sej
 `localhost` — a proteção existe porque sem ela a suíte rodaria contra produção (`pnpm e2e:env`
 gera o arquivo).
 
-**QA visual com recursos reais (doutrina).** O produto é self-host: a experiência de quem instala
-numa VPS **é** o produto. Toda feature nova, ou fix de comportamento visível, deve ser provada
+**QA visual com recursos reais (doutrina).** O produto é SaaS operado pela Estallo: a experiência real do cliente e a operação
+da plataforma precisam de prova visual. Toda feature nova, ou fix de comportamento visível, deve ser provada
 pela tela como um usuário leigo faria, em ambiente fresco estilo VPS, com evidência visual.
 `curl` não conta como prova de UX. Quando o caminho passa por um agente de IA, o caso de aceite
 mede o **par** (tela pelo agente + ferramenta chamada direto, com o mesmo texto cru) e só conta
@@ -399,8 +405,8 @@ cabeçalho passava a mentir por todos eles.
   que originou a discussão, está **fechada** e o título dela descreve um estado que já não vale.
   Quantas existem: `ls tests/e2e/*.spec.ts | wc -l`. Quantas ficam fora:
   `git show origin/main:.github/workflows/e2e.yml | grep -A4 'FORA_DO_CI:'`.
-**Antes de declarar pronto**, siga a **Definition of Done de [`CLAUDE.md`](CLAUDE.md)** — não
-confie na memória, conte lá:
+  **Antes de declarar pronto**, siga a **Definition of Done de [`CLAUDE.md`](CLAUDE.md)** — não
+  confie na memória, conte lá:
 
 ```bash
 sed -n '/^## Definition of Done/,/^Um staff engineer/p' CLAUDE.md | grep -cE '^[0-9]+\. '
@@ -433,6 +439,7 @@ itens envelhecem em ritmos diferentes, e o cabeçalho passava a mentir por todos
   (DoD 12). E o gate só vale em PR que alcança o `e2e` (regra em `scripts/pr-alcanca-o-e2e.sh`):
   o que pula as partes sai com `e2e` verde sem ter provado tela nenhuma, a da instalação fresca
   inclusive. O número e a contagem que ficavam aqui eram de uma fotografia de agosto.
+
 - Rate limit HTTP: `lib/auth/rate-limit.ts` cobre **login, signup, recuperação de senha e
   aceite de convite** (contando por IP **e** por identificador hasheado); `checkRateLimit` cobre
   o webhook de captação e o dispatcher de IA. **Crons seguem sem.** O MCP conta em dois pontos:
@@ -533,14 +540,14 @@ Antigravity; o Claude Code lê o espelho em `.claude/skills/` (`pnpm skills:sync
 casar, mesmo que a pessoa não saiba que ele existe. Fora de um clone (ou num clone antigo),
 `bash scripts/instalar-guias.sh` liga os guias nas pastas globais dos cinco CLIs:
 
-| situação | guia |
-|---|---|
-| instalar, atualizar ou consertar a instalação numa VPS; domínio, Supabase, WhatsApp que não conecta | `deskcomm-instalar` |
-| configurar o CRM para um cliente ou nicho: agentes, roteadores, follow-ups, base de conhecimento | `deskcomm-cliente-novo` |
-| desempenho, conversão, custo de IA, funil, relatório | `deskcomm-metricas` |
-| o agente responde errado, passa tudo para humano, não usa a agenda; melhorar o prompt | `deskcomm-prompt` |
-| contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main` | `deskcomm-contribuir` — que fica quieto quando `bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh` responde `mantenedor` |
-| escrever ou revisar código aqui | `deskcomm-doutrina` (as três regras que mais custam) e `sistema-vivo` (o gate de arquitetura) |
+| situação                                                                                            | guia                                                                                                                               |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| instalar, atualizar ou consertar a instalação numa VPS; domínio, Supabase, WhatsApp que não conecta | `deskcomm-instalar`                                                                                                                |
+| configurar o CRM para um cliente ou nicho: agentes, roteadores, follow-ups, base de conhecimento    | `deskcomm-cliente-novo`                                                                                                            |
+| desempenho, conversão, custo de IA, funil, relatório                                                | `deskcomm-metricas`                                                                                                                |
+| o agente responde errado, passa tudo para humano, não usa a agenda; melhorar o prompt               | `deskcomm-prompt`                                                                                                                  |
+| contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main`                   | `deskcomm-contribuir` — que fica quieto quando `bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh` responde `mantenedor` |
+| escrever ou revisar código aqui                                                                     | `deskcomm-doutrina` (as três regras que mais custam) e `sistema-vivo` (o gate de arquitetura)                                      |
 
 Os guias têm vitrine pública em [deskcomm.com.br/guias](https://www.deskcomm.com.br/guias) (pt-BR,
 en, es), escrita à mão no repositório `deskcomm-site` (`conteudo/guias.ts`). Guia criado,
@@ -575,7 +582,7 @@ por código) e o que é **INFERIDO**.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 

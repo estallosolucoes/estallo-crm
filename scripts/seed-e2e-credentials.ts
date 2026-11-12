@@ -84,6 +84,24 @@ const USERS: Array<{
   { chave: "dono", email: "e2e-dono@deskcomm.test", role: "admin", full_name: "E2E Dono do Servidor" },
 ];
 
+/**
+ * A Agenda é capacidade que a EMPRESA liga (`settings.agenda_habilitada`, padrão DESLIGADA no Estallo: esconde tela,
+ * menu e ferramentas do agente). A migration 0656 só liga para quem já usava a agenda, então uma org nova do seed
+ * nasce sem ela e toda spec que abre /app/agenda cai numa tela que não monta. O seed liga, e preserva o resto do
+ * `settings` (merge, nunca substituição).
+ */
+async function ligarAgenda(orgId: string): Promise<void> {
+  const { data, error } = await admin.from("organizations").select("settings").eq("id", orgId).maybeSingle();
+  if (error) throw new Error(`ler settings da org: ${error.message}`);
+  const atual = ((data as { settings?: Record<string, unknown> | null } | null)?.settings ?? {}) as Record<string, unknown>;
+  if (atual.agenda_habilitada === true) return;
+  const { error: erroLigar } = await admin
+    .from("organizations")
+    .update({ settings: { ...atual, agenda_habilitada: true } } as never)
+    .eq("id", orgId);
+  if (erroLigar) throw new Error(`ligar a agenda da org: ${erroLigar.message}`);
+}
+
 async function ensureOrg(): Promise<string> {
   const { data: existing } = await admin
     .from("organizations")
@@ -124,6 +142,7 @@ async function ensureOrg(): Promise<string> {
       throw new Error(`reafirmar org onboarded: ${erroOnboard.message}`);
     }
 
+    await ligarAgenda(orgExistente);
     console.log(`[seed] org existing: ${orgExistente}`);
     return orgExistente;
   }
@@ -141,6 +160,7 @@ async function ensureOrg(): Promise<string> {
     .single();
   if (error || !data) throw new Error("create org: " + error?.message);
   const orgId = (data as { id: string }).id;
+  await ligarAgenda(orgId);
   console.log(`[seed] org created: ${orgId}`);
   return orgId;
 }

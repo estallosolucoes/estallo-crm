@@ -137,3 +137,34 @@ describe("com SUPABASE_SERVER_URL preenchida, os LINKS continuam na origem públ
     expect(fonte).toContain("env.NEXT_PUBLIC_SUPABASE_URL,");
   });
 });
+
+describe("prazo das chamadas do servidor (15/10/2026)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("chamada pendurada vira TimeoutError em 20s, em vez de esperar para sempre", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    const { fetchDoServidor } = await import("./fetch-do-servidor");
+    const f = fetchDoServidor(V.PUBLICA, V.PUBLICA);
+    const chamada = f(`${V.PUBLICA}/rest/v1/crm_leads?select=*`);
+    const resultado = chamada.then(
+      () => "respondeu",
+      (e: Error) => e.name,
+    );
+    await vi.advanceTimersByTimeAsync(19_999);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(await resultado).toBe("TimeoutError");
+  });
+
+  it("chamada sem signal continua sem signal (a deduplicação do Next depende disso)", async () => {
+    const espiao = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", espiao);
+    const { fetchDoServidor } = await import("./fetch-do-servidor");
+    await fetchDoServidor(V.PUBLICA, V.PUBLICA)(`${V.PUBLICA}/rest/v1/x`, { method: "GET" });
+    const init = (espiao.mock.calls[0] as unknown[])[1] as RequestInit;
+    expect(init.signal).toBeUndefined();
+  });
+});

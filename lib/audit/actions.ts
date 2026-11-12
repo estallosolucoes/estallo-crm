@@ -126,6 +126,12 @@ export const AUDIT_ACTIONS = [
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
   "conversation.tags_changed",
+  // Menu de ações da conversa no Inbox (16/10/2026).
+  "conversation.pinned",
+  "conversation.unpinned",
+  "conversation.marked_unread",
+  "conversation.cleared",
+  "conversation.deleted",
   "contact.tags_changed",
   // Fila de confirmação (spec 17 §4b): a IA PROPÕE, uma pessoa decide. As três
   // entram porque a proposta é intenção auditável mesmo quando nunca vira
@@ -253,6 +259,7 @@ export const AUDIT_ACTIONS = [
   // A auditoria precisa distinguir o que sumiu do que continua no banco.
   "channel.deleted",
   "channel.archived",
+  "channel.history_deleted",
   // Contraparte de `archived`: a linha escondida voltou à vida (reconexão do
   // canal oficial, retomada do pareamento). Sem ela o histórico registra a
   // exclusão e cala sobre o canal ter voltado a receber e enviar. Emitida por
@@ -297,6 +304,10 @@ export const AUDIT_ACTIONS = [
   "attendant.availability_changed",
   "routing.config_changed",
   "proposals.config_changed",
+  "agenda.capacidade_alterada",
+  "custom_field.created",
+  "custom_field.updated",
+  "custom_field.deleted",
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",
@@ -342,7 +353,14 @@ export const AUDIT_ACTIONS = [
   "followup_flow.disabled",
   "followup_flow.deleted",
   "followup_flow.duplicated",
+  "automation_http_connection.created",
+  "automation_http_connection.deleted",
+  "automation.http_request_sent",
+  "followup_flow.exported",
+  "followup_enrollment.recovered",
+  "followup_flow.imported",
   "followup_flow.rolled_back",
+  "followup_flow.media_uploaded",
   "followup.worker_run",
   "followup.silence_sweep_run",
   // Roteiros de atendimento encerrados por prazo (0397) — só quando houve efeito.
@@ -357,6 +375,11 @@ export const AUDIT_ACTIONS = [
   "followup_enrollment.resumed",
   "followup_enrollment.snoozed",
   "followup_enrollment.step_skipped",
+  // Reinício de uma execução terminada (cria uma execução nova ligada à original).
+  "followup_enrollment.restarted",
+  // Execução passo a passo: o operador manda rodar o próximo bloco, ou solta a execução para seguir sozinha.
+  "followup_enrollment.step_executed",
+  "followup_enrollment.auto_continued",
   "template.created",
   "template.updated",
   "template.deleted",
@@ -1126,6 +1149,12 @@ export const AUDIT_ACTIONS = [
   // dedicada `PATCH /contacts/[id]/carteira` (#2591) — a escrita é do servidor,
   // então o audit é a única trilha de quem mudou o dono.
   "contact.carteira_changed",
+  // Estallo (0660): produtos do negócio — o valor do lead é recalculado por
+  // trigger a partir deles, então o audit é a trilha de quem mexeu no preço.
+  "lead_product.added",
+  "lead_product.updated",
+  "lead_product.removed",
+  "followup.retention_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

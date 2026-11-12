@@ -104,12 +104,11 @@ const orsDe = (chamadas: { metodo: string; args: unknown[] }[]) =>
   chamadas.filter((c) => c.metodo === "or").map((c) => String(c.args[0]));
 
 describe("listConversationsHandler — filtro por marcador", () => {
-  it("casa a caixa da conversa OU a do contato, num `or` só", async () => {
+  it("casa a caixa do contato, num `or` só (0659: conversa não tem etiqueta)", async () => {
     const chamadas = await rodar({ tag: "fidic" });
 
     expect(orsDe(chamadas)).toHaveLength(1);
     expect(termosDoOr(orsDe(chamadas)[0]!)).toEqual([
-      { campo: "tags", op: "cs", elemento: "fidic" },
       { campo: "tags_do_contato", op: "cs", elemento: "fidic" },
     ]);
     // O `contains` de caixa única não pode sobrar ao lado do `or`: seria AND,
@@ -121,7 +120,7 @@ describe("listConversationsHandler — filtro por marcador", () => {
     const marcador = 'a,b)c{d}"e\\f';
     const [or] = orsDe(await rodar({ tag: marcador }));
 
-    expect(termosDoOr(or!).map((t) => t.elemento)).toEqual([marcador, marcador]);
+    expect(termosDoOr(or!).map((t) => t.elemento)).toEqual([marcador]);
   });
 
   it("VÁRIAS etiquetas: o E e o OU saem em OPERADORES diferentes (#1274)", async () => {
@@ -133,13 +132,12 @@ describe("listConversationsHandler — filtro por marcador", () => {
     const ou = orsDe(await rodar({ tag: ["vip", "orcamento"], modo: "ou" }));
     expect(e).toHaveLength(1);
     expect(ou).toHaveLength(1);
-    expect(e[0]).toContain("tags.cs.");
-    expect(ou[0]).toContain("tags.ov.");
+    expect(e[0]).toContain("tags_do_contato.cs.");
+    expect(ou[0]).toContain("tags_do_contato.ov.");
     expect(e[0]).not.toBe(ou[0]);
-    // As DUAS caixas continuam em OU nos dois modos (a régua da 0323).
+    // Uma caixa só nos dois modos: a do contato.
     for (const or of [e[0]!, ou[0]!]) {
-      expect(or).toContain("tags.");
-      expect(or).toContain("tags_do_contato.");
+      expect(or.startsWith("tags_do_contato.")).toBe(true);
     }
   });
 

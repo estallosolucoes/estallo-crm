@@ -129,6 +129,8 @@ async function executar(nome: string, args: Record<string, unknown>, contatoDoTu
   const ator = { type: "ai_agent", id: "ag-1", role: "ai_operator" };
   const ferramentas = pickToolsFromMcp({
     toolIds: [nome],
+    // A Agenda é capacidade da empresa (padrão desligada): aqui ela está ligada.
+    capacidadesLigadas: ["agenda"],
     auth: {
       organizationId: ORG,
       role: "ai_operator",

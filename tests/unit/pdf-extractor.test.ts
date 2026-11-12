@@ -119,7 +119,7 @@ describe("extractPdfText", () => {
 /**
  * A SEGUNDA ESTRATÉGIA É A MESMA ENGINE NOUTRO PROCESSO.
  *
- * Medido na imagem `deskcomm-worker:1.27.1`: sob `tsx`, extrair a fixture de
+ * Medido na imagem `estallo-crm-worker:1.27.1`: sob `tsx`, extrair a fixture de
  * 1 KB custa 117 MB de heap (o tsx transforma `pdf.mjs` + `pdf.worker.mjs`
  * inteiros); em `node` puro, 19 MB. Um PDF real de 18 KB passava dos 227 MB e
  * matava o worker (`heap limit`) — 313 reinícios em 2026-09-15.

@@ -14,8 +14,6 @@
 import { describe, expect, it } from "vitest";
 
 import { agendaStallGate, type GateContext } from "@/lib/agent-engine/guardrails/before-send";
-import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
-import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 import { temFerramentaDeAgenda } from "@/lib/agent-engine/agent/inbound-turn";
 
 // As duas frases medidas em produção que deram origem ao gate.
@@ -54,12 +52,6 @@ function ctx(over: {
     body,
     optedOut: false,
     provider: "waha",
-    pacing: {
-      knobs: PACING_DEFAULTS,
-      state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
-      crmDailyLimit: null,
-    },
-    spinning: { knobs: SPINNING_DEFAULTS, window: [] },
     promise: { table: null },
     semanticPromise: null,
     disclosure: { template: null, isFirstOutbound: false, mode: "inject" },

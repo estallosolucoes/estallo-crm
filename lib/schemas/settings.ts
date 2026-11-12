@@ -12,7 +12,6 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
-import { conversationTagSchema } from "./messaging";
 
 /**
  * Os idiomas que a interface REALMENTE serve.
@@ -35,18 +34,6 @@ export const AI_DISPATCH_MODES = ["native", "external"] as const;
 export type AiDispatchMode = (typeof AI_DISPATCH_MODES)[number];
 export const aiDispatchModeSchema = z.enum(AI_DISPATCH_MODES).catch("native");
 
-/**
- * G3-05: vocabulário canônico de tags de conversa, persistido em
- * organizations.settings.canonical_conversation_tags (spec 13 §3.3 — org-scoped,
- * não pipeline-scoped). Schema declarativo; usado para validar o que o inbox lê
- * como sugestões.
- */
-export const canonicalConversationTagsSchema = z
-  .array(conversationTagSchema)
-  .max(50)
-  .transform((tags) => Array.from(new Set(tags)))
-  .catch([]);
-export type CanonicalConversationTags = z.infer<typeof canonicalConversationTagsSchema>;
 export type Locale = (typeof LOCALES)[number];
 
 /**
@@ -198,6 +185,11 @@ export const customFieldSchema = z.object({
   options: z
     .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
     .optional(),
+  /**
+   * Etapas DESTE funil em que o campo aparece (projeção do cadastro central,
+   * migration 0657). Ausente = aparece em todas.
+   */
+  etapas_visiveis: z.array(z.string().uuid()).optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
@@ -265,10 +257,10 @@ export const pipelineConfigPatchSchema = z.object({
    */
   comanda_no_ganho: z.boolean().optional(),
   /**
-   * O que acontece quando um negócio ENCERRADO volta (issue #1538). Ausente é
-   * `mesmo_registro`, o comportamento de antes: reabre o mesmo negócio. Com
-   * `novo_negocio`, mover o encerrado para etapa aberta é recusado e a saída é
-   * a retomada (`lib/leads/reabertura.ts`).
+   * DESCONTINUADA (30/10/2026): o funil não decide mais o que acontece quando
+   * um negócio encerrado volta — quem move escolhe no diálogo (ver
+   * `modoDeReabertura` em `lib/leads/reabertura.ts`). Segue aceita, e ignorada,
+   * para um cliente antigo não levar 422 ao salvar o funil.
    */
   reabertura: z.enum(["mesmo_registro", "novo_negocio"]).optional(),
   /** O que a retomada copia da origem; ausente é o piso (`custom_fields` e tags). */

@@ -62,8 +62,6 @@ describe("edição do tipo — lembretes dinâmicos", () => {
         colegasPodemMexerNaAgendaLigado={true}
         podeMudarAgendaDosColegas={false}
         podeLigarClientePelaAgenda={false}
-        meetAbertoLigado={false}
-        podeMudarMeetAberto={false}
       />,
     );
 
@@ -90,8 +88,6 @@ describe("edição do tipo — lembretes dinâmicos", () => {
         colegasPodemMexerNaAgendaLigado={true}
         podeMudarAgendaDosColegas={false}
         podeLigarClientePelaAgenda={false}
-        meetAbertoLigado={false}
-        podeMudarMeetAberto={false}
       />,
     );
 

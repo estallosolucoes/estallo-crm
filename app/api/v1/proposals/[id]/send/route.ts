@@ -5,8 +5,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
-import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { alocarNumero } from "@/lib/propostas/numeracao";
 import { decidirVersao } from "@/lib/propostas/versao";
@@ -158,16 +157,6 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
         .maybeSingle();
   if (!conversa) return fail("validation_failed", t("Nenhuma conversa com este contato para enviar."), 422, { requestId });
 
-  // ─── THROTTLE PRIMEIRO — antes de gastar numero ou gerar PDF (correção 1/2) ───
-  const foraDaJanela = await adiarAteAJanelaAbrir(admin, authz.org.orgId, conversa.channel_session_id);
-  if (foraDaJanela) {
-    return fail("validation_failed", t("Fora do horário de envio configurado. Tente novamente mais tarde."), 422, { requestId });
-  }
-  const limiteDiario = await checkDailyLimit(admin, authz.org.orgId, conversa.channel_session_id);
-  if (!limiteDiario.allowed) {
-    return fail("validation_failed", t("Limite diário de mensagens desta conexão foi atingido."), 422, { requestId });
-  }
-
   // `maybeSingle` — D10: proposta órfã (lead_id/contact_id nulos) não pode
   // derrubar o envio de uma v2 com um erro de "linha não encontrada".
   const { data: lead } = proposta.lead_id
@@ -250,7 +239,7 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
     pdfPath = salvo.path;
     signedUrl = salvo.signedUrl;
 
-    await espacarEnvio(conversa.channel_session_id);
+    await esperarRitmo(conversa.channel_session_id);
 
     mensagem = await sendMessageHandler(
       admin,

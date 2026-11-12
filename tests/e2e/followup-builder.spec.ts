@@ -191,7 +191,7 @@ async function connectHandles(
   // desses diz de qual saída — que é exatamente o ponto da funcionalidade.
   const sourceSel = sourceHandleId
     ? `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source[data-handleid="${sourceHandleId}"]`
-    : `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`;
+    : `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source:not([data-handleid="on_error"])`;
   const source = page.locator(sourceSel).first();
   const target = page.locator(
     `.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`,
@@ -247,7 +247,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
 
     const card = page.locator("li", { hasText: flowName });
     await expect(card).toBeVisible();
-    await card.getByRole("link").click();
+    await card.getByRole("link").first().click();
 
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     await expect(page.getByTestId("flow-builder-shell")).toBeVisible();
@@ -271,7 +271,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await dialog.getByLabel("Nome").fill(flowName);
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible();
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     await expect(page.locator(".react-flow")).toBeVisible();
 
@@ -325,7 +325,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await dialog.getByLabel("Nome").fill(flowName);
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible();
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     await expect(page.locator(".react-flow")).toBeVisible();
 
@@ -397,7 +397,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await dialog.getByLabel("Nome").fill(flowName);
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible();
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     await expect(page.locator(".react-flow")).toBeVisible();
 
@@ -408,7 +408,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.locator('[data-testid^="node-card-wait-"]').click();
     const panel = page.getByTestId("node-config-panel");
     await expect(panel).toBeVisible();
-    const durationInput = panel.getByLabel("Duração (minutos)");
+    const durationInput = panel.getByLabel("Esperar", { exact: true });
     await durationInput.fill("10");
     await durationInput.blur();
     // Subtitle on the card derives straight from committed config — proves the
@@ -451,7 +451,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await dialog.getByLabel("Nome").fill(flowName);
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible();
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/([0-9a-f-]+)$/);
     const flowUrl = page.url();
     await expect(page.locator(".react-flow")).toBeVisible();
@@ -484,8 +484,8 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     // 3. Configure wait=10min + action prompt_hint.
     await page.locator(`[data-testid="node-card-${waitId}"]`).click();
     const panel = page.getByTestId("node-config-panel");
-    await panel.getByLabel("Duração (minutos)").fill("10");
-    await panel.getByLabel("Duração (minutos)").blur();
+    await panel.getByLabel("Esperar", { exact: true }).fill("10");
+    await panel.getByLabel("Esperar", { exact: true }).blur();
     await expect(page.locator(`[data-testid="node-card-${waitId}"]`)).toContainText("10 min");
 
     await page.locator(`[data-testid="node-card-${actionId}"]`).click();
@@ -586,7 +586,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await dialog.getByLabel("Nome").fill(flowName);
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible();
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     await expect(page.locator(".react-flow")).toBeVisible();
 
@@ -638,7 +638,7 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
 
     const edgeId = await page.locator(".react-flow__edge").getAttribute("data-id");
     if (!edgeId) throw new Error("aresta sem id");
-    await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).click();
+    await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).dispatchEvent("click"); // o nó classificar, mais alto, cobre o rótulo da aresta
     await expect(page.getByTestId("edge-config-panel")).toBeVisible();
     await expect(page.getByTestId("delete-selection")).toHaveText("Excluir aresta");
     await page.getByTestId("delete-edge").click();
@@ -688,7 +688,7 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
    * on the curved path the bounding-box center lands.
    */
   async function clickEdge(page: Page, edgeId: string): Promise<void> {
-    await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).click();
+    await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).dispatchEvent("click"); // o nó classificar, mais alto, cobre o rótulo da aresta
   }
 
   async function setEdgeCondition(page: Page, edgeId: string, optionLabel: string): Promise<void> {
@@ -720,7 +720,7 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     await dialog.getByLabel("Nome").fill(flowName);
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible();
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     await expect(page.locator(".react-flow")).toBeVisible();
 
@@ -816,7 +816,7 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     await expect(page.locator(`[data-testid="node-error-${classifyId}"]`)).toBeVisible();
     // Exactly one node carries an error — proves the failure is scoped to the classify
     // node's edge coverage, not some unrelated structural problem in the graph.
-    await expect(page.locator('[data-testid^="node-error-"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid^="node-error-"]:not([data-testid^="node-error-handle-"])')).toHaveCount(1);
     const classifyErrorText = await page
       .locator(`[data-testid="node-error-${classifyId}"]`)
       .textContent();

@@ -4,7 +4,9 @@ import type { NodeProps } from "@xyflow/react";
 
 import type { FlowNode } from "@/lib/followup/graph-schema";
 import type { RFNode } from "@/lib/followup/graph-mappers";
+import { nodeBranches } from "@/lib/followup/graph-schema";
 import { useT } from "@/hooks/i18n/useT";
+import type { ConfigOf } from "../forms/shared";
 import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { useEtapasDoFluxo } from "../EtapasDoFluxo";
 import { NODE_VISUALS, describeNodeConfig } from "./nodeVisuals";
@@ -42,6 +44,7 @@ export function MoveLeadNode({ id, data, selected }: NodeProps<RFNode>) {
       subtitle={subtitle}
       selected={selected}
       errors={data.errors}
+      branches={nodeBranches({ type: "move_lead", config: data.config as ConfigOf<"move_lead"> })}
     />
   );
 }

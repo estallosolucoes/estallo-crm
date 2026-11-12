@@ -79,7 +79,7 @@ function canal(over: Partial<ChannelSession> = {}): ChannelSession {
 const IMPACTO_ARQUIVA: ChannelDeletionImpact = {
   outcome: "archive",
   history: { conversations: 12, messages: 340, agent_versions: 0, voice_calls: 0 },
-  configuration: { ai_routers: 1, channel_knobs: 0, before_send_traces: 7 },
+  configuration: { ai_routers: 1, before_send_traces: 7 },
 };
 
 function wrap(ui: React.ReactNode) {
@@ -248,7 +248,7 @@ describe("frasesDoImpacto", () => {
       frasesDoImpacto({
         outcome: "delete",
         history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 0 },
-        configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
+        configuration: { ai_routers: 0, before_send_traces: 0 },
       }),
     ).toEqual(["Este número não tem conversa, mensagem nem configuração ligada a ele."]);
   });
@@ -257,7 +257,7 @@ describe("frasesDoImpacto", () => {
     const frases = frasesDoImpacto({
       outcome: "archive",
       history: { conversations: 0, messages: 0, agent_versions: 2, voice_calls: 0 },
-      configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
+      configuration: { ai_routers: 0, before_send_traces: 0 },
     });
     expect(frases).toEqual(["Fica salvo, mas sem número — para de atender: 2 versões de agente."]);
   });
@@ -274,7 +274,7 @@ describe("frasesDoImpacto", () => {
     const frases = frasesDoImpacto({
       outcome: "archive",
       history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 3 },
-      configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
+      configuration: { ai_routers: 0, before_send_traces: 0 },
     });
     expect(frases).toEqual(["Continua no inbox: 3 chamadas de voz."]);
   });
@@ -283,7 +283,7 @@ describe("frasesDoImpacto", () => {
     const frases = frasesDoImpacto({
       outcome: "archive",
       history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 1 },
-      configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
+      configuration: { ai_routers: 0, before_send_traces: 0 },
     });
     expect(frases).toEqual(["Continua no inbox: 1 chamada de voz."]);
   });
@@ -292,7 +292,7 @@ describe("frasesDoImpacto", () => {
     const frases = frasesDoImpacto({
       outcome: "archive",
       history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 0 },
-      configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 4 },
+      configuration: { ai_routers: 0, before_send_traces: 4 },
     });
     expect(frases).toEqual([
       "Este canal tem registros internos, por isso ele é arquivado em vez de apagado.",

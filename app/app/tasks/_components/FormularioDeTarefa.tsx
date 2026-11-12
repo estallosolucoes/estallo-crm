@@ -23,6 +23,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { X } from "@/lib/ui/icons";
+import { SeletorDeNegocio, type NegocioEscolhido } from "./SeletorDeNegocio";
 import type {
   NovaTarefa,
   PrioridadeDaTarefa,
@@ -46,6 +48,12 @@ interface Props {
    * ligar. Ausente = ninguém, como antes.
    */
   responsavelPadrao?: string | null;
+  /**
+   * O título do negócio fixo (`leadId`), só para MOSTRAR de qual negócio é a
+   * tarefa — quem abre pelo menu do card no Inbox precisa ver que ela já nasce
+   * presa ao lead que clicou. Ausente = a linha não aparece, como antes.
+   */
+  tituloDoNegocio?: string | null;
 }
 
 /** O valor do "ninguém" no Select — o Radix não aceita item com valor vazio. */
@@ -77,6 +85,7 @@ export function FormularioDeTarefa({
   leadId,
   contactId,
   responsavelPadrao,
+  tituloDoNegocio,
 }: Props) {
   const t = useT();
   const usuario = useUser();
@@ -100,6 +109,13 @@ export function FormularioDeTarefa({
   const [situacao, setSituacao] = useState<SituacaoDaTarefa>(tarefa?.status ?? "pending");
   const responsavelInicial = (editando ? tarefa?.assigned_to : responsavelPadrao) ?? NINGUEM;
   const [responsavel, setResponsavel] = useState<string>(responsavelInicial);
+  // O negócio vinculado. Quem abre pelo dossiê já traz o `leadId` fixo e não
+  // vê o seletor; em /app/tasks ele é escolhido aqui (ou removido).
+  const [negocio, setNegocio] = useState<NegocioEscolhido | null>(
+    tarefa?.lead_id ? { id: tarefa.lead_id, title: tarefa.lead?.title ?? t("Oportunidade") } : null,
+  );
+  const [escolhendoNegocio, setEscolhendoNegocio] = useState(false);
+  const negocioFixo = Boolean(leadId);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -123,7 +139,7 @@ export function FormularioDeTarefa({
         due_date: prazo,
         priority: prioridade,
         status: situacao,
-        lead_id: tarefa?.lead_id ?? leadId ?? null,
+        lead_id: negocioFixo ? (leadId ?? null) : (negocio?.id ?? null),
         contact_id: tarefa?.contact_id ?? contactId ?? null,
         // Só vai quando MUDOU. Uma tarefa antiga pode ter como responsável
         // alguém que saiu da equipe: reenviar o mesmo id faria a rota recusar a
@@ -228,6 +244,53 @@ export function FormularioDeTarefa({
               </Select>
             </div>
           </div>
+
+          {negocioFixo && tituloDoNegocio ? (
+            <div className="space-y-1.5">
+              <Label>{t("Oportunidade")}</Label>
+              <div
+                className="truncate rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                data-testid="tarefa-negocio-fixo"
+              >
+                {tituloDoNegocio}
+              </div>
+            </div>
+          ) : null}
+          {!negocioFixo && (
+            <div className="space-y-1.5">
+              <Label>{t("Oportunidade (opcional)")}</Label>
+              {negocio ? (
+                <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <span className="truncate" data-testid="tarefa-negocio">{negocio.title}</span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    aria-label={t("Remover oportunidade")}
+                    onClick={() => setNegocio(null)}
+                  >
+                    <X size={14} aria-hidden />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start text-muted-foreground"
+                  onClick={() => setEscolhendoNegocio(true)}
+                  data-testid="tarefa-escolher-negocio"
+                >
+                  {t("Vincular a uma oportunidade")}
+                </Button>
+              )}
+              <SeletorDeNegocio
+                aberto={escolhendoNegocio}
+                aoMudarAbertura={setEscolhendoNegocio}
+                aoEscolher={setNegocio}
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="tarefa-responsavel">{t("Responsável")}</Label>

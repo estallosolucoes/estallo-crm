@@ -26,7 +26,6 @@ import {
 } from "@/lib/agent-engine/edge/crm/send-ledger";
 import { countPriorAcceptedSends } from "@/lib/agent-engine/guardrails/disclosure/template";
 import { profundidadeDaFilaViva } from "@/lib/agent-engine/obs/metrics";
-import { loadPacingState } from "@/lib/agent-engine/pacing/store";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
 
 type Store = Parameters<typeof sendWithLedger>[0];
@@ -134,35 +133,6 @@ describe("store.message busca pela PK e só cai no metadata se a PK não achar",
   });
 });
 
-describe("pacing: sem varrer o histórico do número", () => {
-  it("dois subselects pelo índice, mesmo lastSentAt/sentToday", async () => {
-    const ultimo = new Date("2026-10-02T13:00:00Z");
-    const db = fakeDb([[{ last_sent_at: ultimo, sent_today: "3" }]]);
-    const estado = await loadPacingState(db, "org", "sess", {
-      now: new Date("2026-10-02T15:00:00Z"),
-      timezone: "America/Sao_Paulo",
-      numberActivatedAt: null,
-    });
-    expect(estado).toEqual({ lastSentAt: ultimo, sentToday: 3, numberActivatedAt: null });
-    const sql = (db.sqls[0] ?? "").replace(/\s+/g, " ");
-    expect(sql).not.toMatch(/filter|max\(/i);
-    expect(sql).toContain("order by sent_at desc limit 1");
-    expect(sql).toMatch(/and sent_at >= \$3\) as sent_today/);
-    // Meia-noite de São Paulo = 03:00Z: o início do dia vem do `now` injetado.
-    expect(db.params[0]).toEqual(["org", "sess", new Date("2026-10-02T03:00:00Z")]);
-  });
-
-  it("número sem envio nenhum continua lastSentAt null e sentToday 0", async () => {
-    const db = fakeDb([[{ last_sent_at: null, sent_today: "0" }]]);
-    const estado = await loadPacingState(db, "org", "sess", {
-      now: new Date(),
-      timezone: "America/Sao_Paulo",
-      numberActivatedAt: null,
-    });
-    expect(estado).toMatchObject({ lastSentAt: null, sentToday: 0 });
-  });
-});
-
 describe("disclosure: primeiro outbound pergunta se existe, não conta", () => {
   it("exists no lugar de count; 0 só quando não há aceito", async () => {
     const com = fakeDb([[{ existe: true }]]);
@@ -200,8 +170,5 @@ describe("/healthz: só a fila viva, pelos índices parciais", () => {
     const baseline = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
     expect(baseline).toMatch(/idx_job_queue_claim on job_queue \(status, run_after\) where status = 'pending'/);
     expect(baseline).toMatch(/idx_job_queue_running\s+on job_queue \(status\) where status = 'running'/);
-    expect(baseline).toMatch(
-      /idx_pacing_ledger_session\s+on pacing_ledger \(organization_id, channel_session_id, sent_at desc\)/,
-    );
   });
 });

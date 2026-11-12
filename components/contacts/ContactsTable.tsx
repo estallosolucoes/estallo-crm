@@ -236,7 +236,7 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
                 {c.tags.length === 0
                   ? <span className="text-muted-foreground text-xs">—</span>
                   : c.tags.map((tag) => (
-                      <ChipDeEtiqueta key={tag} tag={tag} />
+                      <ChipDeEtiqueta key={tag} tag={tag} entidade="contact" />
                     ))}
               </div>
             </TableCell>

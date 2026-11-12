@@ -157,7 +157,8 @@ export type UpdateConversationStatusInput = z.infer<typeof updateConversationSta
 
 /**
  * G3-05: normalização reutilizável de tag (mesmo shape de contacts.tags /
- * crm_leads.tags — text[]). trim + lowercase; 1..40 chars por tag.
+ * crm_leads.tags — text[]). trim + lowercase; 1..40 chars por tag. O nome
+ * ficou do tempo em que a conversa tinha etiqueta; hoje serve contato e negócio.
  */
 export const conversationTagSchema = z.string().trim().toLowerCase().min(1).max(40);
 
@@ -169,15 +170,21 @@ export const conversationTagsSchema = z
 
 export type ConversationTags = z.infer<typeof conversationTagsSchema>;
 
-/** G3-05: PATCH /conversations/[id] aceita status e/ou tags (ao menos um). */
+/**
+ * PATCH /conversations/[id] — o status. Estallo (0659): conversa não tem mais
+ * etiqueta (a coluna está travada vazia); `tags` no corpo é recusado pelo
+ * `.strict()` em vez de sumir calado.
+ */
 export const patchConversationSchema = z
   .object({
-    status: conversationStatusSchema.optional(),
+    // Sem `archived`: o Estallo não arquiva conversa (encerrar é "Fechar").
+    // O status segue no CHECK do banco para as que já estavam arquivadas.
+    status: conversationStatusSchema.exclude(["archived"]).optional(),
     expected_revision: z.number().int().positive().optional(),
-    tags: conversationTagsSchema.optional(),
   })
-  .refine((d) => d.status !== undefined || d.tags !== undefined, {
-    message: "Informe status ou tags.",
+  .strict()
+  .refine((d) => d.status !== undefined, {
+    message: "Informe o status.",
   });
 
 export type PatchConversationInput = z.infer<typeof patchConversationSchema>;
@@ -327,6 +334,14 @@ export const listConversationsQuerySchema = z.object({
    * significar "meu trabalho" para virar "tudo que já toquei".
    */
   exclude_finished: z.boolean().optional(),
+  /**
+   * A aba "Pendentes": o cliente escreveu e NINGUÉM respondeu ainda — nem
+   * pessoa, nem automático, nem envio pelo celular (`last_outbound_at` nulo).
+   * Conversa encerrada e grupo ficam fora: grupo não espera resposta da equipe.
+   */
+  pendentes: z.boolean().optional(),
+  status_chat: z.enum(["em_espera", "em_aberto"]).optional(),
+  ordem: z.enum(["antigo", "recente"]).optional(),
   assigned_to: z.union([z.string().uuid(), z.literal("me"), z.literal("unassigned")]).optional(),
   channel_session_id: z.string().uuid().optional(),
   /**

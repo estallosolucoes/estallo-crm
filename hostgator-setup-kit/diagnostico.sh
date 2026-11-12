@@ -19,7 +19,7 @@
 # depender dele seria diagnosticar o passado com a ferramenta do passado. E
 # precisa poder ser baixado avulso, sem clonar nada:
 #
-#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/diagnostico.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/wjuniorl/estallo-crm/main/hostgator-setup-kit/diagnostico.sh | bash
 #
 # ── O que ele pode assumir que existe ────────────────────────────────────────
 # Medido numa VPS real: bash 5.1, docker, docker compose, curl, sed/awk/grep.
@@ -43,7 +43,7 @@ item()   { printf '  %s\n' "$*"; }
 # — em profundidade limitada, para não passear pelo disco inteiro.
 achar_projeto() {
   local c
-  for c in . ./deskcommcrm /root/DeskcommCRM /root/deskcommcrm /opt/deskcommcrm /var/www/crm; do
+  for c in . ./deskcommcrm /root/Estallo CRM /root/deskcommcrm /opt/deskcommcrm /var/www/crm; do
     [ -f "$c/$COMPOSE_FILE" ] && { (cd "$c" && pwd); return 0; }
   done
   c="$(find /root /opt /home /var/www -maxdepth 4 -name "$COMPOSE_FILE" 2>/dev/null | head -1)"
@@ -52,13 +52,13 @@ achar_projeto() {
 }
 
 PROJETO="$(achar_projeto)" || {
-  printf '%s✖ Não achei uma instalação do DeskcommCRM nesta máquina.%s\n' "$R" "$Z"
+  printf '%s✖ Não achei uma instalação do Estallo CRM nesta máquina.%s\n' "$R" "$Z"
   printf '  Rode este script de dentro da pasta do projeto (a que tem %s).\n' "$COMPOSE_FILE"
   exit 2
 }
 cd "$PROJETO" || exit 2
 
-printf '%s══ Diagnóstico do DeskcommCRM ══%s\n' "$B" "$Z"
+printf '%s══ Diagnóstico do Estallo CRM ══%s\n' "$B" "$Z"
 item "${D}pasta: $PROJETO${Z}"
 item "${D}data:  $(date -u '+%Y-%m-%d %H:%M UTC')${Z}"
 

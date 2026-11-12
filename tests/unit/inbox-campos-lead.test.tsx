@@ -81,9 +81,11 @@ vi.mock("@/hooks/pipelines/useDefaultPipeline", () => ({
   }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useUpdateConversationTags: () => ({ mutate: vi.fn(), isPending: false }),
-  useConversationTagVocabulary: () => ({ data: [] }),
+// O dossiê real lê o quadro do funil; aqui basta provar QUAL ele abriu.
+vi.mock("@/components/kanban/LeadDossierDoFunil", () => ({
+  LeadDossierDoFunil: ({ pipelineId, leadId }: { pipelineId: string; leadId: string }) => (
+    <div data-testid="dossie-do-funil">{`${pipelineId}:${leadId}`}</div>
+  ),
 }));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
   useContactTagVocabulary: () => ({ data: [] }),
@@ -99,68 +101,29 @@ beforeEach(() => {
 });
 
 describe("painel do inbox — campos do lead", () => {
-  it("mostra SÓ os campos do funil — título e valor não entram nesta barra", async () => {
+  it("clicar no lead abre o dossiê do funil dele", async () => {
     get.mockResolvedValue({ data: RESPOSTA });
     renderPainel();
-
-    const secao = await screen.findByTestId("inbox-campos-lead");
-    expect(secao.querySelector("#title")).toBeNull();
-    expect(secao.querySelector("#valueReais")).toBeNull();
-
-    const empresa = await screen.findByLabelText("Empresa");
-    expect((empresa as HTMLInputElement).value).toBe("ACME");
+    await userEvent.click(await screen.findByTestId("inbox-lead-l-1"));
+    expect(await screen.findByTestId("dossie-do-funil")).toHaveTextContent("p-1:l-1");
   });
 
-  it("funil sem campos extras diz isso — não inventa o formulário padrão", async () => {
-    get.mockResolvedValue({
-      data: { ...RESPOSTA, leads: [{ ...LEAD, field_defs: [] }] },
-    });
+  it("'Ver mais' só aparece quando há mais leads, e pede mais 3", async () => {
+    get.mockResolvedValue({ data: { ...RESPOSTA, leads_total: 5 } });
     renderPainel();
-
-    const secao = await screen.findByTestId("inbox-campos-lead");
-    await waitFor(() => expect(secao.textContent).toMatch(/não tem campos extras/i));
-    expect(screen.queryByLabelText("Empresa")).toBeNull();
-  });
-
-  it("gravar manda o campo customizado no PATCH do lead", async () => {
-    get.mockResolvedValue({ data: RESPOSTA });
-    renderPainel();
-
-    const empresa = await screen.findByLabelText("Empresa");
-    await userEvent.clear(empresa);
-    await userEvent.type(empresa, "Nova Co");
-    const chamadasAntes = get.mock.calls.length;
-    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
-
-    await waitFor(() => expect(patch).toHaveBeenCalled());
-    const [rota, corpo] = patch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(rota).toBe("/api/v1/leads/l-1");
-    expect(corpo.custom_fields).toEqual({ empresa: "Nova Co" });
-    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(chamadasAntes));
-  });
-
-  it("dois negócios: trocar o selecionado troca o formulário", async () => {
-    get.mockResolvedValue({
-      data: {
-        ...RESPOSTA,
-        leads: [
-          LEAD,
-          {
-            ...LEAD,
-            id: "l-2",
-            title: "Outro negócio",
-            custom_fields: {},
-            field_defs: LEAD.field_defs,
-          },
-        ],
-      },
-    });
-    renderPainel();
-
     await screen.findByTestId("inbox-lead-l-1");
-    expect((screen.getByLabelText("Empresa") as HTMLInputElement).value).toBe("ACME");
-    await userEvent.click(screen.getByTestId("inbox-lead-l-2"));
-    expect((screen.getByLabelText("Empresa") as HTMLInputElement).value).toBe("");
+    expect(get).toHaveBeenLastCalledWith(expect.stringContaining("leads_limit=3"));
+    await userEvent.click(screen.getByTestId("inbox-leads-ver-mais"));
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(expect.stringContaining("leads_limit=6")),
+    );
+  });
+
+  it("sem mais leads, não há 'Ver mais'", async () => {
+    get.mockResolvedValue({ data: { ...RESPOSTA, leads_total: 1 } });
+    renderPainel();
+    await screen.findByTestId("inbox-lead-l-1");
+    expect(screen.queryByTestId("inbox-leads-ver-mais")).toBeNull();
   });
 
   it("leitura que FALHA não vira 'Sem leads.'", async () => {
@@ -193,4 +156,5 @@ describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { support: null } }),
   useActiveOrg: () => ({ currency: "BRL", country: null }),
+  useUser: () => ({ id: "0b000000-0000-4000-8000-0000000000aa", full_name: "Quem cria" }),
 }));

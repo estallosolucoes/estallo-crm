@@ -40,7 +40,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
 import { env } from "@/lib/env";
 import { createSupabaseAvisoDb, mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { criarTransporteDoAviso } from "@/lib/escalacao/aviso-ao-suporte.handler";
@@ -116,7 +116,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
       // consulta — o client é o de service role, e a organização vem da sessão.
       db: createSupabaseAvisoDb(admin),
       transporte: await criarTransporteDoAviso(admin),
-      pacing: await criarPacingDoCanal(admin),
+      esperarRitmo,
       clock: () => new Date(),
       urlPublica: env.NEXT_PUBLIC_APP_URL,
     },

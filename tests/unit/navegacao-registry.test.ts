@@ -127,7 +127,7 @@ describe("sidebarGroups", () => {
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
-      "/app/contacts",
+      // Estallo: Contatos mora em Atendimento (pedido do dono, 2026-10-14).
       "/app/tasks",
       // "/app/calls" (telefonia por SIP) NÃO entra aqui, e a ausência é a
       // decisão: o módulo é OPCIONAL e nasce desligado (doc 27), então a porta
@@ -178,7 +178,6 @@ describe("hubSections", () => {
       "/app/prospecting",
       "/app/kanban",
       "/app/campaigns",
-      "/app/contacts",
       "/app/companies",
       "/app/people",
       "/app/tasks",
@@ -188,6 +187,11 @@ describe("hubSections", () => {
       "/app/tasks/planos",
       "/app/calls",
       "/app/comandas",
+      // Estallo: Respostas rápidas saiu do menu lateral e mora aqui.
+      "/app/templates",
+      "/app/crm/campos",
+      // 0659: Tags saiu de Configurações e mora no CRM.
+      "/app/crm/tags",
       "/app/products",
       "/app/imports",
       "/app/settings/tenant/pipelines",

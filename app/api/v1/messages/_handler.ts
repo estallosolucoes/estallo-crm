@@ -267,6 +267,8 @@ function apiTokenIdDoActor(actor: Actor): string | undefined {
 
 interface MsgCursorPayload {
   sent_at: string;
+  /** Ausente nos cursores emitidos antes do desempate por `created_at`. */
+  created_at?: string;
   id: string;
 }
 
@@ -277,6 +279,7 @@ function decodeMsgCursor(raw: string): MsgCursorPayload | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as MsgCursorPayload;
     if (typeof parsed.id !== "string" || typeof parsed.sent_at !== "string") return null;
+    if (parsed.created_at !== undefined && typeof parsed.created_at !== "string") return null;
     return parsed;
   } catch {
     return null;
@@ -349,7 +352,12 @@ export async function listMessagesHandler(
     .select(MSG_COLS)
     .eq("conversation_id", conversationId)
     .eq("organization_id", ctx.organization_id)
+    // `created_at` desempata o `sent_at`: o WhatsApp manda o horário em
+    // SEGUNDOS, e uma rajada recebida no mesmo segundo empata. Sem ele, o
+    // desempate caía no `id` (uuid v4, aleatório) e a rajada saía embaralhada.
+    // A mesma régua do cliente: `lib/inbox/ordem-do-fio.ts`.
     .order("sent_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
 
@@ -364,7 +372,11 @@ export async function listMessagesHandler(
         traduzir("Cursor inválido.", ctx.idioma ?? "pt-BR"),
       );
     }
-    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`);
+    query = query.or(
+      c.created_at
+        ? `sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},created_at.lt.${c.created_at}),and(sent_at.eq.${c.sent_at},created_at.eq.${c.created_at},id.lt.${c.id})`
+        : `sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`,
+    );
   }
 
   const { data, error } = await query;
@@ -380,7 +392,9 @@ export async function listMessagesHandler(
   // sai o cursor, porque a próxima página é a que vem ANTES no tempo.
   const oldest = page[page.length - 1];
   const cursor =
-    hasMore && oldest ? encodeMsgCursor({ sent_at: oldest.sent_at, id: oldest.id }) : null;
+    hasMore && oldest
+      ? encodeMsgCursor({ sent_at: oldest.sent_at, created_at: oldest.created_at, id: oldest.id })
+      : null;
 
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens

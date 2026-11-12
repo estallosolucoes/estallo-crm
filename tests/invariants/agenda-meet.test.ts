@@ -591,10 +591,6 @@ it("entrega real controlada: fila→gates→ledger→handler→HTTP; replay não
     ])
   ).rows[0].channel_session_id;
   await pool.query(
-    "insert into channel_knobs(organization_id,channel_session_id,throttle_ms,jitter_max_ms,window_start_hour,window_end_hour) values($1,$2,0,0,0,24)",
-    [f.org, channel],
-  );
-  await pool.query(
     "update conversations set assignee_kind='ai',bot_silenced_until=null where id=$1",
     [f.boundary.conversation_id],
   );
@@ -689,13 +685,6 @@ it("entrega real controlada: fila→gates→ledger→handler→HTTP; replay não
     expect(traces[0].trace.length).toBeGreaterThan(5);
     const receipt = (await pool.query("select * from send_ledger where job_id=$1", [jid])).rows[0];
     expect(receipt.status).toBe("accepted");
-    expect(
-      (
-        await pool.query("select normalized_text from outbound_copies where organization_id=$1", [
-          f.org,
-        ])
-      ).rows[0].normalized_text,
-    ).not.toContain("https://meet.");
     // Simula crash entre receipt e settle; spinning/cap já registraram o primeiro envio.
     await pool.query(
       'update calendar_appointments set meeting_delivery=meeting_delivery||\'{"state":"queued"}\' where id=$1',
@@ -841,15 +830,6 @@ it.each(["reclaim", "cancel", "redact"] as const)(
     await pool.query(
       "update contacts set phone_number='+5531998765432',ai_authorized_at=now() where id=$1",
       [f.contact],
-    );
-    const channel = (
-      await pool.query("select channel_session_id from conversations where id=$1", [
-        f.boundary.conversation_id,
-      ])
-    ).rows[0].channel_session_id;
-    await pool.query(
-      "insert into channel_knobs(organization_id,channel_session_id,throttle_ms,jitter_max_ms,window_start_hour,window_end_hour) values($1,$2,0,0,0,24)",
-      [f.org, channel],
     );
     const a = appointmentSnapshotSchema.parse(await app(f, "claim"));
     await actor(GOV_AGENT_A, human, [
@@ -1116,10 +1096,6 @@ async function deliveryFixture(
       [channel],
     );
   }
-  await pool.query(
-    "insert into channel_knobs(organization_id,channel_session_id,throttle_ms,jitter_max_ms,window_start_hour,window_end_hour) values($1,$2,0,0,0,24)",
-    [f.org, channel],
-  );
   f.boundary = (
     await pool.query(
       "select fn_service_boundary($1,$2)-'status'-'demanda_fechada_em'-'service_started_at' b",

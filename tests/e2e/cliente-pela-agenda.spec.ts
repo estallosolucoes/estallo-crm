@@ -54,6 +54,8 @@ async function organizacaoDeTeste() {
     slug: `cliente-agenda-${randomUUID()}`,
     display_name: "Estúdio Cliente pela Agenda",
     legal_name: "Estúdio Cliente pela Agenda",
+    // A Agenda nasce desligada no Estallo (settings.agenda_habilitada): a org desta spec a liga.
+    settings: { agenda_habilitada: true },
     onboarded_at: new Date().toISOString(),
   });
   orgs.push(org);

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ConversationHeader } from "@/components/inbox/ConversationHeader";
@@ -86,56 +87,42 @@ function renderHeader(conv = conversation) {
 
 // A barra é quem segura os botões, não um índice fixo: desde o #1625 o
 // `children[1]` do header é a coluna que empilha a barra e o selo do automático.
-function barraDeAcoes() {
-  const barra = screen.getByText("Transferir").closest("button")?.parentElement;
-  expect(barra, "a barra de ações não renderizou").toBeTruthy();
-  return barra as HTMLElement;
+/**
+ * 16/10/2026 — O REDESENHO DO INBOX MUDOU A REGRA DESTA SUÍTE.
+ *
+ * Antes: nenhuma ação num menu "mais", e a barra quebrava em duas linhas
+ * quando apertava (o piso de 707px que empurrava a ficha para fora da tela).
+ * Agora (modelo do dono): à vista ficam só Assumir/Liberar e Fechar/Reabrir;
+ * Transferir, Lembrar, Devolver/Pausar o automático, pessoal, Ligar, Vídeo e
+ * Ver contato moram no "⋯". O que esta suíte continua prendendo: o cabeçalho
+ * não trava a largura (a identidade encolhe; as ações não quebram a grade),
+ * NENHUMA ação some — todas seguem alcançáveis —, e o selo do automático não
+ * divide linha com o nome nem com as ações (#1625).
+ */
+async function abrirMais() {
+  await userEvent.setup().click(screen.getByRole("button", { name: "Mais ações da conversa" }));
 }
 
 describe("header do inbox — não trava a largura da tela", () => {
-  it("a barra de ações NÃO é shrink-0 — era isso que impunha o piso de 707px", () => {
+  it("a identidade é quem encolhe: classes do cabeçalho do modelo", () => {
     const { container } = renderHeader();
-    const header = container.firstElementChild as HTMLElement;
-    // Guarda de vacuidade: sem header renderizado, todas as asserções abaixo
-    // passariam por não haver o que verificar.
+    const header = container.querySelector(".ibx-chat-header") as HTMLElement;
     expect(header, "o header não renderizou").toBeTruthy();
-
-    const coluna = header.children[1] as HTMLElement;
-    expect(coluna, "a coluna de ações não renderizou").toBeTruthy();
-    for (const el of [coluna, barraDeAcoes()]) {
-      expect(
-        el.className.split(/\s+/),
-        "`shrink-0` de volta na barra de ações: o header volta a travar em 707px e o painel de CRM sai da tela em 1280px",
-      ).not.toContain("shrink-0");
-      expect(el.className).toContain("min-w-0");
-    }
+    expect(header.querySelector(".ibx-chat-identity")).toBeTruthy();
+    expect(header.querySelector(".ibx-chat-actions")).toBeTruthy();
   });
 
-  it("o header pode reorganizar em vez de esconder ação", () => {
-    const { container } = renderHeader();
-    const header = container.firstElementChild as HTMLElement;
-    const acoes = barraDeAcoes();
-    // As duas pontas: o container quebra E a barra quebra internamente. Só uma
-    // das duas não basta — sem a de dentro, a barra desce inteira e continua
-    // pedindo a largura toda.
-    expect(header.className).toContain("flex-wrap");
-    expect(acoes.className).toContain("flex-wrap");
-    expect(acoes.className).toContain("min-w-0");
-  });
-
-  it("as ações continuam TODAS no header — reorganizar não é esconder", () => {
+  it("Assumir e Fechar ficam à vista; o resto está no ⋯ — e nada some", async () => {
     renderHeader();
-    // Se um dia alguém "resolver" o aperto colapsando ações num menu, este caso
-    // reprova. Esconder ação de quem atende é pior que uma segunda linha.
-    for (const rotulo of ["Assumir", "Transferir", "Fechar"]) {
-      expect(screen.getByText(rotulo), `a ação "${rotulo}" sumiu do header`).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Assumir" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fechar" })).toBeTruthy();
+    await abrirMais();
+    for (const rotulo of ["Transferir", "Ver contato"]) {
+      expect(screen.getByRole("menuitem", { name: rotulo }), `a ação "${rotulo}" sumiu`).toBeTruthy();
     }
   });
 
-  it("com o selo do automático, nenhuma ação some e o selo não divide linha com nome nem ações (#1625)", () => {
-    // O defeito do #1625: o selo morava na linha do nome, alargava a identidade
-    // e jogava a barra inteira para baixo. O conserto recusado escondia ações
-    // num menu "Mais ações"; o aceito tira o selo das duas linhas.
+  it("com o selo do automático, nenhuma ação some e o selo não divide linha com nome nem ações (#1625)", async () => {
     renderHeader({
       ...conversation,
       assigned_to_user_id: "u-1",
@@ -146,31 +133,16 @@ describe("header do inbox — não trava a largura da tela", () => {
 
     const selo = screen.getByTestId("badge-atendimento-humano");
     expect(selo.textContent).toBe("Automático volta em instantes");
-
-    const barra = barraDeAcoes();
-    expect(barra.contains(selo), "o selo voltou para a linha das ações").toBe(false);
+    const acoes = document.querySelector(".ibx-chat-actions") as HTMLElement;
+    expect(acoes.contains(selo), "o selo voltou para a linha das ações").toBe(false);
     const linhaDoNome = screen.getByRole("heading", { name: "Fulana" }).parentElement as HTMLElement;
     expect(linhaDoNome.contains(selo), "o selo voltou para a linha do nome").toBe(false);
 
-    for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Lembrar", "Fechar", "Arquivar"]) {
-      const botao = screen.getByRole("button", { name: rotulo });
-      expect(barra.contains(botao), `a ação "${rotulo}" saiu da barra`).toBe(true);
+    expect(screen.getByRole("button", { name: "Liberar" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fechar" })).toBeTruthy();
+    await abrirMais();
+    for (const rotulo of ["Devolver ao automático", "Transferir"]) {
+      expect(screen.getByRole("menuitem", { name: rotulo }), `a ação "${rotulo}" sumiu`).toBeTruthy();
     }
-    expect(screen.queryByRole("button", { name: "Mais ações" }), "ação de quem atende escondida num menu").toBeNull();
-  });
-
-  it('"Ver contato" existe no DOM e só se cala onde há outra porta', () => {
-    renderHeader();
-    // Ele NÃO sai do markup: some por CSS a partir de `xl`, exatamente a largura
-    // em que o painel lateral entra na tela com um "Ver contato" próprio. A
-    // distinção importa — remover do DOM tiraria a ação de quem usa 1024px, que
-    // é onde o painel não existe e esta é a única porta para o contato.
-    const link = screen.getByText("Ver contato").closest("a, button") as HTMLElement;
-    expect(link, "o link para o contato sumiu do markup").toBeTruthy();
-    const classes = `${link.className} ${link.parentElement?.className ?? ""}`;
-    expect(
-      classes,
-      "sem `xl:hidden`, a duplicata volta e o header ganha uma segunda linha em 1280px",
-    ).toContain("xl:hidden");
   });
 });

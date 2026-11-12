@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PALETA_DE_ETAPAS } from "@/lib/kanban/cor-da-etapa";
 import {
   Select,
   SelectContent,
@@ -486,7 +488,7 @@ export function StagesSection({
         className="hidden gap-3 border border-transparent px-4 text-xs font-medium text-text-muted sm:flex"
         data-testid="etapas-cabecalho"
       >
-        <span className="w-6 shrink-0" />
+        <span className="w-12 shrink-0" />
         <span className="min-w-0 flex-1">{t(ROTULO.nome)}</span>
         <span className={`${LARGURA.chance} shrink-0`}>{t(ROTULO.chance)}</span>
         <span className={`${LARGURA.ordem} shrink-0 text-center`}>{t(ROTULO.ordem)}</span>
@@ -514,8 +516,13 @@ export function StagesSection({
               data-testid={`etapa-${etapa.id}`}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <span className="w-6 shrink-0 text-xs tabular-nums text-text-muted">
+                <span className="flex w-12 shrink-0 items-center gap-1.5 text-xs tabular-nums text-text-muted">
                   {i + 1}.
+                  <CorDaEtapa
+                    etapa={etapa}
+                    desabilitado={ocupado}
+                    aoEscolher={(cor) => aplicar(etapa.id, { color: cor })}
+                  />
                 </span>
 
                 {/* No empilhado, cada controle carrega o rótulo que no desktop
@@ -1182,5 +1189,57 @@ function NomeDaEtapa({
       }}
       className="min-w-0 flex-1"
     />
+  );
+}
+
+/**
+ * A cor da etapa: a bolinha abre a paleta (a mesma do sorteio de etapa nova,
+ * `lib/kanban/cor-da-etapa.ts`). Um clique grava — a cor vira a borda da
+ * coluna no quadro.
+ */
+function CorDaEtapa({
+  etapa,
+  desabilitado,
+  aoEscolher,
+}: {
+  etapa: EtapaDoFunil;
+  desabilitado: boolean;
+  aoEscolher: (cor: string) => void;
+}) {
+  const t = useT();
+  const [aberto, setAberto] = useState(false);
+  const atual = etapa.color?.toLowerCase() ?? null;
+  return (
+    <Popover open={aberto} onOpenChange={setAberto}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={desabilitado}
+          aria-label={t("Cor da etapa")}
+          title={t("Cor da etapa")}
+          data-testid={`cor-da-etapa-${etapa.id}`}
+          className="size-4 shrink-0 rounded-full border border-border disabled:opacity-50"
+          style={{ backgroundColor: atual ?? undefined }}
+        />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-2">
+        <div className="grid grid-cols-5 gap-1.5">
+          {PALETA_DE_ETAPAS.map((cor) => (
+            <button
+              key={cor}
+              type="button"
+              aria-label={cor}
+              aria-pressed={cor === atual}
+              className="size-6 rounded-full border-2 border-transparent aria-pressed:border-text"
+              style={{ backgroundColor: cor }}
+              onClick={() => {
+                setAberto(false);
+                if (cor !== atual) aoEscolher(cor);
+              }}
+            />
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

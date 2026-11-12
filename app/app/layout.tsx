@@ -10,18 +10,11 @@ import { AppShell } from "./_components/AppShell";
 import { EstiloDaMarcaDaOrganizacao } from "./_components/EstiloDaMarcaDaOrganizacao";
 import { EstiloDoTemaDaExtensao } from "./_components/EstiloDoTemaDaExtensao";
 import { MfaEnrollGate } from "@/components/auth/MfaEnrollGate";
-import { cssDaMarca, ESCOPO_DA_ORGANIZACAO } from "@/lib/branding/css";
-import { cssDaExtensaoDeTema, linhaBrutaDeTema, temaAplicavel } from "@/lib/extensions/tema";
-import { marcaDaInstalacao } from "@/lib/branding/instalacao";
-import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
-import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 import { ehOperante } from "@/lib/organizacao/operante";
-import {
-  ImpersonateBanner,
-} from "@/components/app/ImpersonateBanner";
+import { ImpersonateBanner } from "@/components/app/ImpersonateBanner";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
 import { FaixaDaCobranca } from "@/components/cobranca/FaixaDaCobranca";
 import { faixaDaCobranca, type FaixaDaCobranca as Faixa } from "@/lib/cobranca/faixa";
@@ -53,18 +46,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/acesso-revogado");
   }
 
-  /**
-   * A cor desta organização, serializada, ou `null` quando ela não tem uma.
-   *
-   * Resolvida no MESMO `settings` que o gate de onboarding logo abaixo já lê —
-   * zero consulta nova. A ordem das camadas (organização acima, instalação no
-   * meio, arquivo de instalação embaixo) mora em `lib/branding/organizacao.ts`,
-   * e não aqui: a precedência é regra do produto, não detalhe deste layout.
-   */
-  let cssDaOrganizacao: string | null = null;
-  // O tema de extensão, se a organização escolheu um. `null` = quem não
-  // escolheu — e aí o `EstiloDoTemaDaExtensao` não renderiza nada.
-  let cssDoTemaDaExtensao: string | null = null;
+  // A identidade é fixa: CSS por organização/extensão não pinta o shell do SaaS.
+  const cssDaOrganizacao: string | null = null;
+  // As estruturas legadas permanecem disponíveis, sem sobrepor o Design System.
+  const cssDoTemaDaExtensao: string | null = null;
 
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
@@ -108,12 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         .maybeSingle(),
       listarConexoesCaidas(admin, activeOrg.orgId),
       isMfaEnrolled(),
-      requiresMfa(
-        activeOrg.role,
-        user.is_platform_admin,
-        user.id,
-        activeOrg.orgId,
-      ),
+      requiresMfa(activeOrg.role, user.is_platform_admin, user.id, activeOrg.orgId),
       // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
       modulosLigados(admin),
     ]);
@@ -134,8 +114,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (orgRow && !orgRow.onboarded_at && !user.support) redirect("/onboarding");
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
-    const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
-      ?.visibility_mode;
+    const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)?.visibility_mode;
     activeOrg = {
       ...activeOrg,
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
@@ -152,7 +131,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (modulos.includes("cobranca")) {
       const { data, error } = await admin
         .from("cobranca_assinaturas")
-        .select("estado, trial_ate, vencida_desde, cancela_no_fim, proximo_vencimento, link_de_pagamento, provedor")
+        .select(
+          "estado, trial_ate, vencida_desde, cancela_no_fim, proximo_vencimento, link_de_pagamento, provedor",
+        )
         .eq("organization_id", activeOrg.orgId)
         .maybeSingle();
       if (error) {
@@ -166,87 +147,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       }
     }
 
-    // `marcaDaInstalacao()` é memoizada por TTL no PROCESSO (`lib/branding/
-    // instalacao.ts`), e a derivação da cor é cacheada por régua+semente em
-    // `resolve.ts` — a marca custa uma consulta a cada 30s e um lookup de Map
-    // por render, não uma derivação de rampa por requisição.
-    const marca = resolverMarcaDaOrganizacao(
-      orgRow?.settings ?? null,
-      await marcaDaInstalacao(),
-      env,
-    );
-
-    // SÓ quando a cor veio mesmo da organização. Se ela não configurou nada, a
-    // resolução devolve a cor da instalação — e reemiti-la aqui, escopada no
-    // `<body>`, seria repetir no documento um bloco que já vale pela raiz. Além
-    // de bytes, custaria a única pergunta que a presença do bloco responde.
-    if (marca.origens.cor === "organizacao") {
-      // Os `motivos` de uma cor recusada NÃO são registrados aqui de propósito:
-      // este caminho roda para todo tenant a cada render, e um aviso por
-      // organização no log da instalação é como um alarme deixa de ser lido. O
-      // laço de retorno desta feature é a tela `/app/settings/marca`, que mostra
-      // os motivos para quem pode consertá-los — o admin daquela organização.
-      cssDaOrganizacao = cssDaMarca(marca.cor, ESCOPO_DA_ORGANIZACAO).css;
-    }
-
-    // O tema de extensão NUNCA derruba a casca — e por isso a leitura fica FORA
-    // do `Promise.all` lá de cima: o portão de organização (suspensa / onboarding
-    // / ilegível) decide o destino ANTES de qualquer consulta nova, e uma leitura
-    // que falhe aqui (tabela ausente numa instalação antiga, RLS, formato
-    // inesperado) desce para `null` em vez de trocar o `redirect` do portão por
-    // um 500. Quem não escolheu tema fica exatamente como está; quem escolheu só
-    // perde a pintura naquele render.
-    try {
-      const temaTrace = await admin
-        .from("organization_extensions")
-        .select(
-          "configuration," +
-            "extension_installations!organization_extensions_installation_id_fkey(" +
-            "extension_artifacts!extension_installations_artifact_id_fkey(manifest))",
-        )
-        .eq("organization_id", activeOrg.orgId)
-        .eq("enabled", true)
-        .limit(50);
-      if (!temaTrace.error) {
-        const linhas = (temaTrace.data ?? [])
-          .map(linhaBrutaDeTema)
-          .filter((linha): linha is NonNullable<typeof linha> => linha !== null);
-        const temaEscolhido = temaAplicavel(linhas);
-        cssDoTemaDaExtensao =
-          temaEscolhido === null ? null : cssDaExtensaoDeTema(temaEscolhido).css;
-      }
-    } catch {
-      cssDoTemaDaExtensao = null;
-    }
-
-    // Desce para o menu CAMPO A CAMPO, e só o campo que a organização definiu.
-    // Sem a condição por campo, `marca.name` seria o nome da instalação (ou o
-    // padrão do produto) e o menu passaria a ler um caminho novo para exibir
-    // exatamente o que já exibia — trocando a fonte sem trocar o valor, que é
-    // como se cria uma regressão invisível. E, com o logo no mesmo objeto, uma
-    // condição só (a do nome) faria a organização que definiu apenas a cor
-    // arrastar junto um `logoUrl` que ela não escolheu.
-    //
-    // `origens` é a resposta de `primeiroDefinido` (`lib/branding/resolve.ts`),
-    // que ignora valor vazio e desce: quando ele diz "organizacao", o valor é
-    // não-vazio e já veio trimado — por isso a barra lateral nunca recebe `""`
-    // desta origem.
-    //
-    // `origens.logoUrl === "organizacao"` passou a ser ALCANÇÁVEL na onda do
-    // upload: `camadaDaOrganizacao` declara o logo a partir de
-    // `settings.branding.logo_path`. A condição foi escrita aqui uma onda ANTES
-    // do produtor existir, de propósito — foi o que fez o upload por organização
-    // ser só a camada, sem mais uma passada pela casca inteira.
-    const marcaDoTenant = {
-      logoDarkUrl: marca.logoDarkUrl ?? null,
-      ...(marca.origens.nome === "organizacao" ? { nome: marca.name } : {}),
-      ...(marca.origens.logoUrl === "organizacao" && marca.logoUrl !== null
-        ? { logoUrl: marca.logoUrl }
-        : {}),
-    };
-    if (Object.keys(marcaDoTenant).length > 0) {
-      activeOrg = { ...activeOrg, marca: marcaDoTenant };
-    }
+    // A conta mantém seus dados, mas não substitui a identidade do SaaS.
+    activeOrg = { ...activeOrg, marca: undefined };
   } else {
     const [isEnrolled, mfaRequired] = await Promise.all([
       isMfaEnrolled(),
@@ -260,10 +162,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const store = await cookies();
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
-  const impersonating = user.support ? {
-    tenantId: user.support.organization_id, tenantName: user.support.name,
-    expiresAt: user.support.expires_at, accessMode: user.support.access_mode,
-  } : null;
+  const impersonating = user.support
+    ? {
+        tenantId: user.support.organization_id,
+        tenantName: user.support.name,
+        expiresAt: user.support.expires_at,
+        accessMode: user.support.access_mode,
+      }
+    : null;
 
   // O CONTRATO DE OCUPAÇÃO DO RODAPÉ (issue #1305) envolve a casca E as peças de
   // voz. O `VoiceCallProvider` desenha o painel de chamada DEPOIS dos children,
@@ -288,8 +194,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // pergunta quem está logado. Ver `lib/i18n/IdiomaProvider`: foi o
     // acoplamento com a autenticação que derrubou 32 casos.
     <IdiomaProvider locale={user.idioma}>
-    <AuthProvider user={user} activeOrg={activeOrg}>
-      {/*
+      <AuthProvider user={user} activeOrg={activeOrg}>
+        {/*
         A COR DA ETIQUETA, uma leitura por tela.
 
         O chip aparece em LISTA — uma fila de duzentas conversas desenha quatro
@@ -301,9 +207,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         do `AppShell` porque o gate de MFA substitui a casca: o mapa precisa
         sobreviver ao portão, e não ser relido quando ele sai.
       */}
-      <ProvedorDeCoresDasEtiquetas>
-      <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
-      {/*
+        <ProvedorDeCoresDasEtiquetas>
+          <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
+          {/*
         O MARCADOR da marca da organização — o elemento cuja existência define o
         escopo `body:has([data-marca-org])` (lib/branding/css.ts).
 
@@ -318,23 +224,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         veria a tela de cadastro de MFA — a PRIMEIRA tela dele — com a cor da
         instalação, e depois o resto do produto com a dele.
       */}
-      <div data-marca-org="" className="contents">
-        <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
-        <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
-        <ImpersonateBanner impersonating={impersonating} />
-        <ConexaoCaidaBanner caidas={conexoesCaidas} />
-        {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
-        {needsMfaGate ? (
-          // Gate always mounted for MFA-required roles; it latches the blocking
-          // decision client-side so the enroll Server Action's revalidation
-          // can't tear down the recovery-codes screen mid-flow.
-          <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
-        ) : (
-          shell
-        )}
-      </div>
-      </ProvedorDeCoresDasEtiquetas>
-    </AuthProvider>
+          <div data-marca-org="" className="contents">
+            <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
+            <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
+            <ImpersonateBanner impersonating={impersonating} />
+            <ConexaoCaidaBanner caidas={conexoesCaidas} />
+            {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
+            {needsMfaGate ? (
+              // Gate always mounted for MFA-required roles; it latches the blocking
+              // decision client-side so the enroll Server Action's revalidation
+              // can't tear down the recovery-codes screen mid-flow.
+              <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
+            ) : (
+              shell
+            )}
+          </div>
+        </ProvedorDeCoresDasEtiquetas>
+      </AuthProvider>
     </IdiomaProvider>
   );
 }

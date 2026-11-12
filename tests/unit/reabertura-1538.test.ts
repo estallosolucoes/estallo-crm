@@ -18,6 +18,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -34,6 +35,7 @@ import {
   RECUSA_REABERTURA_CRIA_NOVO,
   camposCopiadosNaRetomada,
   modoDeReabertura,
+  pedeEscolhaDeReabertura,
   recusaReabertura,
 } from "@/lib/leads/reabertura";
 
@@ -42,15 +44,33 @@ const DE_GANHO = { is_won: true, is_lost: false } as const;
 
 describe("modoDeReabertura — o padrão é o comportamento de antes da issue", () => {
   it("sem settings, com null, com outro valor ou com objeto vazio: mesmo_registro", () => {
-    for (const settings of [undefined, null, {}, { reabertura: null }, { reabertura: 42 }, { reabertura: { modo: "novo_negocio" } }]) {
+    for (const settings of [
+      undefined,
+      null,
+      {},
+      { reabertura: null },
+      { reabertura: 42 },
+      { reabertura: { modo: "novo_negocio" } },
+    ]) {
       expect(modoDeReabertura(settings)).toBe(MODO_REABERTURA_PADRAO);
     }
     expect(MODO_REABERTURA_PADRAO).toBe("mesmo_registro");
   });
 
-  it("só a string declarada liga a regra nova", () => {
-    expect(modoDeReabertura({ reabertura: "novo_negocio" })).toBe("novo_negocio");
-    expect(modoDeReabertura({ reabertura: "NOVO_NEGOCIO" })).toBe("mesmo_registro");
+  it("desde 30/10/2026 o funil não decide: o valor antigo `novo_negocio` fica inerte", () => {
+    // A escolha passou para quem move (diálogo "Criar novo lead × Mover lead
+    // existente"); o funil não trava mais a saída de ganho/perdido.
+    expect(modoDeReabertura({ reabertura: "novo_negocio" })).toBe("mesmo_registro");
+  });
+});
+
+describe("pedeEscolhaDeReabertura — quando a tela pergunta antes de mover", () => {
+  it("só encerrado (ganho/perdido) indo para etapa ABERTA", () => {
+    expect(pedeEscolhaDeReabertura("won", ABERTA)).toBe(true);
+    expect(pedeEscolhaDeReabertura("lost", ABERTA)).toBe(true);
+    expect(pedeEscolhaDeReabertura("open", ABERTA)).toBe(false);
+    expect(pedeEscolhaDeReabertura("lost", DE_GANHO)).toBe(false);
+    expect(pedeEscolhaDeReabertura("won", undefined)).toBe(false);
   });
 });
 
@@ -100,9 +120,7 @@ describe("recusaReabertura — as três condições SÓ juntas recusam", () => {
     const es = traduzir(RECUSA_REABERTURA_CRIA_NOVO, "es");
     expect(es).not.toBe(RECUSA_REABERTURA_CRIA_NOVO);
     for (const idioma of ["pt-BR", "es"] as const) {
-      expect(traduzir(RECUSA_REABERTURA_CRIA_NOVO, idioma)).toContain(
-        "/api/v1/leads/{id}/retomar",
-      );
+      expect(traduzir(RECUSA_REABERTURA_CRIA_NOVO, idioma)).toContain("/api/v1/leads/{id}/retomar");
     }
   });
 });
@@ -111,14 +129,15 @@ describe("os campos que a retomada copia", () => {
   it("sem a chave, é o piso da proposta: custom_fields e tags", () => {
     expect(camposCopiadosNaRetomada(undefined)).toEqual([...CAMPOS_PADRAO_DA_RETOMADA]);
     expect(camposCopiadosNaRetomada({})).toEqual(["custom_fields", "tags"]);
-    expect(CAMPOS_PADRAO_DA_RETOMADA.every((c) => (CAMPOS_COPIAVEIS as readonly string[]).includes(c))).toBe(true);
+    expect(
+      CAMPOS_PADRAO_DA_RETOMADA.every((c) => (CAMPOS_COPIAVEIS as readonly string[]).includes(c)),
+    ).toBe(true);
   });
 
   it("a lista declarada é filtrada pela whitelist — fora dela não vira escrita", () => {
-    expect(camposCopiadosNaRetomada({ reabertura_campos: ["tags", "value_cents", "external_id"] })).toEqual([
-      "tags",
-      "value_cents",
-    ]);
+    expect(
+      camposCopiadosNaRetomada({ reabertura_campos: ["tags", "value_cents", "external_id"] }),
+    ).toEqual(["tags", "value_cents"]);
   });
 
   it("lista vazia é escolha do operador (só o contato), não erro de leitura", () => {
@@ -148,7 +167,9 @@ describe("clone (P-01): encerrado só entra num funil novo_negocio", () => {
 
   it("sem o modo, a recusa de antes continua valendo", () => {
     expect(recusaTrocaDeFunil(origem("lost"), outroFunil)?.code).toBe("lead_not_open");
-    expect(recusaTrocaDeFunil(origem("won"), outroFunil, "mesmo_registro")?.code).toBe("lead_not_open");
+    expect(recusaTrocaDeFunil(origem("won"), outroFunil, "mesmo_registro")?.code).toBe(
+      "lead_not_open",
+    );
   });
 
   it("novo_negocio abre a porta — e mesmo funil continua sendo /move", () => {
@@ -192,7 +213,33 @@ describe("a tripla da migration 0425 — coluna, FK e registro", () => {
     expect(manifest).toContain("0425_retomada_como_novo_negocio");
 
     const tipos = readFileSync(join(raiz, "lib", "database.types.ts"), "utf8");
-    const ocorrencias = tipos.split("retomado_de_lead_id").length - 1;
-    expect(ocorrencias).toBe(3);
+    // Relações também citam o nome da coluna no gerador atual. Contar texto
+    // confundiria FK com Row/Insert/Update; a prova mede os três blocos reais.
+    const source = ts.createSourceFile("database.types.ts", tipos, ts.ScriptTarget.Latest, true);
+    const property = (
+      node: ts.TypeNode | undefined,
+      name: string,
+    ): ts.PropertySignature | undefined =>
+      node && ts.isTypeLiteralNode(node)
+        ? node.members.find(
+            (member): member is ts.PropertySignature =>
+              ts.isPropertySignature(member) &&
+              !!member.name &&
+              member.name.getText(source).replaceAll('"', "") === name,
+          )
+        : undefined;
+    const database = source.statements.find(
+      (statement): statement is ts.TypeAliasDeclaration =>
+        ts.isTypeAliasDeclaration(statement) && statement.name.text === "Database",
+    );
+    const table = property(
+      property(property(database?.type, "public")?.type, "Tables")?.type,
+      "crm_leads",
+    )?.type;
+    for (const block of ["Row", "Insert", "Update"]) {
+      const column = property(property(table, block)?.type, "retomado_de_lead_id");
+      expect(column?.type?.getText(source).replace(/\s/g, "")).toBe("string|null");
+      expect(!!column?.questionToken).toBe(block !== "Row");
+    }
   });
 });

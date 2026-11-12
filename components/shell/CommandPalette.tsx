@@ -280,14 +280,14 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
                         className={cn(
                           "group flex cursor-pointer items-start gap-3 rounded-lg border border-border/50 p-2.5 transition-all",
                           ativo
-                            ? "border-primary/40 bg-accent text-accent-foreground shadow-xs ring-1 ring-primary/20"
+                            ? "border-primary/40 bg-accent dark:bg-accent-700 text-accent-foreground shadow-xs ring-1 ring-primary/20"
                             : "hover:border-border hover:bg-muted/50",
                         )}
                       >
                         <div
                           className={cn(
                             "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/40 bg-background/80 transition-colors",
-                            ativo && "bg-primary text-primary-foreground",
+                            ativo && "bg-primary dark:bg-accent-700 text-primary-foreground",
                           )}
                         >
                           <Icon size={16} aria-hidden />
@@ -341,13 +341,13 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
                 onClick={() => navegar(d)}
                 className={cn(
                   "flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 transition-colors",
-                  ativo && "bg-accent text-accent-foreground",
+                  ativo && "bg-accent dark:bg-accent-700 text-accent-foreground",
                 )}
               >
                 <div
                   className={cn(
                     "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/40 bg-background/60",
-                    ativo && "bg-primary text-primary-foreground",
+                    ativo && "bg-primary dark:bg-accent-700 text-primary-foreground",
                   )}
                 >
                   <Icon size={16} aria-hidden />

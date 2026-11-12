@@ -21,9 +21,50 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
-import { createLeadHandler } from "./_handler";
+import { createLeadHandler, listLeadsHandler } from "./_handler";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
+
+const listQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  status: z.enum(["open", "won", "lost"]).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
+/**
+ * GET /api/v1/leads?search=&status=&limit= — lista enxuta de negócios para
+ * escolher um (o vínculo de tarefa em /app/tasks). Mesmo `listLeadsHandler` do
+ * MCP, pelo client da sessão (RLS), e só os campos que um seletor precisa.
+ */
+export async function GET(req: NextRequest): Promise<Response> {
+  const requestId = randomUUID();
+  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
+  if (!authz.ok) return authz.response;
+  const params = Object.fromEntries(req.nextUrl.searchParams);
+  const parsed = listQuerySchema.safeParse(params);
+  if (!parsed.success) {
+    return fail("invalid_request", traduzir("Filtro inválido.", authz.user.idioma), 400, {
+      requestId,
+      details: parsed.error.flatten(),
+    });
+  }
+  try {
+    const supabase = await createClient();
+    const { leads } = await listLeadsHandler(
+      supabase,
+      { organization_id: authz.org.orgId, actor: { type: "user", id: authz.user.id }, requestId, idioma: authz.user.idioma },
+      { search: parsed.data.search || undefined, status: parsed.data.status, limit: parsed.data.limit ?? 20 },
+    );
+    return ok(
+      leads.map((l) => ({ id: l.id, title: l.title, status: l.status, pipeline_id: l.pipeline_id })),
+      { requestId },
+    );
+  } catch (err) {
+    if (err instanceof ApiError) return fail(err.code, err.message, err.status, { requestId });
+    throw err;
+  }
+}
 
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();

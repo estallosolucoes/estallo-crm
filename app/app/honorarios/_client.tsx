@@ -16,9 +16,10 @@ import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
-import { formatCents } from "@/lib/money";
+import { formatCents, parseReaisToCents } from "@/lib/money";
 
 import { Parcelas } from "./_parcelas";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 type Modelo = "fixo" | "exito" | "misto";
 
@@ -142,7 +143,7 @@ function FormularioDeContrato({
 
   const precisaFixo = modelo === "fixo" || modelo === "misto";
   const precisaExito = modelo === "exito" || modelo === "misto";
-  const valorFixoCents = valorFixo ? Math.round(Number(valorFixo.replace(",", ".")) * 100) : null;
+  const valorFixoCents = valorFixo ? parseReaisToCents(valorFixo) : null;
   const percentualExito = percentual ? Number(percentual.replace(",", ".")) : null;
 
   const pode =
@@ -186,13 +187,12 @@ function FormularioDeContrato({
       {precisaFixo ? (
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           {t("Valor fixo")}
-          <input
+          <CampoDeDinheiro
             value={valorFixo}
-            inputMode="decimal"
-            placeholder="0,00"
+            containerClassName="w-36"
             data-testid="contrato-valor-fixo"
             onChange={(e) => setValorFixo(e.target.value)}
-            className="w-28 rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+            className="w-full rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
           />
         </label>
       ) : null}

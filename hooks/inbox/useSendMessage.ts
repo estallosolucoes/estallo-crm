@@ -2,7 +2,10 @@
 import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { randomId } from "@/lib/random-id";
+import { instanteOtimista } from "@/lib/inbox/ordem-do-fio";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { gravarNaConversaDaLista } from "@/hooks/inbox/recargaDasConversas";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import type { Message } from "@/lib/types/messaging";
 
 interface SendArgs {
@@ -31,19 +34,38 @@ interface MessagesPage {
   meta?: { cursor?: string | null; has_more?: boolean };
 }
 
+export const CHAVE_DO_ENVIO = ["send-message"] as const;
+
 export function useSendMessage() {
   const qc = useQueryClient();
 
   return useMutation({
+    // A chave deixa a lista do Inbox saber em que conversa o PRÓPRIO usuário
+    // acabou de agir (`useMutationState`), sem passar callback pelo composer.
+    mutationKey: CHAVE_DO_ENVIO,
     mutationFn: async (input: SendArgs) =>
       apiClient.post<{ data: Message }>("/api/v1/messages", input),
     onMutate: async (args) => {
+      // A prévia da lista acompanha o envio na hora, antes do servidor responder
+      // (a mesma régua de prévia que o banco grava). O tique sai como "na fila":
+      // o AckIndicator não desenha nada até o status real chegar pelo Realtime.
+      const agora = new Date().toISOString();
+      gravarNaConversaDaLista(qc, args.conversation_id, {
+        last_message_preview: previaDaMensagem(args.body, args.type ?? (args.media_url || args.media_storage_path ? "document" : "text")),
+        last_message_at: agora,
+        last_outbound_at: agora,
+        ultimo_status_de_saida: "queued",
+      });
+
       if (args.media_storage_path || args.media_url || args.type === "contact") return {};
 
       const queryKey = ["messages", args.conversation_id];
       await qc.cancelQueries({ queryKey });
 
       const tempId = `temp-${randomId()}`;
+      const instante = instanteOtimista(
+        qc.getQueryData<InfiniteData<MessagesPage>>(queryKey)?.pages[0]?.data ?? [],
+      );
       const tempMsg: Message = {
         id: tempId,
         organization_id: "",
@@ -65,7 +87,7 @@ export function useSendMessage() {
         reply_to_message_id: args.reply_to_message_id ?? null,
         sent_via: "user",
         sent_by_user_id: null,
-        sent_at: new Date().toISOString(),
+        sent_at: instante,
         delivered_at: null,
         read_at: null,
         metadata: { _optimistic: true },
@@ -74,7 +96,7 @@ export function useSendMessage() {
         // que volta do servidor, e a bolha passaria a renderizar dois formatos.
         edited_at: null,
         revoked_at: null,
-        created_at: new Date().toISOString(),
+        created_at: instante,
       };
 
       qc.setQueryData<InfiniteData<MessagesPage>>(queryKey, (old) => {
@@ -128,6 +150,9 @@ export function useSendMessage() {
     onSettled: (_data, _err, args) => {
       qc.invalidateQueries({ queryKey: ["messages", args.conversation_id] });
       qc.invalidateQueries({ queryKey: ["conversations"] });
+      // Responder muda o status do chat (Em espera → Em aberto): o contador das
+      // abas precisa cair na hora, não no próximo polling de 30 s.
+      qc.invalidateQueries({ queryKey: ["conversation-counts"] });
     },
   });
 }

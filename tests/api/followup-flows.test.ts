@@ -599,7 +599,8 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
       .select()
       .eq("id", body.data.active_version_id)) as { data: Row[] };
     expect(versionRows.length).toBe(1);
-    expect(versionRows[0]!.graph).toEqual(VALID_GRAPH);
+    // O publicador marca todo fluxo do relógio no contrato 1 (motor único).
+    expect(versionRows[0]!.graph).toEqual({ ...VALID_GRAPH, execution_contract: 1 });
 
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "followup_flow.published" }),

@@ -1,0 +1,11 @@
+{
+  "title": "Entrar · Estallo CRM",
+  "icon": {
+    "status": 200,
+    "type": "image/png"
+  },
+  "billingPath": "/app/settings/billing",
+  "navColor": "rgb(38, 51, 61)",
+  "mobileDrawer": true,
+  "pageErrors": 0
+}

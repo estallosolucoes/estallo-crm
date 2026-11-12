@@ -65,7 +65,7 @@ test.describe("Honorários: instalar e registrar um pagamento", () => {
     // 3b. Contrato de valor fixo e uma parcela.
     await page.goto("/app/honorarios");
     await page.getByTestId("contrato-modelo").selectOption("fixo");
-    await page.getByTestId("contrato-valor-fixo").fill("3000");
+    await page.getByTestId("contrato-valor-fixo").fill("3000,00");
     await page.getByTestId("criar-contrato").click();
     await expect(page.locator('tr[data-testid^="contrato-"]').first()).toBeVisible();
 

@@ -89,20 +89,32 @@ test.afterAll(async () => {
 });
 
 test.describe("G4-02 — inbox com escopo", () => {
-  test("agent em modo own*: vê Minhas e Fila, NÃO vê Todas", async ({ page }) => {
+  // Desde que "Minhas" virou filtro (2026-10-15), 'Todas' é a caixa do agent —
+  // recortada pela RLS, que é quem garante o escopo (ver o deep-link abaixo).
+  test("agent em modo own*: vê as cinco categorias e Minhas como filtro", async ({ page }) => {
     await login(page, creds.users.agent!.email);
     await page.goto("/app/inbox");
-    await expect(page.getByRole("tab", { name: /Minhas/ })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /Fila/ })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /Todas/ })).toHaveCount(0);
-    await page.screenshot({ path: path.join(EVIDENCE, "G4-02-inbox-scope-agent.png"), fullPage: true });
+    await expect(page.getByRole("tab", { name: /Sem resposta/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Em espera/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Todas/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Minhas/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "Filtrar conversas" }).click();
+    await expect(page.getByRole("checkbox", { name: "Minhas" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.screenshot({
+      path: path.join(EVIDENCE, "G4-02-inbox-scope-agent.png"),
+      fullPage: true,
+    });
   });
 
   test("manager: vê a visão Todas", async ({ page }) => {
     await login(page, creds.users.manager!.email);
     await page.goto("/app/inbox");
     await expect(page.getByRole("tab", { name: /Todas/ })).toBeVisible();
-    await page.screenshot({ path: path.join(EVIDENCE, "G4-02-inbox-scope-manager.png"), fullPage: true });
+    await page.screenshot({
+      path: path.join(EVIDENCE, "G4-02-inbox-scope-manager.png"),
+      fullPage: true,
+    });
   });
 
   test("deep-link para conversa fora do escopo → estado vazio claro (sem stack trace)", async ({

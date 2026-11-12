@@ -86,7 +86,8 @@ test.describe("o ícone da aba subido em /admin/marca chega à aba", () => {
     await afirmarDonoDoServidor(lerCreds().users.dono!.email);
   });
 
-  test("subir troca o ícone do /login, remover devolve o desenhado", async ({
+  // ESTALLO: identidade fixa (CLAUDE.md, "Identidade fixa do SaaS"); subir ícone próprio em /admin/marca não é caminho de produto.
+  test.fixme("subir troca o ícone do /login, remover devolve o desenhado", async ({
     page,
     browser,
   }) => {

@@ -111,3 +111,75 @@ describe("NodeCard — regra que não aponta para etapa nenhuma se acusa no card
     expect(linha).not.toHaveTextContent("(não encontrada)");
   });
 });
+
+describe("NodeCard — saída 'Fallback erro'", () => {
+  const erro = {
+    id: "on_error",
+    label: "Fallback erro",
+    check: null,
+    kind: "error" as const,
+    condition: { type: "branch" as const, branch_id: "on_error" },
+  };
+  const sempre = {
+    id: "else",
+    label: "Sempre",
+    check: null,
+    kind: "fallback" as const,
+    condition: { type: "always" as const },
+  };
+
+  it("bloco de saída única continua um cartão simples: sem lista de saídas, só o aviso discreto de erro", () => {
+    render(
+      <NodeCard id="a1" visual={NODE_VISUALS.action} label="Enviar" subtitle="texto" branches={[erro, sempre]} />,
+    );
+
+    expect(screen.queryByTestId("node-branches-a1")).toBeNull();
+    expect(screen.getByText("Fallback erro")).not.toBeNull();
+  });
+
+  it("bloco que já lista saídas ganha 'Fallback erro' como mais uma linha", () => {
+    render(
+      <NodeCard
+        id="m1"
+        visual={NODE_VISUALS.match_reply}
+        label="Pergunta"
+        subtitle="sim/não"
+        branches={[
+          { id: "br", label: "Sim", check: null, kind: "match", condition: { type: "branch", branch_id: "br" } },
+          erro,
+          { ...sempre, label: "Outros casos" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("node-branch-m1-on_error")).not.toBeNull();
+  });
+});
+
+describe("NodeCard — 'Fallback erro' escondida fora do motor novo", () => {
+  it("com a saída desabilitada, o bloco de saída única não mostra o aviso e a linha some das listas", async () => {
+    const { SaidaDeErroProvider } = await import("../SaidaDeErro");
+    const erro = {
+      id: "on_error",
+      label: "Fallback erro",
+      check: null,
+      kind: "error" as const,
+      condition: { type: "branch" as const, branch_id: "on_error" },
+    };
+    const sempre = {
+      id: "else",
+      label: "Sempre",
+      check: null,
+      kind: "fallback" as const,
+      condition: { type: "always" as const },
+    };
+    render(
+      <SaidaDeErroProvider habilitada={false}>
+        <NodeCard id="a1" visual={NODE_VISUALS.action} label="Enviar" subtitle="texto" branches={[erro, sempre]} />
+      </SaidaDeErroProvider>,
+    );
+
+    expect(screen.queryByText("Fallback erro")).toBeNull();
+    expect(screen.queryByTestId("node-branches-a1")).toBeNull();
+  });
+});

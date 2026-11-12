@@ -51,7 +51,7 @@ export function Stepper({ passos }: { passos: PassoVisivel[] }) {
             <div
               className={cn(
                 "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-medium",
-                isActive && "border-primary bg-primary text-primary-foreground",
+                isActive && "border-primary bg-primary dark:bg-accent-700 text-primary-foreground",
                 !isActive && p.cumprido && "border-primary/40 bg-primary/10 text-primary",
                 !isActive && !p.cumprido && "border-muted-foreground/20 text-muted-foreground",
               )}

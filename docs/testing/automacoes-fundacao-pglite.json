@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-10-18T18:50:03.690Z",
+  "result": "passed",
+  "migration": "supabase/migrations/20261021110000_0698_execucoes_inspecionaveis_de_automacao.sql",
+  "migration_sha256": "9bbff3a53e65cbbc33853b9b72ad6896b5fb8a2cb8e1e00e52565b77ee48dd2c",
+  "pglite_version": "0.5.10",
+  "checks": [
+    "migration compila e reaplica sobre fixture mínima",
+    "política padrão, parcial, inválida e decimal inteiro",
+    "alteração atômica da política preserva outras configurações e rejeita valores inválidos",
+    "payload expira sem apagar metadados e recibos técnicos",
+    "expurgo impede reposição tardia e remoção da marca de expiração",
+    "execução viva protege a cadeia original",
+    "metadados vencidos removidos; contrato legado preservado",
+    "cadeia encerrada é drenada no mesmo lote sem violar FKs",
+    "anonimização remove dados e impede sua escrita tardia",
+    "recuperação não troca o contato original",
+    "revogação cobre ACL padrão e mantém service role"
+  ],
+  "scope": "Migration isolada aplicada duas vezes sobre fixture mínima em Postgres embarcado.",
+  "limitations": [
+    "Não aplica o baseline completo.",
+    "Não executa Supabase/PostgREST.",
+    "Não prova concorrência entre conexões.",
+    "Não substitui pnpm test:db nem homologação local pela tela."
+  ],
+  "diagnostic_script": "C:/Users/junio/.codex/tmp/estallo-automacoes-tools/sql-validation/validate-foundation.mjs",
+  "product_dependencies_changed": false
+}

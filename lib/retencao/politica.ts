@@ -311,34 +311,6 @@ export const RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO = 400;
 export const RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO = 100;
 
 /**
- * 2 dias para o RITMO DE ENVIO (`pacing_ledger`, migration 0587) — o padrão É o
- * piso, porque nenhum leitor olha mais longe.
- *
- * `loadPacingState` e `lerEstadoDoPacing` perguntam o último envio do número e
- * quantos saíram desde a meia-noite local (no máximo 24 h atrás). A função
- * `fn_expurgar_ritmo_de_envio_vencido` NUNCA apaga a última linha de cada número,
- * em nenhuma idade — é dela que o espaçamento do próximo envio mede. Subir o
- * knob só serve a quem quer investigar à mão os envios de dias passados.
- */
-export const RETENCAO_RITMO_DE_ENVIO_DIAS_PADRAO = 2;
-/** Piso de 2 dias: o dobro do dia local, a janela mais longa que o ritmo lê. */
-export const RETENCAO_RITMO_DE_ENVIO_DIAS_PISO = 2;
-
-/**
- * 30 dias para as CÓPIAS ENVIADAS (`outbound_copies`, migration 0587), e nunca
- * as últimas `windowSize` do número.
- *
- * O gate anti-template-idêntico (`loadRecentCopies`) lê as últimas `windowSize`
- * do número (20, ou o knob de `channel_knobs.spinning_knobs`), sem olhar a
- * idade. `fn_expurgar_copias_enviadas_vencidas` guarda o MAIOR entre isso e o
- * prazo. A tabela guarda texto enviado sem `contact_id` — fora da cascata de
- * LGPD —, então guardar menos é também apagar menos texto de pessoa sem dono.
- */
-export const RETENCAO_COPIAS_ENVIADAS_DIAS_PADRAO = 30;
-/** Piso de 7 dias: o que o operador investiga depois de um alerta de número. */
-export const RETENCAO_COPIAS_ENVIADAS_DIAS_PISO = 7;
-
-/**
  * 180 dias para o CHECKPOINT SUPERADO (`lead_checkpoints`, migration 0587).
  *
  * Só sai o que já não é o último da sua fronteira (conversa, revisão do

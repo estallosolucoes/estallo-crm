@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
@@ -38,6 +39,8 @@ interface NavHubProps {
    * degrada para pt-BR, que é o comportamento de antes.
    */
   locale?: Idioma;
+  /** Bloco próprio da página, logo abaixo do título (ex.: chaves de recurso do CRM). */
+  children?: ReactNode;
 }
 
 const EXTENSION_ICONS: Record<ExtensionManifest["display"]["icon"], typeof ListChecks> = {
@@ -84,6 +87,7 @@ export function NavHub({
   locale = IDIOMA_PADRAO,
   extensionGuides = [],
   extensionsUnavailable = false,
+  children,
 }: NavHubProps) {
   const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, modulosLigados, capacidadesLigadas);
 
@@ -93,6 +97,8 @@ export function NavHub({
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir(title, locale)}</h1>
         {subtitle && <p className="text-sm text-muted-foreground">{traduzir(subtitle, locale)}</p>}
       </header>
+
+      {children}
 
       {secoes.map(({ section, items }) => (
         <section

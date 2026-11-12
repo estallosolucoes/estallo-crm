@@ -1,4 +1,7 @@
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
+import { pausaDepoisDoBloco } from "./passo-a-passo";
+import { executarRequisicaoHttp, falhaDaRequisicao, type ResultadoHttp } from "./requisicao-http";
+import type { NodeOutput } from "./node-output-contracts";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
@@ -16,11 +19,19 @@ import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
  * `createSupabaseAdminClient` below adapts the real service-role client.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ZodError } from "zod";
 
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 import { logger } from "@/lib/logger";
 
-import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
+import { resolverReferencias } from "./variaveis-de-blocos";
+import {
+  flowGraphSchema,
+  type FlowGraph,
+  type FlowNode,
+  type ItemDeEnvio,
+  type ReplySaveTo,
+} from "./graph-schema";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -28,6 +39,8 @@ import {
   latestRepeatIndex,
   occupancyEventCount,
   pisoDoInboundDaEspera,
+  escolherResposta,
+  ULTIMAS_RESPOSTAS_LIDAS,
   rechecksOciososDaAcao,
   turnoDaAcaoDescartado,
   actionTurnCompleted,
@@ -43,6 +56,7 @@ import {
   type EnrollmentStatus,
   type LeadFacts,
   type NodeResult,
+  type NodeDecisionTrace,
 } from "./node-handlers";
 import { coletarEsperasAdaptativas, type EsperaAdaptativa, type TimingPlan } from "./timing-plan";
 import {
@@ -50,7 +64,10 @@ import {
   type AvisoRecuperacaoEsgotada,
 } from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
-import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
+import {
+  criarTarefaInterna as criarTarefaNoCrm,
+  notificarTarefaCriada,
+} from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
@@ -62,6 +79,21 @@ import { renderizarTextoDeFollowup } from "@/lib/automation/texto-do-followup";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { quandoDoRetornoVivo, reavaliarDepoisDoRetorno } from "./retorno-segura-o-fluxo";
 import { triggerConfigSchema } from "./api-schemas";
+import { executionContractProblem } from "./execution-contract";
+import { fusoDaOrganizacao } from "@/lib/tempo/fuso-da-organizacao";
+import {
+  executionLeadTarget,
+  ExecutionLeadUnavailableError,
+  loadLeadForExecution,
+  type ExecutionLeadTarget,
+} from "./execution-lead";
+import {
+  ExecutionConfigurationError,
+  ExecutionInputChangedError,
+  executionDecisionInputSchema,
+  type ExecutionJournal,
+  type ExecutionAttemptHandle,
+} from "./execution-journal";
 
 const MAX_STEPS = 80;
 const CLAIM_LEASE_SECONDS = 120;
@@ -103,6 +135,8 @@ export interface FollowupJobRequest {
     fallback_template_id?: string;
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
+    /** action (mode 'messages') — os envios do bloco, textos já renderizados; saem em ordem, sem IA. */
+    fixed_items?: ItemDeEnvio[];
     /**
      * action (mode 'template') — id em `message_templates` (texto pronto) OU em
      * `meta_templates` (modelo aprovado do canal, o único que sai com a janela de 24 h
@@ -123,8 +157,9 @@ export interface FollowupJobRequest {
 
 /** DB surface the engine needs — see file header for why this isn't `SupabaseClient` directly. */
 export interface AdminClient {
+  executionJournal?(): Promise<ExecutionJournal>;
   assertServiceBoundary?(enrollment: EnrollmentRow): Promise<void>;
-  assertAgenda?(enrollment:EnrollmentRow):Promise<void>;
+  assertAgenda?(enrollment: EnrollmentRow): Promise<void>;
   /**
    * Até quando um retorno agendado segura esta inscrição (ISO), ou `null` quando
    * nada a segura. Só fluxo de silêncio — ver `retorno-segura-o-fluxo.ts`.
@@ -132,13 +167,30 @@ export interface AdminClient {
   retornoQueSeguraOFluxo?(enrollment: EnrollmentRow): Promise<string | null>;
   claimDueEnrollments(limit: number, leaseSeconds: number): Promise<EnrollmentRow[]>;
   loadFlowGraph(orgId: string, versionId: string): Promise<FlowGraph | null>;
-  loadLeadFacts(orgId: string, contactId: string): Promise<{
+  loadLeadFacts(
+    orgId: string,
+    contactId: string,
+    target?: ExecutionLeadTarget,
+  ): Promise<{
     lead_stage: string | null;
     tags: string[];
+    /** Nomes dos produtos do negócio (condição `product`). */
+    products?: string[];
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
+    contact_custom_fields?: Record<string, unknown>;
   }>;
   loadEnrollmentEvents(enrollmentId: string): Promise<EnrollmentEventRef[]>;
+  /**
+   * O motivo, se o job de envio da estadia ATUAL neste bloco de ação MORREU (tentativas esgotadas).
+   * `null` = em voo, concluído ou nunca enfileirado. Opcional como os demais: adaptador que não o
+   * implementa mantém o comportamento anterior (conferir de hora em hora até o dead-man).
+   */
+  loadFalhaDefinitivaDoEnvio?(
+    orgId: string,
+    enrollmentId: string,
+    nodeId: string,
+  ): Promise<string | null>;
   /**
    * #2528 — o contexto `{ contact, lead }` do render das mensagens de follow-up
    * (`lib/automation/template.ts`). Opcional como os demais avisos deste
@@ -146,7 +198,18 @@ export interface AdminClient {
    * estavam (comportamento de antes da correção) — NUNCA com marcação vazia
    * no lugar, que seria pior que a marcação crua.
    */
-  loadRenderContext?(orgId: string, contactId: string): Promise<Record<string, unknown> | null>;
+  loadRenderContext?(
+    orgId: string,
+    contactId: string,
+    target?: ExecutionLeadTarget,
+  ): Promise<Record<string, unknown> | null>;
+  /**
+   * As saídas dos blocos já concluídos DESTA inscrição (`output_snapshot` do diário), por id do bloco — é o que
+   * `{{nodes.<bloco>.<campo>}}` lê. Só existe para inscrição de contrato 1; sem o diário, nenhuma saída.
+   */
+  loadStepOutputs?(orgId: string, enrollmentId: string): Promise<Record<string, unknown>>;
+  /** O fuso da organização (`organizations.timezone`, com o padrão do produto) — «aguardar até» uma hora. */
+  loadOrgTimezone?(orgId: string): Promise<string>;
   /** Latest inbound `messages.body` for the contact (optionally scoped to the enrollment conversation). */
   loadLastInboundBody(
     orgId: string,
@@ -155,6 +218,14 @@ export interface AdminClient {
     /** Só mensagens deste instante em diante — senão o SIM da pergunta anterior casa no próximo `match_reply`. */
     naoAntesDe?: string | null,
   ): Promise<string | null>;
+  /** Contrato 1, `match_reply`: a última mensagem recebida (id e texto da MESMA linha), com o piso da
+   *  espera; com `texto`, a última cujo corpo é exatamente esse texto (o do webhook). */
+  loadLastInboundMessage?(
+    orgId: string,
+    contactId: string,
+    naoAntesDe?: string | null,
+    texto?: string,
+  ): Promise<{ id: string; body: string } | null>;
   /** Inserts the step's audit event; `inserted:false` means idempotency_key already existed (23505 replay). */
   insertEnrollmentEvent(event: {
     organization_id: string;
@@ -164,10 +235,27 @@ export interface AdminClient {
     payload: Record<string, unknown>;
     idempotency_key: string;
   }): Promise<{ inserted: boolean }>;
-  applyEnrollmentStep?(id:string,orgId:string,patch:EnrollmentPatch,event:{job_claim?:JobClaim;job_id?:string;node_id:string;event_type:string;payload:Record<string,unknown>;idempotency_key:string}):Promise<void>;
+  applyEnrollmentStep?(
+    id: string,
+    orgId: string,
+    patch: EnrollmentPatch,
+    event: {
+      job_claim?: JobClaim;
+      job_id?: string;
+      node_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      idempotency_key: string;
+    },
+  ): Promise<void>;
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
-  insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
+  insertDeadInboxItem(item: {
+    organization_id: string;
+    title: string;
+    body: string;
+    ref_id: string;
+  }): Promise<void>;
   /**
    * Nó `internal_task` (#1540): grava a tarefa no CRM para o contato da
    * inscrição. Opcional como os demais avisos deste adaptador — só a produção
@@ -179,6 +267,7 @@ export interface AdminClient {
     organization_id: string;
     contact_id: string;
     enrollment_id: string;
+    target?: ExecutionLeadTarget;
     /** O config do nó, já validado pelo `flowGraphSchema.parse`. */
     config: Extract<FlowNode, { type: "internal_task" }>["config"];
   }): Promise<void>;
@@ -192,6 +281,7 @@ export interface AdminClient {
     organization_id: string;
     contact_id: string;
     enrollment_id: string;
+    target?: ExecutionLeadTarget;
     config: Extract<FlowNode, { type: "move_lead" }>["config"];
   }): Promise<void>;
   /**
@@ -202,6 +292,7 @@ export interface AdminClient {
     organization_id: string;
     contact_id: string;
     enrollment_id: string;
+    target?: ExecutionLeadTarget;
     config: Extract<FlowNode, { type: "edit_lead_tag" }>["config"];
   }): Promise<void>;
   /**
@@ -222,7 +313,8 @@ export interface AdminClient {
 export interface TickDeps {
   db: AdminClient;
   clock: () => Date;
-  enqueueJob: (job: FollowupJobRequest) => Promise<void>;
+  /** Devolve o id do job criado quando o produtor sabe; o diário o liga à tentativa. */
+  enqueueJob: (job: FollowupJobRequest) => Promise<{ job_id: string } | void>;
 }
 
 export interface TickSummary {
@@ -244,6 +336,61 @@ function errorMessage(err: unknown): string {
   // pelo próprio engine; o truncamento é só cinto de segurança contra erro
   // inesperado de driver/DB verboso.
   return raw.slice(0, MAX_ERROR_LEN);
+}
+
+async function recordJournalFailure(
+  db: AdminClient,
+  journal: ExecutionJournal,
+  enrollment: EnrollmentRow,
+  handle: ExecutionAttemptHandle | undefined,
+  error: unknown,
+  summary: TickSummary,
+  operation: "task" | "decision" | "tags" | "move" | "send" | "classify" | "http",
+): Promise<void> {
+  if (error instanceof StaleServiceBoundaryError) return;
+  if (error instanceof AgendaDeferredError) {
+    if (error.protection.motivo === "leitura_indisponivel") throw error;
+    await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
+      next_eval_at: error.protection.reavaliar_em,
+      claimed_until: null,
+      last_error: error.message,
+    });
+    return;
+  }
+  if (!handle) throw error;
+  const domain =
+    error instanceof ExecutionConfigurationError || error instanceof ExecutionLeadUnavailableError;
+  const configuration = domain || error instanceof ZodError;
+  const explanation =
+    error instanceof ExecutionConfigurationError && error.message !== error.code
+      ? error.message
+      : undefined;
+  await journal.fail(enrollment, handle, {
+    code: domain
+      ? error.code
+      : configuration
+        ? "execution_output_invalid"
+        : error instanceof ExecutionInputChangedError
+          ? error.code
+          : `execution_${operation}_write_failed`,
+    message: (
+      explanation ??
+      (configuration
+        ? operation === "task"
+          ? "Revise a configuração e o Lead da tarefa."
+          : "Revise a configuração e os dados desta etapa."
+        : operation === "task"
+          ? "Não foi possível confirmar a tarefa nesta tentativa."
+          : "Não foi possível confirmar o resultado desta etapa.")
+    ).slice(0, 1000),
+    category: configuration ? "configuration" : "transient",
+    retryable: !configuration,
+    ...(error instanceof ExecutionConfigurationError && error.details !== undefined
+      ? { details: error.details }
+      : {}),
+  });
+  summary.failed++;
+  if (configuration) summary.dead++;
 }
 
 function eventTypeFor(result: NodeResult): string {
@@ -311,16 +458,54 @@ function eventPayload(result: NodeResult): Record<string, unknown> {
  * A ordem não é livre: a volta entra PRIMEIRO, senão o render de CRM apagaria
  * `{{volta}}` (não é campo de contato nem de negócio).
  */
-function interpolarVolta(
+/** O contexto do render com as saídas dos blocos anteriores desta inscrição (`nodes`), quando o diário as tem. */
+export async function comSaidasDosBlocos(
+  db: AdminClient,
+  enrollment: EnrollmentRow,
+  contexto: Record<string, unknown> | null | undefined,
+): Promise<Record<string, unknown> | null> {
+  const base = contexto ?? null;
+  if (enrollment.execution_contract !== 1 || !db.loadStepOutputs) return base;
+  const nodes = await db.loadStepOutputs(enrollment.organization_id, enrollment.id);
+  return { ...(base ?? {}), nodes };
+}
+
+export function interpolarVolta(
   texto: string,
   events: EnrollmentEventRef[],
   contexto?: Record<string, unknown> | null,
 ): string {
   const volta = latestRepeatIndex(events);
   const comVolta = volta
-    ? texto.replaceAll("{{volta}}", String(volta.index)).replaceAll("{{voltas}}", String(volta.total))
+    ? texto
+        .replaceAll("{{volta}}", String(volta.index))
+        .replaceAll("{{voltas}}", String(volta.total))
     : texto;
-  return contexto ? renderizarTextoDeFollowup(comVolta, contexto) : comVolta;
+  if (!contexto) return comVolta;
+  // `{{nodes.<bloco>.<campo>}}` — a saída de um bloco anterior desta execução — vem ANTES do render do CRM:
+  // o id do bloco tem hífen, que a marca de CRM (`[w.]+`) não reconhece.
+  const nodes = contexto.nodes;
+  const resolvido = resolverReferencias(
+    comVolta,
+    nodes && typeof nodes === "object" ? (nodes as Record<string, unknown>) : {},
+  );
+  // Com as saídas CARREGADAS (diário do contrato 1), variável sem valor é defeito do fluxo: mandar a frase com
+  // o pedaço sumido ("Seu link: ") é pior que não mandar. Sem saídas carregadas não há como saber — segue sumindo.
+  if (nodes && typeof nodes === "object" && resolvido.sem_valor.length > 0) {
+    throw new VariavelSemValorError([...new Set(resolvido.sem_valor.map((r) => r.marca))]);
+  }
+  return renderizarTextoDeFollowup(resolvido.texto, contexto);
+}
+
+/** Uma `{{nodes...}}` do texto não tinha valor na saída do bloco citado — o passo NÃO envia a frase incompleta. */
+export class VariavelSemValorError extends Error {
+  constructor(readonly marcas: string[]) {
+    super(
+      `A mensagem cita ${marcas.join(", ")}, mas o bloco citado não produziu esse valor nesta execução. ` +
+        "Revise a variável ou o caminho até este bloco.",
+    );
+    this.name = "VariavelSemValorError";
+  }
 }
 
 /**
@@ -338,11 +523,25 @@ function turnPayloadExtras(
   if (node.type === "action" && node.config.mode === "ai_message") {
     return {
       prompt_hint: interpolarVolta(node.config.prompt_hint, events),
-      ...(node.config.fallback_template_id ? { fallback_template_id: node.config.fallback_template_id } : {}),
+      ...(node.config.fallback_template_id
+        ? { fallback_template_id: node.config.fallback_template_id }
+        : {}),
     };
   }
   if (node.type === "action" && node.config.mode === "text") {
     return { fixed_body: interpolarVolta(node.config.body, events, contexto) };
+  }
+  if (node.type === "action" && node.config.mode === "messages") {
+    // Texto e legenda ganham a volta e os dados de quem recebe, como o texto fixo; o anexo segue como está.
+    return {
+      fixed_items: node.config.items.map((item) =>
+        item.kind === "text"
+          ? { ...item, body: interpolarVolta(item.body, events, contexto) }
+          : item.caption
+            ? { ...item, caption: interpolarVolta(item.caption, events, contexto) }
+            : item,
+      ),
+    };
   }
   if (node.type === "action" && node.config.mode === "template") {
     const volta = latestRepeatIndex(events);
@@ -352,7 +551,10 @@ function turnPayloadExtras(
     };
   }
   if (node.type === "ai_classify") {
-    return { classes: node.config.classes, ...(node.config.hint !== undefined ? { hint: node.config.hint } : {}) };
+    return {
+      classes: node.config.classes,
+      ...(node.config.hint !== undefined ? { hint: node.config.hint } : {}),
+    };
   }
   if (node.type === "trigger") {
     // As esperas vêm do GRAFO PINADO, não do nó — o trigger não as conhece, e é
@@ -378,7 +580,9 @@ async function markDead(
   // usuário só vê o aviso 2x); a ordem inversa arriscaria o pior caso real:
   // status='dead' gravado e o aviso NUNCA sair — enrollment morto em
   // silêncio. Duplicata visível > perda silenciosa.
-  const flowName = (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ?? enrollment.pointer_id;
+  const flowName =
+    (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ??
+    enrollment.pointer_id;
   await db.insertDeadInboxItem({
     organization_id: enrollment.organization_id,
     title: "Um fluxo de follow-up parou de tentar",
@@ -427,7 +631,11 @@ async function applyHandlerFailure(
 function tallyOutcome(result: NodeResult, summary: TickSummary): void {
   if (result.kind === "advance" || result.kind === "complete") {
     summary.advanced++;
-  } else if (result.kind === "wait" || result.kind === "enqueue_turn" || result.kind === "recheck") {
+  } else if (
+    result.kind === "wait" ||
+    result.kind === "enqueue_turn" ||
+    result.kind === "recheck"
+  ) {
     summary.scheduled++;
   }
 }
@@ -444,6 +652,7 @@ async function applyResult(
   contexto?: Record<string, unknown> | null,
 ): Promise<void> {
   const { db, clock, enqueueJob } = deps;
+  const target = executionLeadTarget(enrollment);
   await db.assertServiceBoundary?.(enrollment);
 
   if (result.kind === "fail") {
@@ -483,6 +692,7 @@ async function applyResult(
         contact_id: enrollment.contact_id,
         enrollment_id: enrollment.id,
         config: node.config,
+        ...(target ? { target } : {}),
       });
     } catch (err) {
       // Falha de gravação não pode reverter o avanço (o enrollment avançaria
@@ -512,6 +722,7 @@ async function applyResult(
         contact_id: enrollment.contact_id,
         enrollment_id: enrollment.id,
         config: node.config,
+        ...(target ? { target } : {}),
       });
     } catch (err) {
       logger.warn("followup_move_lead_failed", {
@@ -553,6 +764,7 @@ async function applyResult(
         contact_id: enrollment.contact_id,
         enrollment_id: enrollment.id,
         config: node.config,
+        ...(target ? { target } : {}),
       });
     } catch (err) {
       logger.warn("followup_edit_lead_tag_failed", {
@@ -581,14 +793,18 @@ async function applyResult(
         result.kind === "advance" &&
         (prior.event_type === "action_sent" || prior.event_type === "wait_started")
       ) {
-        await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
-          current_node_id: result.next_node_id,
-          status: "active",
-          next_eval_at: result.next_eval_at.toISOString(),
-          steps_taken: enrollment.steps_taken + 1,
-          claimed_until: null,
-          updated_at: clock().toISOString(),
-        });
+        await db.updateEnrollment(
+          enrollment.id,
+          enrollment.organization_id,
+          pausaDepoisDoBloco(enrollment, {
+            current_node_id: result.next_node_id,
+            status: "active",
+            next_eval_at: result.next_eval_at.toISOString(),
+            steps_taken: enrollment.steps_taken + 1,
+            claimed_until: null,
+            updated_at: clock().toISOString(),
+          }),
+        );
         tallyOutcome(result, summary);
       }
       return;
@@ -631,7 +847,51 @@ async function applyResult(
       patch.next_eval_at = new Date(clock().getTime() + graceMs).toISOString();
       if (!isReplay) {
         await db.assertServiceBoundary?.(enrollment);
-        await enqueueJob({
+        // Contrato 1: a tentativa nasce ANTES do job existir, e o job é ligado a ela
+        // logo depois. Falha ao ligar NÃO marca a tentativa como falha: o job já está
+        // na fila e pode sair; reabrir a tentativa o enfileiraria de novo (envio em dobro).
+        let journal: ExecutionJournal | undefined;
+        let handle: ExecutionAttemptHandle | undefined;
+        if (enrollment.execution_contract === 1) {
+          if (!db.executionJournal) throw new Error("execution_journal_unavailable");
+          journal = await db.executionJournal();
+          try {
+            const begun = await journal.begin(enrollment, {
+              contact_id: enrollment.contact_id,
+              lead_id: enrollment.lead_id ?? null,
+              conversation_id: enrollment.conversation_id,
+              purpose: result.purpose,
+            });
+            if (begun.kind !== "ready") {
+              summary.dead++;
+              return;
+            }
+            handle = begun.handle;
+          } catch (error) {
+            await recordJournalFailure(db, journal, enrollment, handle, error, summary, "send");
+            return;
+          }
+        }
+        let extras: ReturnType<typeof turnPayloadExtras>;
+        try {
+          extras = turnPayloadExtras(node, smartWaits, events, contexto);
+        } catch (error) {
+          if (error instanceof VariavelSemValorError && journal) {
+            // A tentativa já nasceu: fecha como falha de CONFIGURAÇÃO (definitiva, roteável pelo "Fallback erro").
+            await recordJournalFailure(
+              db,
+              journal,
+              enrollment,
+              handle,
+              new ExecutionConfigurationError("variavel_sem_valor", error.message),
+              summary,
+              "send",
+            );
+            return;
+          }
+          throw error;
+        }
+        const enqueued = await enqueueJob({
           organization_id: enrollment.organization_id,
           contact_id: enrollment.contact_id,
           payload: {
@@ -640,10 +900,19 @@ async function applyResult(
             node_id: node.id,
             source_step_key: idemKey,
             purpose: result.purpose,
-            ...turnPayloadExtras(node, smartWaits, events, contexto),
+            ...extras,
             ...(result.fixed_body ? { fixed_body: result.fixed_body } : {}),
           },
         });
+        if (journal && handle) {
+          if (!enqueued) throw new Error("execution_job_id_unavailable");
+          try {
+            await journal.attachJob(enrollment, handle, enqueued.job_id);
+          } catch (error) {
+            if (error instanceof StaleServiceBoundaryError) return;
+            throw error;
+          }
+        }
       }
       break;
     }
@@ -667,7 +936,8 @@ async function applyResult(
     await db.abrirAvisoRecuperacaoEsgotada?.(avisoEsgotada);
   }
 
-  await db.updateEnrollment(enrollment.id, enrollment.organization_id, patch);
+  // Passo a passo: o bloco que acabou de concluir (patch que muda o bloco atual) deixa a execução pausada no seguinte.
+  await db.updateEnrollment(enrollment.id, enrollment.organization_id, pausaDepoisDoBloco(enrollment, patch));
 
   if (
     result.kind === "advance" &&
@@ -733,11 +1003,17 @@ async function processEnrollment(
   // `active` — ver `enviar-texto-fixo.ts`, `turn-bridge.ts` e `send-message.ts`.
   // A fronteira continua valendo para o dormente: atendimento fechado cancela
   // com aviso na Central, como antes.
-  try { await db.assertServiceBoundary?.(enrollment); if (enrollment.status !== "dormente") await db.assertAgenda?.(enrollment); }
-  catch (error) {
-    if(error instanceof AgendaDeferredError){
-      if(error.protection.motivo === "leitura_indisponivel") throw error;
-      await db.updateEnrollment(enrollment.id,enrollment.organization_id,{next_eval_at:error.protection.reavaliar_em,claimed_until:null,last_error:error.message});
+  try {
+    await db.assertServiceBoundary?.(enrollment);
+    if (enrollment.status !== "dormente") await db.assertAgenda?.(enrollment);
+  } catch (error) {
+    if (error instanceof AgendaDeferredError) {
+      if (error.protection.motivo === "leitura_indisponivel") throw error;
+      await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
+        next_eval_at: error.protection.reavaliar_em,
+        claimed_until: null,
+        last_error: error.message,
+      });
       return;
     }
     if (!(error instanceof StaleServiceBoundaryError)) throw error;
@@ -768,7 +1044,12 @@ async function processEnrollment(
         ref_id: enrollment.id,
       });
     }
-    await db.updateEnrollment(enrollment.id, enrollment.organization_id, { status: "cancelled", cancel_reason: "Atendimento encerrado ou substituído", claimed_until: null, completed_at: clock().toISOString() });
+    await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
+      status: "cancelled",
+      cancel_reason: "Atendimento encerrado ou substituído",
+      claimed_until: null,
+      completed_at: clock().toISOString(),
+    });
     return;
   }
 
@@ -787,11 +1068,13 @@ async function processEnrollment(
         payload: { next_eval_at: seguraAte },
         idempotency_key: `${enrollment.current_node_id}:${enrollment.steps_taken}:retorno:${seguraAte}`,
       });
-      await db.updateEnrollment(enrollment.id, enrollment.organization_id, { next_eval_at: seguraAte, claimed_until: null });
+      await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
+        next_eval_at: seguraAte,
+        claimed_until: null,
+      });
       return;
     }
   }
-
 
   if (enrollment.steps_taken > MAX_STEPS) {
     await markDead(db, clock, enrollment, "max_steps");
@@ -802,13 +1085,146 @@ async function processEnrollment(
   const graph = await db.loadFlowGraph(enrollment.organization_id, enrollment.version_id);
   if (!graph) throw new Error("flow_version_not_found");
 
+  const contractProblem = executionContractProblem(enrollment, graph);
+  if (contractProblem) {
+    await markDead(db, clock, enrollment, contractProblem);
+    summary.dead++;
+    return;
+  }
+
   const node = graph.nodes.find((n) => n.id === enrollment.current_node_id);
   if (!node) throw new Error("node_not_found");
   if (inboundBodyOverride !== undefined && node.type !== "match_reply" && node.type !== "wait") {
     return;
   }
 
-  const leadRow = await db.loadLeadFacts(enrollment.organization_id, enrollment.contact_id);
+  // Requisição HTTP (Fase 5): a rede fica FORA de transação. A intenção é gravada antes (efeito `pending`), a chamada
+  // sai, e só então o diário confirma. Morrer no meio deixa a intenção sem desfecho: a próxima tentativa vê isso e
+  // para em "resultado incerto" (Central) — nunca reenvia sozinha algo que pode ter chegado.
+  if (enrollment.execution_contract === 1 && node.type === "http_request") {
+    if (!db.executionJournal) throw new Error("execution_journal_unavailable");
+    const journal = await db.executionJournal();
+    let handle: ExecutionAttemptHandle | undefined;
+    try {
+      const begun = await journal.begin(enrollment, {
+        contact_id: enrollment.contact_id,
+        lead_id: enrollment.lead_id ?? null,
+        conversation_id: enrollment.conversation_id,
+      });
+      if (begun.kind !== "ready") {
+        summary.dead++;
+        return;
+      }
+      handle = begun.handle;
+      const preparo = await journal.prepareHttp(enrollment, handle);
+      if (preparo.kind === "reused") return;
+      const resultado: ResultadoHttp =
+        preparo.kind === "incerto"
+          ? { kind: "incerto", motivo: "tentativa anterior sem desfecho" }
+          : await executarRequisicaoHttp(preparo.pedido);
+      if (resultado.kind === "resposta" && resultado.status >= 200 && resultado.status < 300) {
+        const result = await journal.completeHttp(enrollment, handle, {
+          status: resultado.status,
+          corpo: resultado.corpo as NodeOutput<"http_request">["corpo"],
+          truncado: resultado.truncado,
+        });
+        if (!result.reused) summary.advanced++;
+        return;
+      }
+      const falha = falhaDaRequisicao(resultado);
+      await journal.failHttp(enrollment, handle, falha.efeito, falha.erro);
+      summary.failed++;
+      if (!falha.erro.retryable) summary.dead++;
+    } catch (error) {
+      await recordJournalFailure(db, journal, enrollment, handle, error, summary, "http");
+    }
+    return;
+  }
+
+  if (
+    enrollment.execution_contract === 1 &&
+    (node.type === "internal_task" ||
+      node.type === "edit_lead_tag" ||
+      node.type === "move_lead" ||
+      node.type === "assign_lead_owner" ||
+      node.type === "add_note" ||
+      node.type === "update_lead_field" ||
+      node.type === "lead_product" ||
+      node.type === "find_or_create_contact" ||
+      node.type === "find_or_create_lead")
+  ) {
+    if (!db.executionJournal) throw new Error("execution_journal_unavailable");
+    const journal = await db.executionJournal();
+    let handle: ExecutionAttemptHandle | undefined;
+    try {
+      const begun = await journal.begin(enrollment, {
+        contact_id: enrollment.contact_id,
+        lead_id: enrollment.lead_id ?? null,
+        conversation_id: enrollment.conversation_id,
+      });
+      if (begun.kind !== "ready") {
+        summary.dead++;
+        return;
+      }
+      handle = begun.handle;
+      if (node.type === "internal_task") {
+        const result = await journal.completeTask(enrollment, handle);
+        if (!result.reused) {
+          summary.advanced++;
+          if (result.notification) await notificarTarefaCriada(result.notification);
+        }
+      } else if (node.type === "edit_lead_tag") {
+        const result = await journal.completeTags(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else if (node.type === "assign_lead_owner") {
+        const result = await journal.completeOwner(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else if (node.type === "add_note") {
+        const result = await journal.completeNote(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else if (node.type === "update_lead_field") {
+        const result = await journal.completeField(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else if (node.type === "lead_product") {
+        const result = await journal.completeProduct(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else if (node.type === "find_or_create_contact") {
+        const result = await journal.completeContactLookup(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else if (node.type === "find_or_create_lead") {
+        const result = await journal.completeLeadLookup(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      } else {
+        const result = await journal.completeMove(enrollment, handle);
+        if (!result.reused) summary.advanced++;
+      }
+    } catch (error) {
+      await recordJournalFailure(
+        db,
+        journal,
+        enrollment,
+        handle,
+        error,
+        summary,
+        node.type === "internal_task"
+          ? "task"
+          : node.type === "edit_lead_tag" || node.type === "assign_lead_owner" ||
+            node.type === "add_note" ||
+            node.type === "update_lead_field" ||
+            node.type === "lead_product" ||
+            node.type === "find_or_create_contact" ||
+            node.type === "find_or_create_lead"
+            ? "tags"
+            : "move",
+      );
+    }
+    return;
+  }
+
+  const target = executionLeadTarget(enrollment);
+  const leadRow = target
+    ? await db.loadLeadFacts(enrollment.organization_id, enrollment.contact_id, target)
+    : await db.loadLeadFacts(enrollment.organization_id, enrollment.contact_id);
   const lead: LeadFacts = {
     lead_stage: leadRow.lead_stage,
     tags: leadRow.tags,
@@ -816,8 +1232,12 @@ async function processEnrollment(
     // Preenchido LOGO ABAIXO, depois que os eventos forem lidos: o desfecho do
     // passo anterior é dado que mora nos eventos, não na linha do lead.
     last_outcome: null,
+    ...(leadRow.products !== undefined ? { products: leadRow.products } : {}),
     contact_name: leadRow.contact_name ?? null,
-    custom_fields: leadRow.custom_fields,
+    ...(leadRow.custom_fields !== undefined ? { custom_fields: leadRow.custom_fields } : {}),
+    ...(leadRow.contact_custom_fields !== undefined
+      ? { contact_custom_fields: leadRow.contact_custom_fields }
+      : {}),
   };
 
   let waitElapsed: boolean | undefined;
@@ -825,6 +1245,7 @@ async function processEnrollment(
   let actionEnqueued: boolean | undefined;
   let actionRecheckCount: number | undefined;
   let actionCompleted: boolean | undefined;
+  let actionTurnFalhou: string | undefined;
   let planEnqueued: boolean | undefined;
   let planRecheckCount: number | undefined;
   let repeatTaken: number | undefined;
@@ -859,7 +1280,12 @@ async function processEnrollment(
     planRecheckCount = events.filter((e) => e.node_id === node.id).length;
   }
 
-  if (node.type === "wait" || node.type === "ai_classify" || node.type === "match_reply" || node.type === "action") {
+  if (
+    node.type === "wait" ||
+    node.type === "ai_classify" ||
+    node.type === "match_reply" ||
+    node.type === "action"
+  ) {
     waitElapsed = resolveWaitPhase(events, node.id, enrollment.steps_taken);
     // match_reply de captação: a confirmação já enfileirou um evento neste nó.
     // O claim seguinte às vezes chega com steps_taken desalinhado da chave
@@ -882,10 +1308,23 @@ async function processEnrollment(
       // `rechecksOciososDaAcao` / `EVENTO_ACAO_ADIADA` em node-handlers.ts.
       actionRecheckCount = rechecksOciososDaAcao(events, node.id);
       actionCompleted = actionTurnCompleted(events, node.id);
+      if (actionEnqueued && !actionCompleted && db.loadFalhaDefinitivaDoEnvio) {
+        actionTurnFalhou =
+          (await db.loadFalhaDefinitivaDoEnvio(
+            enrollment.organization_id,
+            enrollment.id,
+            node.id,
+          )) ?? undefined;
+      }
     }
   }
   const textoInbound = inboundBodyOverride?.trim() ?? "";
   if (textoInbound && (node.type === "match_reply" || node.type === "wait")) {
+    wokeEarly = true;
+  }
+  // Passo a passo: quem decide quando seguir é a pessoa, então o tempo de um bloco de espera não é cumprido —
+  // o bloco conclui e o motor pausa no seguinte, como em qualquer outro.
+  if (enrollment.passo_a_passo === true && node.type === "wait") {
     wokeEarly = true;
   }
 
@@ -920,6 +1359,161 @@ async function processEnrollment(
   const nextAlways = selectEdge(graph.edges, node.id, { type: "always" });
   const proximo = nextAlways ? (graph.nodes.find((n) => n.id === nextAlways.target) ?? null) : null;
 
+  if (
+    enrollment.execution_contract === 1 &&
+    (node.type === "condition" ||
+      node.type === "end" ||
+      // O acionamento que ainda vai planejar as esperas adaptativas enfileira um turno e espera
+      // por ele em rechecks: segue o trilho do turno (enqueue_turn abaixo), não o da decisão, que
+      // abriria uma tentativa nova a cada recheck.
+      (node.type === "trigger" && !vaiPlanejar) ||
+      node.type === "wait" ||
+      node.type === "repeat" ||
+      node.type === "match_reply" ||
+      node.type === "map_data")
+  ) {
+    if (!db.executionJournal) throw new Error("execution_journal_unavailable");
+    const journal = await db.executionJournal();
+    let handle: ExecutionAttemptHandle | undefined;
+    let perguntaNaFila = false;
+    try {
+      const begun = await journal.begin(enrollment, {
+        facts: lead,
+        contact_id: enrollment.contact_id,
+        lead_id: enrollment.lead_id ?? null,
+        conversation_id: enrollment.conversation_id,
+        ...(node.type === "map_data" ||
+        (node.type === "condition" && node.config.checks.some((c) => c.field === "variavel"))
+          ? { saidas: db.loadStepOutputs ? await db.loadStepOutputs(enrollment.organization_id, enrollment.id) : {} }
+          : {}),
+        ...(node.type === "repeat"
+          ? {
+              repeat: {
+                taken: repeatTaken ?? 0,
+                total: repeatTotal ?? null,
+                reply: lastInboundBody ?? null,
+              },
+            }
+          : {}),
+      });
+      if (begun.kind !== "ready") {
+        summary.dead++;
+        return;
+      }
+      handle = begun.handle;
+      const frozenInput = executionDecisionInputSchema.parse(begun.input);
+      const journalWokeEarly =
+        node.type === "wait" && node.config.mode === "fixed" && node.config.immune_to_reply
+          ? false
+          : wokeEarly;
+      // Pergunta de confirmação ainda na fila: não decide nada agora (a tentativa nova a enfileiraria
+      // de novo); o tick seguinte a encontra esperando a resposta.
+      if (begun.question_in_flight) return;
+      if (
+        (node.type === "wait" || node.type === "match_reply") &&
+        begun.waiting_until &&
+        !journalWokeEarly &&
+        !(begun.waiting_elapsed ?? clock().getTime() >= new Date(begun.waiting_until).getTime())
+      )
+        return;
+      // A resposta é lida agora (não congelada no `begin`: a espera nasce antes dela), e texto e id
+      // saem da MESMA linha — duas consultas deixariam uma mensagem nova entrar entre elas. Com o
+      // texto do webhook (override), o ramo é decidido por ele e a busca é pela mensagem com ESSE
+      // texto. Invariante da saída: o id só é gravado se o texto daquela linha é o texto que decidiu
+      // o ramo; qualquer outra combinação (mídia sem texto, preview truncado, mensagem ainda não
+      // gravada) grava `null`, nunca o id de uma mensagem que não decidiu nada.
+      let replyBody = lastInboundBody;
+      let replyMessageId: string | null = null;
+      if (node.type === "match_reply" && journalWokeEarly && (lastInboundBody ?? "").trim()) {
+        const reply = await db.loadLastInboundMessage?.(
+          enrollment.organization_id,
+          enrollment.contact_id,
+          pisoDoInboundDaEspera(node, events, enrollment.updated_at),
+          textoInbound || undefined,
+        );
+        // A linha achada decide com o corpo INTEIRO (o texto do webhook pode ser a prévia cortada).
+        if (reply?.body.trim()) replyBody = reply.body;
+        replyMessageId =
+          reply && reply.body.trim() === (replyBody ?? "").trim() ? reply.id : null;
+        // Captação com o texto do webhook e a mensagem ainda não gravada: o texto pode ser a prévia
+        // cortada, e gravá-la perderia o resto em silêncio. Não decide agora; a espera segue e o tick
+        // seguinte lê a mensagem inteira do banco.
+        if (
+          textoInbound &&
+          !reply &&
+          node.config.save_to &&
+          (node.config.if_exists ?? "overwrite") !== "skip"
+        )
+          return;
+      }
+      let trace: NodeDecisionTrace | undefined;
+      const result = processNode({
+        node,
+        edges: graph.edges,
+        enrollment,
+        lead: frozenInput.facts,
+        clock,
+        smartWaits,
+        planEnqueued,
+        planRecheckCount,
+        waitElapsed:
+          node.type === "wait" || node.type === "match_reply"
+            ? begun.waiting_until !== undefined
+            : waitElapsed,
+        wokeEarly: journalWokeEarly,
+        repeatTaken: frozenInput.repeat?.taken,
+        repeatTotal: frozenInput.repeat?.total ?? undefined,
+        lastInboundBody:
+          node.type === "match_reply" ? replyBody : (frozenInput.repeat?.reply ?? undefined),
+        lastInboundMessageId: replyMessageId,
+        saidasAnteriores: frozenInput.saidas,
+        ...(node.type === "wait" && node.config.mode === "until" && db.loadOrgTimezone
+          ? { fuso: await db.loadOrgTimezone(enrollment.organization_id) }
+          : {}),
+        onDecision: (value) => {
+          trace = value;
+        },
+      });
+      if ((node.type === "wait" || node.type === "match_reply") && result.kind === "wait") {
+        await journal.parkWait(enrollment, handle, result);
+        return;
+      }
+      // Captação com confirmação: a pergunta sai pelo trilho do turno (job ligado à tentativa) e a
+      // tentativa só passa a esperar quando o recibo do envio chega (`completeConfirmationSend`).
+      if (node.type === "match_reply" && result.kind === "enqueue_turn") {
+        perguntaNaFila = true;
+        await applyResult(deps, enrollment, node, result, summary, smartWaits, events, null, null);
+        return;
+      }
+      // Mapear dados sem o valor que um campo cita: falha de configuração explicada (sai pela saída de erro).
+      if (node.type === "map_data" && result.kind === "fail")
+        throw new ExecutionConfigurationError("map_data_value_unavailable", result.error);
+      if (result.kind !== "advance" && result.kind !== "complete")
+        throw new ExecutionConfigurationError("execution_decision_not_integrated");
+      // Captação: mesmas condições do legado (`applyResult`) — só com resposta real, e nunca no
+      // modo `skip`, que pula quando o campo já está preenchido e não sobrescreve depois.
+      const capture =
+        node.type === "match_reply" &&
+        node.config.save_to &&
+        (node.config.if_exists ?? "overwrite") !== "skip" &&
+        !(node.config.if_exists === "confirm" && ehConfirmacao((replyBody ?? "").trim())) &&
+        result.kind === "advance" &&
+        journalWokeEarly &&
+        (replyBody ?? "").trim()
+          ? { value: (replyBody ?? "").trim() }
+          : undefined;
+      const recorded = await journal.completeDecision(enrollment, handle, result, trace, capture);
+      if (!recorded.reused) summary.advanced++;
+    } catch (error) {
+      // A pergunta já pode estar na fila: marcar a tentativa como falha a reabriria e a enfileiraria
+      // de novo (envio em dobro). O erro sobe para o backoff do tick; o job vivo conclui a tentativa.
+      if (perguntaNaFila) throw error;
+      await recordJournalFailure(db, journal, enrollment, handle, error, summary, "decision");
+    }
+    return;
+  }
+
+  let legacyTrace: NodeDecisionTrace | undefined;
   const result = processNode({
     node,
     edges: graph.edges,
@@ -932,21 +1526,91 @@ async function processEnrollment(
     actionEnqueued,
     actionRecheckCount,
     actionCompleted,
+    actionTurnFalhou,
     smartWaits,
     planEnqueued,
     planRecheckCount,
     repeatTaken,
     repeatTotal,
     proximo,
+    onDecision: (value) => {
+      legacyTrace = value;
+    },
   });
+  // Contrato 1, acionamento: o turno de planejamento nunca voltou (`plan_timeout`) e o fluxo segue
+  // sem plano. O avanço é registrado no diário; o turno, se ainda voltar, encontra a passagem
+  // concluída e vira no-op. O planejamento em si (enqueue_turn) e os rechecks seguem `applyResult`.
+  if (enrollment.execution_contract === 1 && node.type === "trigger" && result.kind === "advance") {
+    if (!db.executionJournal) throw new Error("execution_journal_unavailable");
+    const journal = await db.executionJournal();
+    let handle: ExecutionAttemptHandle | undefined;
+    try {
+      const begun = await journal.begin(enrollment, {
+        facts: lead,
+        contact_id: enrollment.contact_id,
+        lead_id: enrollment.lead_id ?? null,
+        conversation_id: enrollment.conversation_id,
+      });
+      if (begun.kind !== "ready") {
+        summary.dead++;
+        return;
+      }
+      handle = begun.handle;
+      const recorded = await journal.completeDecision(enrollment, handle, result, legacyTrace);
+      if (!recorded.reused) summary.advanced++;
+    } catch (error) {
+      await recordJournalFailure(db, journal, enrollment, handle, error, summary, "decision");
+    }
+    return;
+  }
+  // Contrato 1, `ai_classify`: a carência venceu sem resposta e o motor decide `no_reply` SEM chamar o
+  // modelo. O desfecho é registrado no diário (a tentativa em voo, que pode ter jobs na fila, é
+  // concluída e esses jobs ficam obsoletos). A entrada do nó e o reenfileiramento seguem o ramo
+  // `enqueue_turn` de `applyResult`.
+  if (
+    enrollment.execution_contract === 1 &&
+    node.type === "ai_classify" &&
+    result.kind === "advance"
+  ) {
+    if (!db.executionJournal) throw new Error("execution_journal_unavailable");
+    const journal = await db.executionJournal();
+    let handle: ExecutionAttemptHandle | undefined;
+    try {
+      const begun = await journal.begin(enrollment, {
+        contact_id: enrollment.contact_id,
+        lead_id: enrollment.lead_id ?? null,
+        conversation_id: enrollment.conversation_id,
+        decision: "no_reply", // snapshot de entrada; a tentativa em voo mantém o dela
+      });
+      if (begun.kind !== "ready") {
+        summary.dead++;
+        return;
+      }
+      handle = begun.handle;
+      const recorded = await journal.completeNoReply(enrollment, handle, result);
+      if (!recorded.reused) summary.advanced++;
+    } catch (error) {
+      await recordJournalFailure(db, journal, enrollment, handle, error, summary, "classify");
+    }
+    return;
+  }
+
   // #2528 — O TEXTO FIXO VAI COM OS DADOS DE QUEM RECEBE. O render é no
   // ENFILEIRAMENTE (e não no envio) porque são dois caminhos que mandam este
   // `fixed_body`: o worker (`followup-turn.ts`) e o atalho inline
   // (`enviar-texto-fixo.ts`), que não tem segunda passada. Só o nó que manda
   // texto paga a leitura — os demais não renderizam nada.
   const contexto =
-    result.kind === "enqueue_turn" && node.type === "action" && node.config.mode === "text"
-      ? await db.loadRenderContext?.(enrollment.organization_id, enrollment.contact_id)
+    result.kind === "enqueue_turn" &&
+    node.type === "action" &&
+    (node.config.mode === "text" || node.config.mode === "messages")
+      ? await comSaidasDosBlocos(
+          db,
+          enrollment,
+          target
+            ? await db.loadRenderContext?.(enrollment.organization_id, enrollment.contact_id, target)
+            : await db.loadRenderContext?.(enrollment.organization_id, enrollment.contact_id),
+        )
       : null;
 
   await applyResult(
@@ -962,12 +1626,53 @@ async function processEnrollment(
   );
 }
 
-export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number }): Promise<TickSummary> {
+/** Espera entre uma conferência e outra quando o tick encadeia: curta se acabou de andar, mais longa se está ocioso. */
+const ENCADEAR_APOS_ATIVIDADE_MS = 150;
+const ENCADEAR_OCIOSO_MS = 1_500;
+
+/**
+ * O tick do motor. Sem `encadearMs`, UMA passada: reivindica os vencidos e processa um bloco de cada.
+ *
+ * Com `encadearMs`, repete a passada até esse tempo. É o que faz o fluxo correr em segundos em vez de um bloco por
+ * minuto: o bloco que acabou de andar já está vencido (`next_eval_at = agora`), o texto que o worker acabou de enviar
+ * libera o bloco seguinte, e a inscrição que o gatilho criou nesse mesmo minuto entra sem esperar o próximo cron. O
+ * lease do claim (`CLAIM_LEASE_SECONDS`) segue valendo, então duas rodadas simultâneas nunca pegam a mesma inscrição.
+ */
+export async function runFollowupTick(
+  deps: TickDeps,
+  opts?: { limit?: number; encadearMs?: number; sleep?: (ms: number) => Promise<void> },
+): Promise<TickSummary> {
+  const total: TickSummary = { claimed: 0, advanced: 0, scheduled: 0, failed: 0, dead: 0 };
+  const limite = opts?.encadearMs ?? 0;
+  const dorme = opts?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const inicio = Date.now();
+  for (;;) {
+    const passada = await umaPassadaDoTick(deps, opts);
+    total.claimed += passada.claimed;
+    total.advanced += passada.advanced;
+    total.scheduled += passada.scheduled;
+    total.failed += passada.failed;
+    total.dead += passada.dead;
+    if (passada.claim_falhou) total.claim_falhou = true;
+    if (limite <= 0 || passada.claim_falhou) return total;
+    const espera = passada.claimed > 0 ? ENCADEAR_APOS_ATIVIDADE_MS : ENCADEAR_OCIOSO_MS;
+    if (Date.now() - inicio + espera >= limite) return total;
+    await dorme(espera);
+  }
+}
+
+async function umaPassadaDoTick(
+  deps: TickDeps,
+  opts?: { limit?: number },
+): Promise<TickSummary> {
   const summary: TickSummary = { claimed: 0, advanced: 0, scheduled: 0, failed: 0, dead: 0 };
 
   let claimed: EnrollmentRow[];
   try {
-    claimed = await deps.db.claimDueEnrollments(opts?.limit ?? DEFAULT_CLAIM_LIMIT, CLAIM_LEASE_SECONDS);
+    claimed = await deps.db.claimDueEnrollments(
+      opts?.limit ?? DEFAULT_CLAIM_LIMIT,
+      CLAIM_LEASE_SECONDS,
+    );
   } catch (err) {
     // Claim falhando é infra (DB fora do ar) — o tick seguinte tenta de novo, e
     // NUNCA lança: derrubar o worker por isso pararia todos os follow-ups.
@@ -1005,11 +1710,26 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 
 /** Production adapter: `AdminClient` backed by the real Supabase service-role client. */
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
-  const revisions=new Map<string,number>();
+  const revisions = new Map<string, number>();
   return {
-    async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
+    async executionJournal() {
+      const [{ getRequestPool }, { PgExecutionJournal }] = await Promise.all([
+        import("@/lib/agent-engine/db/request-pool"),
+        import("./execution-journal-pg"),
+      ]);
+      return new PgExecutionJournal(getRequestPool());
+    },
+    async assertServiceBoundary(enrollment) {
+      if (!revisions.has(enrollment.id) && enrollment.revision !== undefined)
+        revisions.set(enrollment.id, enrollment.revision);
+      await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null);
+    },
     async retornoQueSeguraOFluxo(enrollment) {
-      const quando = await quandoDoRetornoVivo(admin, enrollment.organization_id, enrollment.contact_id);
+      const quando = await quandoDoRetornoVivo(
+        admin,
+        enrollment.organization_id,
+        enrollment.contact_id,
+      );
       if (quando === null) return null;
       const { data, error } = await admin
         .from("followup_flow_pointers")
@@ -1018,18 +1738,27 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .eq("id", enrollment.pointer_id)
         .maybeSingle();
       if (error) throw new Error(`pointer_query_failed: ${error.message}`);
-      const gatilho = triggerConfigSchema.safeParse((data as { trigger_config?: unknown } | null)?.trigger_config);
+      const gatilho = triggerConfigSchema.safeParse(
+        (data as { trigger_config?: unknown } | null)?.trigger_config,
+      );
       if (!gatilho.success || gatilho.data.kind !== "silence") return null;
       return reavaliarDepoisDoRetorno(quando);
     },
-    async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
+    async assertAgenda(enrollment) {
+      await assertAgendaEffectSupabase(admin, {
+        organizationId: enrollment.organization_id,
+        contactId: enrollment.contact_id,
+        enrollmentId: enrollment.id,
+        nodeId: enrollment.current_node_id,
+      });
+    },
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {
         p_limit: limit,
         p_lease_seconds: leaseSeconds,
       });
       if (error) throw new Error(error.message);
-      for(const row of data??[]) revisions.set(row.id,Number(row.revision));
+      for (const row of data ?? []) revisions.set(row.id, Number(row.revision));
       return (data ?? []) as EnrollmentRow[];
     },
     async loadFlowGraph(orgId, versionId) {
@@ -1043,29 +1772,50 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (!data) return null;
       return flowGraphSchema.parse(data.graph);
     },
-    async loadLeadFacts(orgId, contactId) {
-      const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
+    async loadLeadFacts(orgId, contactId, target) {
+      const [lead, { data: contact, error: contactErr }] = await Promise.all([
+        loadLeadForExecution<{
+          id: string;
+          stage_id: string | null;
+          tags: string[] | null;
+          custom_fields: unknown;
+        }>(admin, orgId, contactId, "id, stage_id, tags, custom_fields", target),
         admin
-          .from("crm_leads")
-          .select("stage_id, tags, custom_fields")
+          .from("contacts")
+          .select("name, custom_fields")
           .eq("organization_id", orgId)
-          .eq("contact_id", contactId)
-          .order("updated_at", { ascending: false })
-          .limit(1)
+          .eq("id", contactId)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
-      if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
+      let products: string[] = [];
+      if (lead?.id) {
+        const { data: itens, error: itensErr } = await admin
+          .from("crm_lead_products")
+          .select("nome")
+          .eq("organization_id", orgId)
+          .eq("lead_id", lead.id);
+        if (itensErr) throw new Error(itensErr.message);
+        products = (itens ?? []).map((i: { nome: string }) => i.nome);
+      }
       const custom =
-        lead?.custom_fields && typeof lead.custom_fields === "object" && !Array.isArray(lead.custom_fields)
+        lead?.custom_fields &&
+        typeof lead.custom_fields === "object" &&
+        !Array.isArray(lead.custom_fields)
           ? (lead.custom_fields as Record<string, unknown>)
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
         tags: lead?.tags ?? [],
+        products,
         contact_name: contact?.name ?? null,
         custom_fields: custom,
+        contact_custom_fields:
+          contact?.custom_fields &&
+          typeof contact.custom_fields === "object" &&
+          !Array.isArray(contact.custom_fields)
+            ? (contact.custom_fields as Record<string, unknown>)
+            : {},
       };
     },
     /**
@@ -1074,24 +1824,69 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
      * `{{lead.title}}`) — e o MESMO negócio que `loadLeadFacts` escolhe
      * (`updated_at desc`), senão dois caminhos dariam dados diferentes.
      */
-    async loadRenderContext(orgId, contactId) {
-      const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
+    async loadRenderContext(orgId, contactId, target) {
+      const [lead, { data: contact, error: contactErr }] = await Promise.all([
+        loadLeadForExecution(admin, orgId, contactId, "*", target),
         admin
-          .from("crm_leads")
+          .from("contacts")
           .select("*")
           .eq("organization_id", orgId)
-          .eq("contact_id", contactId)
-          .order("updated_at", { ascending: false })
-          .limit(1)
+          .eq("id", contactId)
           .maybeSingle(),
-        admin.from("contacts").select("*").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
-      if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
       const contexto: Record<string, unknown> = {};
       if (contact) contexto.contact = contact;
       if (lead) contexto.lead = lead;
       return contexto;
+    },
+    async loadOrgTimezone(orgId) {
+      return fusoDaOrganizacao(admin, orgId);
+    },
+    async loadStepOutputs(orgId, enrollmentId) {
+      // Recuperação (`recovery_kind = 'retry'`): as saídas da execução de origem valem como checkpoint — as dela
+      // primeiro (a cadeia inteira, recursivo), depois as desta, que sobrescrevem o bloco que rodou de novo.
+      const { data: eu, error: euErr } = await admin
+        .from("followup_enrollments")
+        .select("source_enrollment_id, recovery_kind")
+        .eq("organization_id", orgId)
+        .eq("id", enrollmentId)
+        .maybeSingle();
+      if (euErr) throw new Error(euErr.message);
+      const herdadas: Record<string, unknown> =
+        eu?.recovery_kind === "retry" && eu.source_enrollment_id
+          ? await this.loadStepOutputs!(orgId, eu.source_enrollment_id as string)
+          : {};
+      const { data: passos, error } = await admin
+        .from("followup_execution_steps")
+        .select("id, node_id, entered_at")
+        .eq("organization_id", orgId)
+        .eq("enrollment_id", enrollmentId)
+        .eq("status", "succeeded")
+        .order("entered_at", { ascending: true })
+        .limit(200);
+      if (error) throw new Error(error.message);
+      const lista = passos ?? [];
+      if (lista.length === 0) return herdadas;
+      const { data: tentativas, error: tentativasErr } = await admin
+        .from("followup_execution_attempts")
+        .select("step_id, attempt_no, output_snapshot")
+        .eq("organization_id", orgId)
+        .in("step_id", lista.map((p) => p.id as string));
+      if (tentativasErr) throw new Error(tentativasErr.message);
+      const ultimaPorPasso = new Map<string, { n: number; saida: unknown }>();
+      for (const t of tentativas ?? []) {
+        const atual = ultimaPorPasso.get(t.step_id as string);
+        if (!atual || (t.attempt_no as number) > atual.n)
+          ultimaPorPasso.set(t.step_id as string, { n: t.attempt_no as number, saida: t.output_snapshot });
+      }
+      // Em ordem de entrada: numa volta (laço) a ÚLTIMA visita do bloco é a que vale.
+      const saidas: Record<string, unknown> = {};
+      for (const p of lista) {
+        const u = ultimaPorPasso.get(p.id as string);
+        if (u && u.saida !== null && u.saida !== undefined) saidas[p.node_id as string] = u.saida;
+      }
+      return { ...herdadas, ...saidas };
     },
     async loadLastInboundBody(orgId, contactId, conversationId, naoAntesDe) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
@@ -1103,9 +1898,62 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .eq("direction", "inbound");
       if (conversationId) q = q.eq("conversation_id", conversationId);
       if (naoAntesDe) q = q.gte("sent_at", naoAntesDe);
-      const { data, error } = await q.order("sent_at", { ascending: false }).limit(1).maybeSingle();
+      const { data, error } = await q
+        .order("sent_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (error) throw new Error(error.message);
       return typeof data?.body === "string" ? data.body : null;
+    },
+    async loadLastInboundMessage(orgId, contactId, naoAntesDe, texto) {
+      const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
+      let q = admin
+        .from("messages")
+        .select("id, body")
+        .eq("organization_id", orgId)
+        .in("contact_id", ids)
+        .eq("direction", "inbound");
+      if (naoAntesDe) q = q.gte("sent_at", naoAntesDe);
+      const { data, error } = await q
+        .order("sent_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(texto === undefined ? 1 : ULTIMAS_RESPOSTAS_LIDAS);
+      if (error) throw new Error(error.message);
+      return escolherResposta(
+        (data ?? []).map((m) => ({ id: m.id as string, body: (m.body as string | null) ?? "" })),
+        texto,
+      );
+    },
+    async loadFalhaDefinitivaDoEnvio(orgId, enrollmentId, nodeId) {
+      // A estadia atual começa no último `turn_enqueued` deste bloco: um job morto de uma volta
+      // anterior (`repeat` que volta no mesmo bloco) não pode matar a de agora.
+      const { data: ultimo, error: eventoErr } = await admin
+        .from("followup_enrollment_events")
+        .select("created_at")
+        .eq("organization_id", orgId)
+        .eq("enrollment_id", enrollmentId)
+        .eq("node_id", nodeId)
+        .eq("event_type", "turn_enqueued")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (eventoErr) throw new Error(eventoErr.message);
+      if (!ultimo) return null;
+      const { data: jobs, error } = await admin
+        .from("job_queue")
+        .select("status, last_error, created_at")
+        .eq("organization_id", orgId)
+        .eq("kind", "followup_turn")
+        .eq("payload->>followup_enrollment_id", enrollmentId)
+        .eq("payload->>node_id", nodeId)
+        .gte("created_at", new Date(new Date(ultimo.created_at as string).getTime() - 5_000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (error) throw new Error(error.message);
+      const job = (jobs ?? [])[0] as { status: string; last_error: string | null } | undefined;
+      if (!job || job.status !== "dead") return null;
+      return (job.last_error ?? "o envio falhou").slice(0, 300);
     },
     async loadEnrollmentEvents(enrollmentId) {
       const { data, error } = await admin
@@ -1132,20 +1980,33 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       }
       return { inserted: true };
     },
-    async applyEnrollmentStep(id,orgId,patch,event){
-      const revision=revisions.get(id);if(revision===undefined) throw new StaleServiceBoundaryError();
-      const {data,error}=await admin.rpc("fn_followup_apply_step",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch,p_event:event});
-      if(error?.code==="23505") return;
-      if(isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
-      if(error) throw error;revisions.set(id,Number(data));
+    async applyEnrollmentStep(id, orgId, patch, event) {
+      const revision = revisions.get(id);
+      if (revision === undefined) throw new StaleServiceBoundaryError();
+      const { data, error } = await admin.rpc("fn_followup_apply_step", {
+        p_org: orgId,
+        p_id: id,
+        p_revision: revision,
+        p_patch: patch,
+        p_event: event,
+      });
+      if (error?.code === "23505") return;
+      if (isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
+      if (error) throw error;
+      revisions.set(id, Number(data));
     },
     async updateEnrollment(id, orgId, patch) {
-      const revision=revisions.get(id);
-      if(revision===undefined) throw new StaleServiceBoundaryError();
-      const {data,error}=await admin.rpc("fn_followup_patch",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch});
-      if(isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
-      if(error) throw new Error(error.message);
-      revisions.set(id,Number(data));
+      const revision = revisions.get(id);
+      if (revision === undefined) throw new StaleServiceBoundaryError();
+      const { data, error } = await admin.rpc("fn_followup_patch", {
+        p_org: orgId,
+        p_id: id,
+        p_revision: revision,
+        p_patch: patch,
+      });
+      if (isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
+      if (error) throw new Error(error.message);
+      revisions.set(id, Number(data));
     },
     async loadFlowPointerName(orgId, pointerId) {
       const { data, error } = await admin
@@ -1170,20 +2031,16 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (error) throw new Error(error.message);
     },
     async criarTarefaInterna(item) {
-      // O negócio NÃO vem na inscrição (migration 0054 guarda o contato), então
-      // ele é resolvido aqui do mesmo jeito que `loadLeadFacts` resolve: o
-      // negócio mais recente do contato. Sem negócio a tarefa nasce só com o
-      // contato — e `dono_do_lead` sem dono é `sem_dono`, recusa registrada,
-      // nunca tarefa órfã na lista.
-      const { data: lead, error: leadErr } = await admin
-        .from("crm_leads")
-        .select("id")
-        .eq("organization_id", item.organization_id)
-        .eq("contact_id", item.contact_id)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (leadErr) throw new Error(leadErr.message);
+      // O legado mantém a seleção antiga. O contrato novo usa o alvo da
+      // inscrição, compartilhado com os fatos e a renderização. Sem lead,
+      // a tarefa pode pertencer ao contato; `dono_do_lead` exige um dono real.
+      const lead = await loadLeadForExecution<{ id: string }>(
+        admin,
+        item.organization_id,
+        item.contact_id,
+        "id",
+        item.target,
+      );
 
       const resultado = await criarTarefaNoCrm(admin, {
         organizationId: item.organization_id,
@@ -1233,16 +2090,15 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (etapaErr) throw new Error(etapaErr.message);
       if (!etapa) throw new Error("etapa_destino_inexistente");
 
-      const { data: lead, error } = await admin
-        .from("crm_leads")
-        .select("id")
-        .eq("organization_id", item.organization_id)
-        .eq("contact_id", item.contact_id)
-        .eq("pipeline_id", etapa.pipeline_id)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
+      const lead = await loadLeadForExecution<{ id: string }>(
+        admin,
+        item.organization_id,
+        item.contact_id,
+        "id",
+        item.target,
+        etapa.pipeline_id,
+      );
+      if (!lead && item.target) throw new ExecutionLeadUnavailableError();
       if (!lead) {
         // Contato sem negócio neste funil não tem card para mover — não é defeito do fluxo.
         logger.warn("followup_move_lead_skipped", {
@@ -1265,7 +2121,9 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         admin,
         handlerCtx,
         lead.id,
-        motivo ? { to_stage_id: item.config.stage_id, lost_reason: motivo } : { to_stage_id: item.config.stage_id },
+        motivo
+          ? { to_stage_id: item.config.stage_id, lost_reason: motivo }
+          : { to_stage_id: item.config.stage_id },
       );
     },
     /**
@@ -1285,15 +2143,14 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
      *   que não existe no `event_log` para viajar no payload do evento gravado.
      */
     async editarTagDoLead(item) {
-      const { data: lead, error } = await admin
-        .from("crm_leads")
-        .select("*")
-        .eq("organization_id", item.organization_id)
-        .eq("contact_id", item.contact_id)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
+      const lead = await loadLeadForExecution(
+        admin,
+        item.organization_id,
+        item.contact_id,
+        "*",
+        item.target,
+      );
+      if (!lead && item.target) throw new ExecutionLeadUnavailableError();
 
       const context: Record<string, unknown> = {};
       if (lead) {
@@ -1323,7 +2180,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           context,
           requestId: `followup:${item.enrollment_id}`,
         },
-        { tags: item.config.tags },
+        {
+          tags: item.config.tags,
+          ...(item.config.destino ? { destino: item.config.destino } : {}),
+        },
       );
       if (resultado.status === "failed") {
         throw new Error(resultado.error ?? "add_tag_failed");

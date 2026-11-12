@@ -1,4 +1,6 @@
-# `/design` — Design System Showcase
+# `/design` — laboratório visual herdado
+
+> **Status: histórico, não normativo.** O único padrão do produto é o [Design System Estallo](../../docs/design-system/README.md). Paletas e fontes alternativas desta vitrine não devem ser aplicadas ao CRM. Sua adaptação está pendente; as instruções abaixo descrevem o laboratório herdado.
 
 > **Nota sobre o nome da pasta:** o briefing pediu `app/_design/`, mas Next.js
 > trata folders prefixados com `_` como privados (não geram rota). Para que a
@@ -36,11 +38,13 @@ A rota é pública (sem auth) e tem `robots: noindex`.
 > tipográfica > decoração.
 
 ### Paletas (5)
+
 `Sage` · `Clay` · `Mist` · `Plum` · `Olive` — cada uma com 11 stops do accent,
 11 stops de neutro greige, 4 estados (success/warning/error/info), versões
 **light e dark definidas separadamente** (não invertidas).
 
 ### Pareamentos tipográficos (4)
+
 1. Bricolage Grotesque + Plus Jakarta Sans (default)
 2. Fraunces + Manrope
 3. Atkinson Hyperlegible (mono-stack a11y-first)
@@ -49,6 +53,7 @@ A rota é pública (sem auth) e tem `robots: noindex`.
 Inter / Geist / Space Grotesk **proibidos** por saturação em training data.
 
 ### Densidades (3)
+
 - `Aerada` · row 56 / gap 24 (Notion-like)
 - `Equilibrada` · row 44 / gap 16 (Things-like, default)
 - `Compacta` · row 32 / gap 8 (Linear-like)

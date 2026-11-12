@@ -33,6 +33,8 @@ export function previaDaMensagem(body: string | null | undefined, tipo: string):
   if (body) {
     if (body.includes("BEGIN:VCARD")) {
       const nome = parseVcard(body)?.name;
+      const mais = body.split("BEGIN:VCARD").length - 2;
+      if (nome && mais > 0) return `Contatos: ${nome} e mais ${mais}`.slice(0, LIMITE);
       if (nome) return `Contato: ${nome}`.slice(0, LIMITE);
     } else if (tipo === "contact") {
       // `contactMessage.displayName` — o nome que o payload traz quando não há

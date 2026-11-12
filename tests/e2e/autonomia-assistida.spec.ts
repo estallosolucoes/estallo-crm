@@ -54,17 +54,6 @@ async function fixture(pool: pg.Pool) {
     webhook_secret_encrypted: "\\x00",
     metadata: { ai_gate: "allowlist" },
   });
-  const knobs = await db
-    .from("channel_knobs")
-    .insert({
-      organization_id: org,
-      channel_session_id: channel,
-      throttle_ms: 0,
-      jitter_max_ms: 0,
-      window_start_hour: 0,
-      window_end_hour: 24,
-    });
-  if (knobs.error) throw knobs.error;
   const contact = await insert("contacts", {
     organization_id: org,
     name: "Maria Revisão",
@@ -207,6 +196,10 @@ async function receiver() {
   };
 }
 const panel = (page: Page) => page.locator('section[aria-label="Assistência do agente"]');
+// O painel mora num popover atrás do botão de IA do composer.
+async function abrirAssistencia(page: Page) {
+  await page.getByRole("button", { name: "Assistência do agente (IA)" }).click();
+}
 async function generate(page: Page) {
   const response = page.waitForResponse(
     (r) => r.url().endsWith("/draft-reply") && r.request().method() === "POST",
@@ -300,6 +293,7 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
       ).rows[0],
     ).toMatchObject({ published_version_id: f.version, paused_at: expect.any(Date) });
     await page.goto(`/app/inbox/${f.conversation}`);
+    await abrirAssistencia(page);
     const first = await generate(page);
     expect(channel.bodies).toHaveLength(0);
     await panel(page)

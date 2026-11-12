@@ -66,6 +66,8 @@ export interface LeadFilters {
   lostReason?: string;
   /** A categoria do motivo de perda (issue #1537), resolvida no funil. */
   lostCategory?: string;
+  /** Estallo (0660): só negócios com este produto do catálogo. */
+  produto?: string;
 }
 
 /**
@@ -125,6 +127,7 @@ export function filtersFromParams(
     overdueOnly: sp.get("overdue") === "1" || undefined,
     lostReason: sp.get("motivo") ?? undefined,
     lostCategory: sp.get("categoria") ?? undefined,
+    produto: sp.get("produto") ?? undefined,
   };
 }
 
@@ -140,6 +143,7 @@ export function filtersToParams(f: LeadFilters): string {
   if (f.overdueOnly) p.set("overdue", "1");
   if (f.lostReason) p.set("motivo", f.lostReason);
   if (f.lostCategory) p.set("categoria", f.lostCategory);
+  if (f.produto) p.set("produto", f.produto);
   return p.toString();
 }
 
@@ -213,6 +217,7 @@ export function applyFilters(
     // no contato ou na conversa sem casar card nenhum. O E/OU mora em
     // `passaMarcador`, lá em cima.
     if (!passaMarcador(l)) return false;
+    if (f.produto && !(l.produtos_ids ?? []).includes(f.produto)) return false;
     if (
       search &&
       !`${l.title} ${l.description ?? ""}`.toLowerCase().includes(search)

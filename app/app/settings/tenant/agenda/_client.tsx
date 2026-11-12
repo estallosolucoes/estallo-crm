@@ -2,12 +2,11 @@
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
-import { MeetComAcessoAberto } from "@/components/agenda/MeetComAcessoAberto";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
 
 import { useT } from "@/hooks/i18n/useT";
-import { parseReaisToCents } from "@/lib/money";
+import { parseReaisToCents, centavosParaCampo } from "@/lib/money";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -27,6 +26,7 @@ import {
   type UnidadeDeAntecedencia,
 } from "@/lib/agenda/lembretes";
 import { apiClient } from "@/lib/api/client";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 export interface TipoRow {
   id: string;
@@ -362,8 +362,6 @@ export function TiposDeAgendamentoClient({
   podeLigarClientePelaAgenda,
   colegasPodemMexerNaAgendaLigado,
   podeMudarAgendaDosColegas,
-  meetAbertoLigado,
-  podeMudarMeetAberto,
 }: {
   tiposIniciais: TipoRow[];
   canais?: CanalParaLembrete[];
@@ -380,9 +378,6 @@ export function TiposDeAgendamentoClient({
   /** `organizations.settings.colegas_podem_mexer_na_agenda` (migration 0343). */
   colegasPodemMexerNaAgendaLigado: boolean;
   podeMudarAgendaDosColegas: boolean;
-  /** `organizations.settings.google_meet_acesso_aberto` (migration 0648, issue #2063). */
-  meetAbertoLigado: boolean;
-  podeMudarMeetAberto: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -443,15 +438,6 @@ export function TiposDeAgendamentoClient({
       <AgendaDosColegas
         ligadoInicial={colegasPodemMexerNaAgendaLigado}
         podeMudar={podeMudarAgendaDosColegas}
-      />
-      {/* A opção da issue #2063 é a mesma pergunta ("como a agenda se
-          comporta nesta empresa?"), e o AVISO DE RISCO fica encostado nela de
-          propósito: é a única troca de segurança por conveniência que esta
-          tela faz, e ler a frase antes de apertar é melhor que confirmar
-          depois. */}
-      <MeetComAcessoAberto
-        ligadoInicial={meetAbertoLigado}
-        podeMudar={podeMudarMeetAberto}
       />
       <DiasBloqueados podeEditar={podeEditar} />
       {podeEditar ? (
@@ -844,16 +830,11 @@ export function TiposDeAgendamentoClient({
                   </label>
                   <label className="flex flex-col gap-1 text-xs text-text-muted">
                     {t("Preço padrão")}
-                    <input
+                    <CampoDeDinheiro
                       name="default_price_cents"
-                      type="text"
-                      inputMode="decimal"
+                      containerClassName="w-36"
                       placeholder={t("digite na hora")}
-                      defaultValue={
-                        tipo.default_price_cents === null
-                          ? ""
-                          : (tipo.default_price_cents / 100).toFixed(2)
-                      }
+                      defaultValue={centavosParaCampo(tipo.default_price_cents)}
                       data-testid={`editar-preco-${tipo.id}`}
                       className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
                     />

@@ -29,12 +29,6 @@ import {
   type MotivoDoAviso,
 } from "@/lib/escalacao/aviso-ao-lead";
 import type { QuemPodeAssumir } from "@/lib/escalacao/disponibilidade";
-import {
-  decideSpinning,
-  hashNormalized,
-  normalizeCopy,
-} from "@/lib/agent-engine/spinning/engine";
-import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 
 /** Lead fixo — o sorteio de variante é por hash, então o texto é reprodutível. */
 const LEAD = "11111111-1111-4111-8111-111111111111";
@@ -161,50 +155,7 @@ describe("o aviso é determinístico por lead e variado entre leads", () => {
   });
 });
 
-describe("a conta do spinning — por que o gate é desarmado para o aviso", () => {
-  /**
-   * Simula N escalações seguidas no MESMO número, leads diferentes, e conta
-   * quantos avisos o `spinningGate` vetaria se estivesse armado. É a função
-   * real do gate, com os knobs default de produção.
-   */
-  function vetadosComOGateArmado(motivo: MotivoDoAviso, quem: QuemPodeAssumir | null, n: number) {
-    const janela: Array<{ normalizedText: string; normalizedHash: string }> = [];
-    let vetados = 0;
-    for (let i = 0; i < n; i++) {
-      const body = textoDoAviso(motivo, quem, `lead-${i}-${LEAD}`);
-      if (!decideSpinning({ candidate: body, window: janela, knobs: SPINNING_DEFAULTS }).allow) {
-        vetados += 1;
-      }
-      const norm = normalizeCopy(body);
-      janela.unshift({ normalizedText: norm, normalizedHash: hashNormalized(norm) });
-    }
-    return vetados;
-  }
 
-  it("o aviso NÃO é curto o bastante para a isenção automática do gate", () => {
-    // `isAllowlisted` isenta corpo com até `allowlistMaxLength` caracteres. Se o
-    // aviso coubesse ali, o desarme explícito seria supérfluo — e alguém o
-    // removeria. Ele não cabe, e é esta linha que prova.
-    for (const m of MOTIVOS) {
-      const t = normalizeCopy(textoDoAviso(m, null, LEAD));
-      expect(t.length, m).toBeGreaterThan(SPINNING_DEFAULTS.allowlistMaxLength);
-    }
-  });
-
-  it("com o gate ARMADO, a maioria dos avisos seguidos morreria calada", () => {
-    // ISTO é o motivo de `enforceSpinning: false`. Não é hipótese: a primeira
-    // versão do conserto tinha só as variantes, e esta conta a reprovou.
-    // Se um dia a contagem cair a zero (mais variantes, outros knobs), o
-    // desarme pode ser reavaliado — e este teste vermelhecendo é o convite.
-    for (const m of MOTIVOS) {
-      expect(vetadosComOGateArmado(m, null, 20), m).toBeGreaterThan(5);
-    }
-  });
-});
-
-// Medido numa loja em espanhol (26/09/2026): a organização atende em espanhol e
-// o cliente irritado recebeu "Esse caso é melhor resolvido por uma pessoa…" no
-// meio do pedido. O aviso sai no idioma da ORGANIZAÇÃO.
 describe("o aviso sai no idioma da organização", () => {
   const PALAVRAS_EM_PORTUGUES = /\b(você|seu|sua|equipe|atendente|não|já|ninguém|pedido ficou|aguarde|fica por aqui)\b/i;
 
@@ -241,13 +192,6 @@ describe("o aviso sai no idioma da organização", () => {
         );
         expect(textos.size, `${motivo} / ${estado.rotulo}`).toBeGreaterThanOrEqual(3);
       }
-    }
-  });
-
-  it("o aviso em espanhol também não cabe na isenção do spinning (o desarme segue necessário)", () => {
-    for (const m of MOTIVOS) {
-      const t = normalizeCopy(textoDoAviso(m, null, LEAD, "es"));
-      expect(t.length, m).toBeGreaterThan(SPINNING_DEFAULTS.allowlistMaxLength);
     }
   });
 

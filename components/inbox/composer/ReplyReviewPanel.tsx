@@ -6,6 +6,8 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sparkle } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { sugestaoParaMostrar } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 type Draft = {
@@ -104,9 +106,33 @@ export function ReplyReviewPanel({
     stale: "Sugestão obsoleta: a conversa mudou",
     failed: "Não foi possível concluir a sugestão ou o envio",
   };
+  // O painel virou um botão-ícone ao lado do emoji: aberto ele ocupava a
+  // largura do composer e escondia a conversa. O ponto avisa que há sugestão
+  // esperando revisão, sem precisar abrir.
+  const aguardando = draft?.status === "pending" || draft?.status === "generating";
   return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="relative h-8 w-8 shrink-0"
+          aria-label={t("Assistência do agente (IA)")}
+          title={t("Sugerir resposta")}
+        >
+          <Sparkle size={18} weight={aguardando ? "fill" : "regular"} aria-hidden />
+          {aguardando && (
+            <span
+              className="absolute right-1 top-1 size-2 rounded-full bg-primary"
+              data-testid="sugestao-pendente"
+            />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" side="top" className="w-[min(24rem,90vw)] p-0">
     <section
-      className="mb-3 space-y-2 rounded-md border bg-muted/30 p-3"
+      className="space-y-2 rounded-md p-3"
       aria-label={t("Assistência do agente")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -204,5 +230,7 @@ export function ReplyReviewPanel({
           </p>
         )}
     </section>
+      </PopoverContent>
+    </Popover>
   );
 }

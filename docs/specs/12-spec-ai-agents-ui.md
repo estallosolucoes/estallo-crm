@@ -9,6 +9,8 @@ date: 2026-05-05
 owner: Rafael Melgaço
 ---
 
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Spec 12 — AI Agents UI (Telas, Fluxos, Wireframes)
 
 > Mapa completo de telas, fluxos de navegação, wireframes ASCII, componentes shadcn, validação de formulário, estados de erro e interação com endpoints (Spec 10) e MCP catalog (Spec 11). Mantém o design system locked do projeto (Sage + Atkinson Hyperlegible + Aerada + Phosphor — ver memória `project_design_system_locked`).
@@ -93,14 +95,14 @@ Adiciona item "Agentes IA" na sidebar principal, entre "Pipelines" e "Configura�
 
 ### 2.4 Ações do menu (⋯)
 
-| Ação | Endpoint | Confirmação | Audit |
-|---|---|---|---|
-| Editar | navigate `/ai/agents/:id` | — | — |
-| Duplicar | `POST /agents/:id:duplicate` | — | `ai_agent.duplicated` |
-| Renomear | `PATCH /agents/:id` (modal inline) | — | `ai_agent.renamed` |
-| Pausar | `POST /agents/:id:pause` | "Tem certeza? Agente para de responder" | `ai_agent.paused` |
-| Despausar | `unpauseAgentAction` (limpa `paused_at`; a versão nunca deixou de estar publicada) | — | `ai_agent.updated` (`metadata.unpaused`) |
-| Arquivar | `DELETE /agents/:id` | "Esta ação é reversível por 30 dias" | `ai_agent.archived` |
+| Ação      | Endpoint                                                                           | Confirmação                             | Audit                                    |
+| --------- | ---------------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------- |
+| Editar    | navigate `/ai/agents/:id`                                                          | —                                       | —                                        |
+| Duplicar  | `POST /agents/:id:duplicate`                                                       | —                                       | `ai_agent.duplicated`                    |
+| Renomear  | `PATCH /agents/:id` (modal inline)                                                 | —                                       | `ai_agent.renamed`                       |
+| Pausar    | `POST /agents/:id:pause`                                                           | "Tem certeza? Agente para de responder" | `ai_agent.paused`                        |
+| Despausar | `unpauseAgentAction` (limpa `paused_at`; a versão nunca deixou de estar publicada) | —                                       | `ai_agent.updated` (`metadata.unpaused`) |
+| Arquivar  | `DELETE /agents/:id`                                                               | "Esta ação é reversível por 30 dias"    | `ai_agent.archived`                      |
 
 ---
 
@@ -211,22 +213,22 @@ preserva as demais propriedades da versão.
 
 ### 3.3 Validações de form (Zod, sincronizadas com Spec 10)
 
-| Campo | Regra | Mensagem |
-|---|---|---|
-| name | min 1, max 100, único na org | "Nome obrigatório / Já existe" |
-| priority | int 0-100 | "Prioridade entre 0 e 100" |
-| system_prompt | min 10, max 50000 | "Prompt muito curto/longo" |
-| provider | enum 3 valores | — |
-| model | exists in `ai_models` para o provider | "Modelo indisponível" |
-| credential_id | exists, is_active, validated, mesmo provider | "Credencial não validada / outro provider" |
-| tool_ids | subset do catálogo MCP | "Tool desconhecida: X" |
-| channel_session_id | exists, status='working' | "Sessão WhatsApp não está conectada" |
-| max_steps | 1-25 | — |
-| token_budget | 1000-500000 | — |
-| cost_budget_cents | 1-10000 | — |
-| keyword_regex | regex válida | "Regex inválida" (try/catch new RegExp) |
-| business_hours | from < to | "Horário fim deve ser maior que início" |
-| handoff_keywords | array, cada item min 2 chars | — |
+| Campo              | Regra                                        | Mensagem                                   |
+| ------------------ | -------------------------------------------- | ------------------------------------------ |
+| name               | min 1, max 100, único na org                 | "Nome obrigatório / Já existe"             |
+| priority           | int 0-100                                    | "Prioridade entre 0 e 100"                 |
+| system_prompt      | min 10, max 50000                            | "Prompt muito curto/longo"                 |
+| provider           | enum 3 valores                               | —                                          |
+| model              | exists in `ai_models` para o provider        | "Modelo indisponível"                      |
+| credential_id      | exists, is_active, validated, mesmo provider | "Credencial não validada / outro provider" |
+| tool_ids           | subset do catálogo MCP                       | "Tool desconhecida: X"                     |
+| channel_session_id | exists, status='working'                     | "Sessão WhatsApp não está conectada"       |
+| max_steps          | 1-25                                         | —                                          |
+| token_budget       | 1000-500000                                  | —                                          |
+| cost_budget_cents  | 1-10000                                      | —                                          |
+| keyword_regex      | regex válida                                 | "Regex inválida" (try/catch new RegExp)    |
+| business_hours     | from < to                                    | "Horário fim deve ser maior que início"    |
+| handoff_keywords   | array, cada item min 2 chars                 | —                                          |
 
 ### 3.4 Estados de save/publish
 
@@ -359,6 +361,7 @@ preserva as demais propriedades da versão.
 ### 5.2 Detalhe (drawer ao clicar na linha)
 
 Drawer lateral com mesma trace UI da Tab Testar, mais:
+
 - Link "Ver conversa" → navega para `/conversations/:id` com mensagem destacada
 - Link "Ver inbound original" → drawer da mensagem
 - Botão "Reportar problema" → abre modal de feedback ligado ao `run_id`
@@ -458,20 +461,20 @@ Drawer lateral com mesma trace UI da Tab Testar, mais:
 
 ## 8. Componentes compartilhados
 
-| Componente | Path | Responsabilidade |
-|---|---|---|
-| `<AgentStatusBadge />` | `app/(app)/ai/agents/_components/` | Render do estado (published/draft/paused/invalid) |
-| `<AgentCard />` | idem | Linha da lista |
-| `<AgentForm />` | idem | Form principal (configuração) |
-| `<ToolPicker />` | idem | Checklist de MCP tools, agrupado por categoria |
-| `<ModelPicker />` | idem | Dropdown provider + modelo, com preço |
-| `<CredentialPicker />` | idem | Dropdown de credenciais filtrado por provider |
-| `<TriggerEditor />` | idem | UI de filtros (eventos, regex, horário) |
-| `<RunTrace />` | idem | Render JSON da trace passo-a-passo |
-| `<RunsTable />` | idem | Tabela de runs com realtime |
-| `<VersionDiff />` | idem | Diff side-by-side de versões |
-| `<HandoffKeywordsInput />` | idem | Chips input para keywords |
-| `<TokenCounter />` | `lib/ui/` | Contador de tokens reativo (gpt-tokenizer no client) |
+| Componente                 | Path                               | Responsabilidade                                     |
+| -------------------------- | ---------------------------------- | ---------------------------------------------------- |
+| `<AgentStatusBadge />`     | `app/(app)/ai/agents/_components/` | Render do estado (published/draft/paused/invalid)    |
+| `<AgentCard />`            | idem                               | Linha da lista                                       |
+| `<AgentForm />`            | idem                               | Form principal (configuração)                        |
+| `<ToolPicker />`           | idem                               | Checklist de MCP tools, agrupado por categoria       |
+| `<ModelPicker />`          | idem                               | Dropdown provider + modelo, com preço                |
+| `<CredentialPicker />`     | idem                               | Dropdown de credenciais filtrado por provider        |
+| `<TriggerEditor />`        | idem                               | UI de filtros (eventos, regex, horário)              |
+| `<RunTrace />`             | idem                               | Render JSON da trace passo-a-passo                   |
+| `<RunsTable />`            | idem                               | Tabela de runs com realtime                          |
+| `<VersionDiff />`          | idem                               | Diff side-by-side de versões                         |
+| `<HandoffKeywordsInput />` | idem                               | Chips input para keywords                            |
+| `<TokenCounter />`         | `lib/ui/`                          | Contador de tokens reativo (gpt-tokenizer no client) |
 
 ---
 
@@ -480,7 +483,7 @@ Drawer lateral com mesma trace UI da Tab Testar, mais:
 ```ts
 // app/(app)/ai/agents/_actions.ts
 
-'use server'
+"use server";
 
 export async function saveAgentDraftAction(agentId: string, formData: FormData) {
   // 1. Parse via Zod (mesmo schema do POST /versions)

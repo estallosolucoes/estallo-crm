@@ -5,8 +5,8 @@
  * ── O defeito que este arquivo protege ─────────────────────────────────────
  *
  * `#648`: um `import` que só estoura sob `tsx` (`@react-pdf/hyphenate`) deixou
- * o drain do `event_log` parado por dez dias. As imagens `deskcomm-worker` e
- * `deskcomm-scheduler` construíam, publicavam, recebiam tag e release sem que
+ * o drain do `event_log` parado por dez dias. As imagens `estallo-crm-worker` e
+ * `estallo-crm-scheduler` construíam, publicavam, recebiam tag e release sem que
  * nenhum job as executasse antes — e o `/healthz` do worker continuava verde.
  * Ou seja: "contêiner de pé" NÃO era o critério que faltava; o que faltava era
  * alguém exigindo o LAÇO CARREGADO.
@@ -127,8 +127,8 @@ describe("o gate de publicação das imagens de fundo (#604)", () => {
     const job = blocoDoJob(JOB_DE_FUNDO);
     expect(job).toContain("Dockerfile.worker");
     expect(job).toContain("Dockerfile.scheduler");
-    expect(job).toContain("deskcomm-worker:pr");
-    expect(job).toContain("deskcomm-scheduler:pr");
+    expect(job).toContain("estallo-crm-worker:pr");
+    expect(job).toContain("estallo-crm-scheduler:pr");
   });
 
   it("exige o laço carregado e a linha do event-log-drain no crontab — não só contêiner de pé", () => {
@@ -145,7 +145,7 @@ describe("o gate de publicação das imagens de fundo (#604)", () => {
 
   it("entra por baixo da fachada `imagens-ok` — sem criar check obrigatório novo", () => {
     const fachada = blocoDoJob("imagens-ok");
-    expect(fachada).toMatch(new RegExp(`needs: \\[[^\\]]*${JOB_DE_FUNDO}`));
+    expect(fachada).toMatch(new RegExp(`needs:\\s*\\[[^\\]]*${JOB_DE_FUNDO}`));
     // O resultado entra por env (FUNDO) e é exigido `success` — a única porta
     // para `skipped` é PR que não alcança imagem nenhuma, e quem mede a matriz
     // inteira de desfechos é imagens-ok-so-aceita-pulo-declarado.test.ts.
@@ -171,7 +171,7 @@ describe("o gate de publicação das imagens de fundo (#604)", () => {
 
   it("o canal `stable` não anda sobre um worker/scheduler que não sobe", () => {
     const promover = blocoDoJob("promover-stable");
-    expect(promover).toMatch(new RegExp(`needs: \\[[^\\]]*${JOB_DE_FUNDO}`));
+    expect(promover).toMatch(new RegExp(`needs:\\s*\\[[^\\]]*${JOB_DE_FUNDO}`));
     expect(promover).toContain("if: github.event_name == 'push'");
   });
 });

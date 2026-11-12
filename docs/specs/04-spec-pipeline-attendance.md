@@ -15,6 +15,8 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 ---
 
+> Atualização visual Estallo — 16/10/2026: cards exibem foto do contato (iniciais sem foto), todas as etiquetas do lead, valor em destaque, prévia, responsável e tempo na etapa. O menu permanece visível e o atalho de WhatsApp aparece apenas para conversa desse canal. Etapa vazia oferece “Adicionar lead”, abrindo `NewLeadDialog` com `initialStageId` da coluna; a criação segue os mesmos guards, auditoria e eventos da rota existente.
+
 ## 1. Visão Geral
 
 O sub-PRD 04 entrega a UI e o cliente-de-API de duas superfícies:

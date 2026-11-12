@@ -32,11 +32,9 @@ describe("ícone do app público, sem escolher tenant", () => {
     expect(resposta.status).toBe(200);
     expect(resposta.headers.get("content-type")).toBe("image/png");
     expect(mocks.marca).toHaveBeenCalledWith(null);
-    expect(mocks.render).toHaveBeenCalledWith(
-      Number(size),
-      { nome: "Central" },
-      "data:image/png;base64,imagem",
-    );
+    expect(mocks.linha).not.toHaveBeenCalled();
+    expect(mocks.arquivo).not.toHaveBeenCalled();
+    expect(mocks.render).toHaveBeenCalledWith(Number(size), { nome: "Central" }, null);
   });
   it("outros tamanhos e subcaminhos não recebem dispensa de autenticação", () => {
     expect(isPublicPath("/app-icon/64")).toBe(false);

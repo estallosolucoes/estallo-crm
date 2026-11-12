@@ -57,7 +57,7 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
   name: "crm_list_conversations",
   description:
     "Lista conversas do CRM com filtros opcionais por contato e status. Retorna preview da ultima mensagem. " +
-    "Campos de governança por conversa: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome do atendente, sem email/telefone), tags[], e queue_position (posição 1-based na fila do inbox — só quando na fila, senão null). " +
+    "Campos de governança por conversa: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome do atendente, sem email/telefone) e queue_position (posição 1-based na fila do inbox — só quando na fila, senão null). " +
     "Em conversa de atendimento, devolve apenas as conversas do contato desta conversa.",
   inputSchema: listInputShape,
   category: "read",
@@ -147,7 +147,6 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
         assigned_to_user_name: c.assigned_to_user_id
           ? (names.get(c.assigned_to_user_id) ?? null)
           : null,
-        tags: c.tags ?? [],
         queue_position: queueMap.get(c.id) ?? null,
         last_message_preview: c.last_message_preview,
         last_message_at: c.last_message_at,
@@ -168,7 +167,7 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
   name: "crm_get_conversation",
   description:
     "Retorna detalhes de uma conversa pelo UUID. Inclui status, atribuicao, contato, ultima atividade. " +
-    "Governança: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome, sem email/telefone), tags[], e queue_position (1-based na fila do inbox — null quando não está na fila). " +
+    "Governança: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome, sem email/telefone) e queue_position (1-based na fila do inbox — null quando não está na fila). " +
     "Em conversa de atendimento, devolve apenas conversas do contato desta conversa.",
   inputSchema: getInputShape,
   category: "read",
@@ -239,7 +238,6 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
       assigned_to_user_name: conv.assigned_to_user_id
         ? (names.get(conv.assigned_to_user_id) ?? null)
         : null,
-      tags: conv.tags ?? [],
       queue_position,
       assigned_at: conv.assigned_at,
       last_inbound_at: conv.last_inbound_at,

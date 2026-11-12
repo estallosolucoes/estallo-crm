@@ -42,17 +42,21 @@ specs:
   - docs/specs/12-spec-ai-agents-ui.md
 ---
 
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # EPIC-13 — AI Agents Module (Configurable WhatsApp Agents + Internal MCP)
 
 > **Para o epic-executor**: leia este arquivo inteiro antes de qualquer wave. As stories estão em ordem de dependência. Cada story = 1 wave. Não pular ordem mesmo que pareça independente — `Deps:` é lei.
 >
 > **Documentos canônicos** (leitura obrigatória antes de qualquer wave):
+>
 > - **Spec 10** (`docs/specs/10-spec-ai-agents-runtime.md`) — schema + endpoints + worker + runtime
 > - **Spec 11** (`docs/specs/11-spec-mcp-server-internal.md`) — catálogo MCP + auth + transport
 > - **Spec 12** (`docs/specs/12-spec-ai-agents-ui.md`) — telas, fluxos, wireframes
 > - **Research dossier** (`~/tino-ai/Tino/research/pre-development/ai-agent-framework-deskcomm-whatsapp/`) — decisão de stack e tradeoffs
 >
 > **Decisões locked do dossier (não revisitar)**:
+>
 > 1. Vercel AI SDK v6 direto. Sem Mastra, sem LangGraph, sem OpenAI Agents SDK.
 > 2. MCP HTTP transport (Streamable HTTP / SSE) — sem stdio em produção.
 > 3. Multi-provider via AI Gateway com strings `"provider/model"` aceitando BYO keys do tenant.
@@ -64,6 +68,7 @@ specs:
 > **Coexistência com EPIC-06**: agentes da Spec 05 ganham `kind='rag_bot'` (legado, mantido). Novos agentes deste epic nascem com `kind='mcp_agent'`. Os dois caminhos coexistem; dispatcher decide qual ativar por gatilho match.
 >
 > **Anti-patterns proibidos** (PR rejeitado):
+>
 > - `import Anthropic from "@anthropic-ai/sdk"` — sempre via AI Gateway com string
 > - Trigger Postgres fazendo HTTP — usar `event_log` + worker (regra Spec 07)
 > - Service role em handler sem filtrar `organization_id` manualmente
@@ -115,80 +120,80 @@ Entregar o **módulo de agentes configuráveis de IA** do DeskcommCRM: cada tena
 
 ### 4.1 Contracts consumidos (de epics anteriores)
 
-| Contract ID | Tipo | Origem | Como usar |
-|---|---|---|---|
-| `auth.user-session` | session | EPIC-01 | `useAuth()` em `/app/ai/agents/*` |
-| `db.organizations` | db_table | EPIC-00 | FK em todas tabelas novas |
-| `db.fn_user_org_ids` | db_function | EPIC-00 | Base das policies RLS |
-| `db.fn_audit_log_row` | db_function | EPIC-01 | Trigger audit em todas tabelas mutáveis |
-| `db.event_log` | db_table | EPIC-00 | Worker consome `ai_agent.dispatch_requested`; emite outros 4 eventos |
-| `db.api_tokens` | db_table | EPIC-01 | Auth bearer reutilizado pra MCP |
-| `db.ai_agents` | db_table | EPIC-06 | **Estendido** com `published_version_id`, `priority`, `archived_at`, `kind` |
-| `db.ai_budgets` | db_table | EPIC-06 | Worker valida budget antes de dispatch |
-| `db.channel_sessions` | db_table | EPIC-03 | FK em `ai_agent_versions.channel_session_id` |
-| `db.conversations` | db_table | EPIC-03 | Run referencia + handoff atualiza `assigned_user_id` |
-| `db.messages` | db_table | EPIC-03 | Inbound dispara dispatch; outbound criado pelo runtime |
-| `db.contacts` | db_table | EPIC-05 | Tool `crm_search_contacts` lê |
-| `db.crm_leads` + stages | db_table | EPIC-04 | Tools `crm_*_lead*` |
-| `db.crm_lead_activities` | db_table | EPIC-04 | Activity `handoff` polimórfica |
-| `event.message.received` | domain_event | EPIC-03 | Webhook handler emite ANTES de `ai_agent.dispatch_requested` (mantido) |
-| `realtime.org-{org_id}` | realtime_channel | EPIC-01 | Broadcast estados de run |
-| `lib.api.wrappers` | shared_lib | EPIC-00 | `ok()`/`fail()` em todos endpoints novos |
-| `lib.supabase.{server,admin}` | shared_lib | EPIC-00 | Clients canônicos |
-| `lib.upstash.rateLimit` | shared_lib | EPIC-01 | Per-tenant rate limit no dispatcher |
+| Contract ID                   | Tipo             | Origem  | Como usar                                                                   |
+| ----------------------------- | ---------------- | ------- | --------------------------------------------------------------------------- |
+| `auth.user-session`           | session          | EPIC-01 | `useAuth()` em `/app/ai/agents/*`                                           |
+| `db.organizations`            | db_table         | EPIC-00 | FK em todas tabelas novas                                                   |
+| `db.fn_user_org_ids`          | db_function      | EPIC-00 | Base das policies RLS                                                       |
+| `db.fn_audit_log_row`         | db_function      | EPIC-01 | Trigger audit em todas tabelas mutáveis                                     |
+| `db.event_log`                | db_table         | EPIC-00 | Worker consome `ai_agent.dispatch_requested`; emite outros 4 eventos        |
+| `db.api_tokens`               | db_table         | EPIC-01 | Auth bearer reutilizado pra MCP                                             |
+| `db.ai_agents`                | db_table         | EPIC-06 | **Estendido** com `published_version_id`, `priority`, `archived_at`, `kind` |
+| `db.ai_budgets`               | db_table         | EPIC-06 | Worker valida budget antes de dispatch                                      |
+| `db.channel_sessions`         | db_table         | EPIC-03 | FK em `ai_agent_versions.channel_session_id`                                |
+| `db.conversations`            | db_table         | EPIC-03 | Run referencia + handoff atualiza `assigned_user_id`                        |
+| `db.messages`                 | db_table         | EPIC-03 | Inbound dispara dispatch; outbound criado pelo runtime                      |
+| `db.contacts`                 | db_table         | EPIC-05 | Tool `crm_search_contacts` lê                                               |
+| `db.crm_leads` + stages       | db_table         | EPIC-04 | Tools `crm_*_lead*`                                                         |
+| `db.crm_lead_activities`      | db_table         | EPIC-04 | Activity `handoff` polimórfica                                              |
+| `event.message.received`      | domain_event     | EPIC-03 | Webhook handler emite ANTES de `ai_agent.dispatch_requested` (mantido)      |
+| `realtime.org-{org_id}`       | realtime_channel | EPIC-01 | Broadcast estados de run                                                    |
+| `lib.api.wrappers`            | shared_lib       | EPIC-00 | `ok()`/`fail()` em todos endpoints novos                                    |
+| `lib.supabase.{server,admin}` | shared_lib       | EPIC-00 | Clients canônicos                                                           |
+| `lib.upstash.rateLimit`       | shared_lib       | EPIC-01 | Per-tenant rate limit no dispatcher                                         |
 
 ### 4.2 Contracts expostos (consumíveis por epics futuros)
 
-| Contract ID | Tipo | Wave que expõe | Descrição pra consumidores |
-|---|---|---|---|
-| `db.ai_agent_versions` | db_table | S-13.01 | Versionamento Save/Publish |
-| `db.ai_provider_credentials` | db_table | S-13.01 | Keys BYO cifradas AES-GCM |
-| `db.ai_agent_runs` | db_table | S-13.01 | Log de execuções com trace jsonb |
-| `db.ai_models` | db_table | S-13.01 | Catálogo curado read-only |
-| `view.ai_provider_credentials_safe` | db_view | S-13.01 | SELECT sem campos cifrados |
-| `lib.crypto.aes_gcm` | shared_lib | S-13.05 | `encryptKey()`/`decryptKey()` |
-| `lib.api.handlers.contacts` | shared_lib | S-13.02 | Handler core extraído de `_handler.ts` |
-| `lib.api.handlers.conversations` | shared_lib | S-13.02 | idem |
-| `lib.api.handlers.messages` | shared_lib | S-13.02 | idem |
-| `lib.api.handlers.leads` | shared_lib | S-13.02 | idem |
-| `lib.api.handlers.pipelines` | shared_lib | S-13.02 | idem |
-| `mcp.endpoint /api/mcp` | mcp_server | S-13.03 | Streamable HTTP transport |
-| `mcp.tool.crm_search_contacts` | mcp_tool | S-13.03 | Spec 11 §3.1 |
-| `mcp.tool.crm_get_contact` | mcp_tool | S-13.03 | idem |
-| `mcp.tool.crm_list_conversations` | mcp_tool | S-13.03 | idem |
-| `mcp.tool.crm_get_conversation` | mcp_tool | S-13.03 | idem |
-| `mcp.tool.crm_get_conversation_history` | mcp_tool | S-13.03 | idem |
-| `mcp.tool.crm_list_leads` | mcp_tool | S-13.04 | Spec 11 §3.1 |
-| `mcp.tool.crm_get_lead` | mcp_tool | S-13.04 | idem |
-| `mcp.tool.crm_list_pipelines` | mcp_tool | S-13.04 | idem |
-| `mcp.tool.crm_send_whatsapp_message` | mcp_tool | S-13.04 | Spec 11 §3.2 |
-| `mcp.tool.crm_create_lead` | mcp_tool | S-13.04 | idem |
-| `mcp.tool.crm_update_lead` | mcp_tool | S-13.04 | idem |
-| `mcp.tool.crm_move_lead_stage` | mcp_tool | S-13.04 | idem |
-| `mcp.tool.crm_request_human_handoff` | mcp_tool | S-13.04 | Spec 11 §3.3 |
-| `api.GET /api/v1/ai/providers/:p/models` | api_route | S-13.01 | Catálogo curado |
-| `api.GET /api/v1/mcp/tools` | api_route | S-13.04 | Lista tools p/ UI popular checklist |
-| `api.* /api/v1/ai/credentials` | api_route | S-13.05 | CRUD credentials BYO |
-| `api.* /api/v1/ai/agents` | api_route | S-13.06 | CRUD agentes + versões |
-| `api.POST /api/v1/ai/agents/:id:publish` | api_route | S-13.06 | Atomic version flip |
-| `api.POST /api/v1/ai/agents/:id/versions/:vid:test` | api_route | S-13.06 | Dry-run com trace |
-| `api.GET /api/v1/ai/agents/:id/runs` | api_route | S-13.06 | Log paginado |
-| `worker.agent-dispatcher` | worker | S-13.07 | Cron consumer de `event_log` |
-| `endpoint.internal /api/internal/agents/run` | internal_endpoint | S-13.08 | ToolLoopAgent runtime |
-| `event.ai_agent.dispatch_requested` | domain_event | S-13.09 | Webhook hook emite |
-| `event.ai_agent.run_started` | domain_event | S-13.08 | Runtime emite |
-| `event.ai_agent.run_completed` | domain_event | S-13.08 | Runtime emite |
-| `event.ai_agent.handoff_triggered` | domain_event | S-13.08 | Runtime emite (tool ou sentinela) |
-| `event.ai_agent.published` | domain_event | S-13.06 | Endpoint :publish emite |
-| `realtime.ai_agent_runs-{org_id}` | realtime_channel | S-13.12 | UI tab Runs subscribe |
-| `hook.useAgents` | react_hook | S-13.10 | Lista + filtros |
-| `hook.useAgent` | react_hook | S-13.11 | Detail + versions |
-| `hook.useAgentRuns` | react_hook | S-13.12 | Realtime runs |
-| `hook.useCredentials` | react_hook | S-13.10 | Credenciais (safe view) |
-| `ui.<AgentForm>` | react_component | S-13.11 | Form principal de configuração |
-| `ui.<ToolPicker>` | react_component | S-13.11 | Checklist de MCP tools |
-| `ui.<RunTrace>` | react_component | S-13.12 | Render passo-a-passo |
-| `ui.<VersionDiff>` | react_component | S-13.12 | Side-by-side de versões |
+| Contract ID                                         | Tipo              | Wave que expõe | Descrição pra consumidores             |
+| --------------------------------------------------- | ----------------- | -------------- | -------------------------------------- |
+| `db.ai_agent_versions`                              | db_table          | S-13.01        | Versionamento Save/Publish             |
+| `db.ai_provider_credentials`                        | db_table          | S-13.01        | Keys BYO cifradas AES-GCM              |
+| `db.ai_agent_runs`                                  | db_table          | S-13.01        | Log de execuções com trace jsonb       |
+| `db.ai_models`                                      | db_table          | S-13.01        | Catálogo curado read-only              |
+| `view.ai_provider_credentials_safe`                 | db_view           | S-13.01        | SELECT sem campos cifrados             |
+| `lib.crypto.aes_gcm`                                | shared_lib        | S-13.05        | `encryptKey()`/`decryptKey()`          |
+| `lib.api.handlers.contacts`                         | shared_lib        | S-13.02        | Handler core extraído de `_handler.ts` |
+| `lib.api.handlers.conversations`                    | shared_lib        | S-13.02        | idem                                   |
+| `lib.api.handlers.messages`                         | shared_lib        | S-13.02        | idem                                   |
+| `lib.api.handlers.leads`                            | shared_lib        | S-13.02        | idem                                   |
+| `lib.api.handlers.pipelines`                        | shared_lib        | S-13.02        | idem                                   |
+| `mcp.endpoint /api/mcp`                             | mcp_server        | S-13.03        | Streamable HTTP transport              |
+| `mcp.tool.crm_search_contacts`                      | mcp_tool          | S-13.03        | Spec 11 §3.1                           |
+| `mcp.tool.crm_get_contact`                          | mcp_tool          | S-13.03        | idem                                   |
+| `mcp.tool.crm_list_conversations`                   | mcp_tool          | S-13.03        | idem                                   |
+| `mcp.tool.crm_get_conversation`                     | mcp_tool          | S-13.03        | idem                                   |
+| `mcp.tool.crm_get_conversation_history`             | mcp_tool          | S-13.03        | idem                                   |
+| `mcp.tool.crm_list_leads`                           | mcp_tool          | S-13.04        | Spec 11 §3.1                           |
+| `mcp.tool.crm_get_lead`                             | mcp_tool          | S-13.04        | idem                                   |
+| `mcp.tool.crm_list_pipelines`                       | mcp_tool          | S-13.04        | idem                                   |
+| `mcp.tool.crm_send_whatsapp_message`                | mcp_tool          | S-13.04        | Spec 11 §3.2                           |
+| `mcp.tool.crm_create_lead`                          | mcp_tool          | S-13.04        | idem                                   |
+| `mcp.tool.crm_update_lead`                          | mcp_tool          | S-13.04        | idem                                   |
+| `mcp.tool.crm_move_lead_stage`                      | mcp_tool          | S-13.04        | idem                                   |
+| `mcp.tool.crm_request_human_handoff`                | mcp_tool          | S-13.04        | Spec 11 §3.3                           |
+| `api.GET /api/v1/ai/providers/:p/models`            | api_route         | S-13.01        | Catálogo curado                        |
+| `api.GET /api/v1/mcp/tools`                         | api_route         | S-13.04        | Lista tools p/ UI popular checklist    |
+| `api.* /api/v1/ai/credentials`                      | api_route         | S-13.05        | CRUD credentials BYO                   |
+| `api.* /api/v1/ai/agents`                           | api_route         | S-13.06        | CRUD agentes + versões                 |
+| `api.POST /api/v1/ai/agents/:id:publish`            | api_route         | S-13.06        | Atomic version flip                    |
+| `api.POST /api/v1/ai/agents/:id/versions/:vid:test` | api_route         | S-13.06        | Dry-run com trace                      |
+| `api.GET /api/v1/ai/agents/:id/runs`                | api_route         | S-13.06        | Log paginado                           |
+| `worker.agent-dispatcher`                           | worker            | S-13.07        | Cron consumer de `event_log`           |
+| `endpoint.internal /api/internal/agents/run`        | internal_endpoint | S-13.08        | ToolLoopAgent runtime                  |
+| `event.ai_agent.dispatch_requested`                 | domain_event      | S-13.09        | Webhook hook emite                     |
+| `event.ai_agent.run_started`                        | domain_event      | S-13.08        | Runtime emite                          |
+| `event.ai_agent.run_completed`                      | domain_event      | S-13.08        | Runtime emite                          |
+| `event.ai_agent.handoff_triggered`                  | domain_event      | S-13.08        | Runtime emite (tool ou sentinela)      |
+| `event.ai_agent.published`                          | domain_event      | S-13.06        | Endpoint :publish emite                |
+| `realtime.ai_agent_runs-{org_id}`                   | realtime_channel  | S-13.12        | UI tab Runs subscribe                  |
+| `hook.useAgents`                                    | react_hook        | S-13.10        | Lista + filtros                        |
+| `hook.useAgent`                                     | react_hook        | S-13.11        | Detail + versions                      |
+| `hook.useAgentRuns`                                 | react_hook        | S-13.12        | Realtime runs                          |
+| `hook.useCredentials`                               | react_hook        | S-13.10        | Credenciais (safe view)                |
+| `ui.<AgentForm>`                                    | react_component   | S-13.11        | Form principal de configuração         |
+| `ui.<ToolPicker>`                                   | react_component   | S-13.11        | Checklist de MCP tools                 |
+| `ui.<RunTrace>`                                     | react_component   | S-13.12        | Render passo-a-passo                   |
+| `ui.<VersionDiff>`                                  | react_component   | S-13.12        | Side-by-side de versões                |
 
 ## 5. Stories (em ordem de dependência)
 
@@ -201,15 +206,19 @@ Entregar o **módulo de agentes configuráveis de IA** do DeskcommCRM: cada tena
 **Points**: 3 | **Priority**: P0 | **Deps**: (none) | **FR refs**: Spec 10 §3
 
 #### Contexto
+
 Fundação do módulo. Estende `ai_agents` (não recria) e adiciona 4 tabelas novas com RLS via `fn_user_org_ids()` e audit triggers via `fn_audit_log_row()`. Sem RLS = vazamento cross-tenant garantido — gate de CI bloqueia. Seed inicial de `ai_models` com 8 modelos curados (Spec 10 §2.2). Migration deve ser idempotente.
 
 #### Files to create
+
 - `supabase/migrations/20260505_0023_ai_agents_module.sql` — migration completa
 
 #### Files to modify
+
 - `supabase/migrations/MANIFEST.md` — adicionar entry da nova migration
 
 #### Implementation steps (sequential)
+
 1. Criar migration com:
    - `alter table ai_agents add column published_version_id uuid, priority int default 0, archived_at timestamptz, kind text default 'rag_bot' check (...)`
    - Backfill: agentes existentes recebem `kind='rag_bot'`, `priority=0`
@@ -253,13 +262,13 @@ And the partial index ai_agent_runs_one_running_per_conv guards correctness
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | db | Migration applies clean | `mcp__plugin_supabase_supabase__list_migrations` mostra 0023 success |
-| t2 | rls | Tenant isolation funciona | SQL como user A → 0 rows de B em todas as 4 tabelas |
-| t3 | db | ai_models seed presente | `select count(*) from ai_models where deprecated_at is null` >= 8 |
-| t4 | db | Partial unique index aplica | inserts paralelos same conv → 1 OK, 1 falha 23505 |
-| t5 | db | Audit trigger captura | `update ai_agent_versions ... ; select * from api_audit_log where resource_type='ai_agent_versions'` retorna entry |
+| ID  | Tipo | Descrição                   | Como testar                                                                                                        |
+| --- | ---- | --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| t1  | db   | Migration applies clean     | `mcp__plugin_supabase_supabase__list_migrations` mostra 0023 success                                               |
+| t2  | rls  | Tenant isolation funciona   | SQL como user A → 0 rows de B em todas as 4 tabelas                                                                |
+| t3  | db   | ai_models seed presente     | `select count(*) from ai_models where deprecated_at is null` >= 8                                                  |
+| t4  | db   | Partial unique index aplica | inserts paralelos same conv → 1 OK, 1 falha 23505                                                                  |
+| t5  | db   | Audit trigger captura       | `update ai_agent_versions ... ; select * from api_audit_log where resource_type='ai_agent_versions'` retorna entry |
 
 #### Architecture contracts emitted
 
@@ -267,7 +276,32 @@ And the partial index ai_agent_runs_one_running_per_conv guards correctness
 exposes:
   - type: db_table
     id: "ai_agent_versions"
-    columns: [id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, status, published_at, superseded_at, created_at, created_by]
+    columns:
+      [
+        id,
+        organization_id,
+        agent_id,
+        version_number,
+        system_prompt,
+        provider,
+        model,
+        credential_id,
+        tool_ids,
+        trigger_config,
+        channel_session_id,
+        max_steps,
+        token_budget,
+        cost_budget_cents,
+        history_message_window,
+        history_token_window,
+        handoff_keywords,
+        handoff_tool_enabled,
+        status,
+        published_at,
+        superseded_at,
+        created_at,
+        created_by,
+      ]
     rls_policy: "tenant_isolation_ai_agent_versions_all"
   - type: db_table
     id: "ai_provider_credentials"
@@ -281,14 +315,30 @@ exposes:
     notes: "GLOBAL (not tenant-aware). Read-all, write-via-migration only."
   - type: db_view
     id: "ai_provider_credentials_safe"
-    columns: [id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at]
+    columns:
+      [
+        id,
+        organization_id,
+        provider,
+        label,
+        api_key_last4,
+        validated_at,
+        validation_error,
+        models_available,
+        is_active,
+        created_by,
+        created_at,
+        updated_at,
+      ]
 ```
 
 #### Decisões a registrar
+
 - Migration adota timestamp `20260505_0023`. Próximas migrations do epic seguem 0024+.
 - `ai_models.is_default_for_provider` partial unique — apenas 1 default por provider.
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Migration roda em dev + remote idempotente (rerun = no-op)
 - [ ] Typecheck zero, lint zero
@@ -302,9 +352,11 @@ exposes:
 **Points**: 4 | **Priority**: P0 | **Deps**: S-13.01 | **FR refs**: Spec 11 §5.2
 
 #### Contexto
+
 Pré-requisito do MCP server (S-13.03/04). Cada Route Handler em `app/api/v1/<resource>/route.ts` precisa ter sua lógica core extraída para `_handler.ts` reutilizável. Mantém audit, RLS, validação Zod centralizados — MCP tools chamarão os mesmos handlers que os endpoints REST. Sem isto, MCP tools duplicariam lógica e divergiriam da REST.
 
 #### Files to create
+
 - `app/api/v1/contacts/_handler.ts` — `listContactsHandler`, `getContactHandler`
 - `app/api/v1/conversations/_handler.ts` — `listConversationsHandler`, `getConversationHandler`
 - `app/api/v1/messages/_handler.ts` — `listMessagesHandler`, `sendMessageHandler`
@@ -312,6 +364,7 @@ Pré-requisito do MCP server (S-13.03/04). Cada Route Handler em `app/api/v1/<re
 - `app/api/v1/pipelines/_handler.ts` — `listPipelinesHandler`
 
 #### Files to modify
+
 - `app/api/v1/contacts/route.ts` — Route Handler chama `listContactsHandler`
 - `app/api/v1/contacts/[id]/route.ts` — chama `getContactHandler`
 - `app/api/v1/conversations/route.ts` + `[id]/route.ts`
@@ -320,15 +373,16 @@ Pré-requisito do MCP server (S-13.03/04). Cada Route Handler em `app/api/v1/<re
 - `app/api/v1/pipelines/route.ts`
 
 #### Implementation steps (sequential)
+
 1. Para cada resource, criar `_handler.ts` exportando funções puras:
    ```ts
    export async function listContactsHandler(input: {
-     organization_id: string,
-     query?: string,
-     limit?: number,
-     cursor?: string,
-     actor: { type: 'user' | 'ai_agent', id: string, role: string }
-   }): Promise<{ contacts: Contact[], has_more: boolean, cursor?: string }>
+     organization_id: string;
+     query?: string;
+     limit?: number;
+     cursor?: string;
+     actor: { type: "user" | "ai_agent"; id: string; role: string };
+   }): Promise<{ contacts: Contact[]; has_more: boolean; cursor?: string }>;
    ```
 2. Mover lógica de query/audit/Zod do Route Handler pra dentro do handler
 3. Route Handler vira thin wrapper: parse req → chama handler → wrap em `ok()`/`fail()`
@@ -353,13 +407,13 @@ Then all tests still pass without modification
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | api | GET /api/v1/contacts retorna lista paginada | curl com session cookie + valida shape |
-| t2 | api | POST /api/v1/leads cria lead | curl POST + valida 201 + audit log entry |
-| t3 | unit | Handlers testáveis sem Route Handler | Vitest importa `_handler.ts` direto, mocka supabase, valida output |
-| t4 | rls | Handler com `actor.type='ai_agent'` respeita RLS | DB query com client autenticado retorna apenas org do actor |
-| t5 | api | Audit log entry tem `actor_type='ai_agent'` quando passado | curl + select api_audit_log |
+| ID  | Tipo | Descrição                                                  | Como testar                                                        |
+| --- | ---- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| t1  | api  | GET /api/v1/contacts retorna lista paginada                | curl com session cookie + valida shape                             |
+| t2  | api  | POST /api/v1/leads cria lead                               | curl POST + valida 201 + audit log entry                           |
+| t3  | unit | Handlers testáveis sem Route Handler                       | Vitest importa `_handler.ts` direto, mocka supabase, valida output |
+| t4  | rls  | Handler com `actor.type='ai_agent'` respeita RLS           | DB query com client autenticado retorna apenas org do actor        |
+| t5  | api  | Audit log entry tem `actor_type='ai_agent'` quando passado | curl + select api_audit_log                                        |
 
 #### Architecture contracts emitted
 
@@ -369,7 +423,7 @@ exposes:
     id: "lib.api.handlers.contacts"
     file: "app/api/v1/contacts/_handler.ts"
     exports: ["listContactsHandler", "getContactHandler"]
-    actor_aware: true  # accepts { type: 'user' | 'ai_agent', id, role }
+    actor_aware: true # accepts { type: 'user' | 'ai_agent', id, role }
   - type: shared_lib
     id: "lib.api.handlers.conversations"
     exports: ["listConversationsHandler", "getConversationHandler"]
@@ -385,6 +439,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Suite existente de testes REST passa sem mudança
 - [ ] Typecheck/lint zero
@@ -397,9 +452,11 @@ exposes:
 **Points**: 5 | **Priority**: P0 | **Deps**: S-13.02 | **FR refs**: Spec 11 §2, §3.1, §5
 
 #### Contexto
+
 Cria o MCP server em `app/api/mcp/route.ts` usando `@modelcontextprotocol/sdk`. Streamable HTTP transport. Auth via Bearer reutilizando `api_tokens` (EPIC-01) com `actor_type='ai_agent'` aceito. Implementa as 5 read tools de leitura segura: `crm_search_contacts`, `crm_get_contact`, `crm_list_conversations`, `crm_get_conversation`, `crm_get_conversation_history`. Cada tool wrappa o `_handler.ts` da S-13.02.
 
 #### Files to create
+
 - `app/api/mcp/route.ts` — entrypoint POST/GET (Streamable HTTP)
 - `lib/mcp/server.ts` — `createMcpServer()` que registra tools
 - `lib/mcp/auth.ts` — `validateBearerToken()` retorna `{ organization_id, role, actor }`
@@ -410,6 +467,7 @@ Cria o MCP server em `app/api/mcp/route.ts` usando `@modelcontextprotocol/sdk`. 
 - `lib/mcp/audit.ts` — `auditMcpToolCall()` insere em `api_audit_log` com `action='mcp.tool_called'`
 
 #### Implementation steps (sequential)
+
 1. Instalar `@modelcontextprotocol/sdk`
 2. Implementar `lib/mcp/auth.ts`: SHA256 hash do bearer → lookup `api_tokens`, retorna actor (user ou ai_agent)
 3. Implementar `createMcpServer()` que registra tools via `server.tool(name, desc, schema, handler)`
@@ -448,14 +506,14 @@ Then response is { data: { tools: [{ id, description, input_schema, category, re
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | api | tools/list retorna 5 tools | curl POST /api/mcp + parse JSON-RPC response |
-| t2 | api | tools/call com bearer válido retorna data | curl + valida shape |
-| t3 | rls | Tool respeita org isolation | bearer da org A, query nome de contato que existe só em B → 0 results |
-| t4 | api | Bearer inválido → 401 -32001 | curl sem header → erro |
-| t5 | audit | Audit log entry criada com actor_type | select api_audit_log where actor_type='ai_agent' |
-| t6 | api | GET /mcp/tools retorna catálogo serializado | Playwright network capture |
+| ID  | Tipo  | Descrição                                   | Como testar                                                           |
+| --- | ----- | ------------------------------------------- | --------------------------------------------------------------------- |
+| t1  | api   | tools/list retorna 5 tools                  | curl POST /api/mcp + parse JSON-RPC response                          |
+| t2  | api   | tools/call com bearer válido retorna data   | curl + valida shape                                                   |
+| t3  | rls   | Tool respeita org isolation                 | bearer da org A, query nome de contato que existe só em B → 0 results |
+| t4  | api   | Bearer inválido → 401 -32001                | curl sem header → erro                                                |
+| t5  | audit | Audit log entry criada com actor_type       | select api_audit_log where actor_type='ai_agent'                      |
+| t6  | api   | GET /mcp/tools retorna catálogo serializado | Playwright network capture                                            |
 
 #### Architecture contracts emitted
 
@@ -482,6 +540,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] MCP Inspector (`npx @modelcontextprotocol/inspector`) conecta com sucesso usando bearer e lista tools
 - [ ] Audit log entries aparecem com `actor_type='ai_agent'` quando token é mintado pra agente
@@ -496,19 +555,23 @@ exposes:
 **Points**: 4 | **Priority**: P0 | **Deps**: S-13.03 | **FR refs**: Spec 11 §3.1, §3.2, §3.3
 
 #### Contexto
+
 Completa o catálogo MCP. Adiciona 4 read tools restantes (`crm_list_leads`, `crm_get_lead`, `crm_list_pipelines`) + 4 write tools (`crm_send_whatsapp_message`, `crm_create_lead`, `crm_update_lead`, `crm_move_lead_stage`) + 1 tool especial sem mirror REST (`crm_request_human_handoff`). Total final: 13 tools. Write tools requerem `role >= manager` no token. Handoff tool tem side effects (assign user, activity, event_log).
 
 #### Files to create
+
 - `lib/mcp/tools/leads.ts` — 4 tools
 - `lib/mcp/tools/pipelines.ts` — 1 tool
 - `lib/mcp/tools/messages.ts` — `crm_send_whatsapp_message`
 - `lib/mcp/tools/handoff.ts` — `crm_request_human_handoff` (logic completa)
 
 #### Files to modify
+
 - `lib/mcp/tools/index.ts` — adiciona 8 tools, atualiza `VALID_TOOL_IDS`
 - `app/api/v1/mcp/tools/route.ts` — categoriza tools (read/write/special)
 
 #### Implementation steps (sequential)
+
 1. Tools de leads/pipelines/messages: wrappers sobre `_handler.ts`
 2. `crm_send_whatsapp_message`: chama `sendMessageHandler` que já existe (S-13.02), idempotência via `Idempotency-Key` derivado de `run_id+step`
 3. `crm_request_human_handoff`:
@@ -553,14 +616,14 @@ Then response includes 13 tools categorized: read (8), write (4), special (1)
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | api | 13 tools no tools/list | curl + count |
-| t2 | api | Write tool com viewer → 403 | curl com viewer bearer |
-| t3 | api | Handoff atomic side effects | exec + select 4 tabelas: conversations, activities, event_log, audit |
-| t4 | api | Round-robin handoff distribui | exec 5x → users diferentes (com mocks) |
-| t5 | api | Idempotency-Key dedupe send_whatsapp | call 2x mesmo key → 1 message inserted |
-| t6 | api | move_lead_stage audit metadata | select api_audit_log → from_stage_id presente |
+| ID  | Tipo | Descrição                            | Como testar                                                          |
+| --- | ---- | ------------------------------------ | -------------------------------------------------------------------- |
+| t1  | api  | 13 tools no tools/list               | curl + count                                                         |
+| t2  | api  | Write tool com viewer → 403          | curl com viewer bearer                                               |
+| t3  | api  | Handoff atomic side effects          | exec + select 4 tabelas: conversations, activities, event_log, audit |
+| t4  | api  | Round-robin handoff distribui        | exec 5x → users diferentes (com mocks)                               |
+| t5  | api  | Idempotency-Key dedupe send_whatsapp | call 2x mesmo key → 1 message inserted                               |
+| t6  | api  | move_lead_stage audit metadata       | select api_audit_log → from_stage_id presente                        |
 
 #### Architecture contracts emitted
 
@@ -588,11 +651,13 @@ exposes:
     audit_metadata: ["from_stage_id", "to_stage_id", "reason"]
   - type: mcp_tool
     id: "mcp.tool.crm_request_human_handoff"
-    side_effects: ["conversations.assigned_user_id", "crm_lead_activities INSERT", "event_log INSERT"]
+    side_effects:
+      ["conversations.assigned_user_id", "crm_lead_activities INSERT", "event_log INSERT"]
     no_rest_mirror: true
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] 13 tools registradas
 - [ ] Write tools rate-limited a 30/min/token (Upstash)
@@ -605,9 +670,11 @@ exposes:
 **Points**: 4 | **Priority**: P0 | **Deps**: S-13.01 | **FR refs**: Spec 10 §4.2, §7
 
 #### Contexto
+
 CRUD de credentials BYO. Plaintext só recebido no POST. Cifra AES-GCM com key em `process.env.AI_CRED_AES_KEY`. Validação async ping ao provider `/v1/models`. View `_safe` esconde campos cifrados. Audit captura eventos sem valor da key. Sentry beforeSend strippa `api_key` do body.
 
 #### Files to create
+
 - `lib/crypto/aes_gcm.ts` — `encryptKey()`, `decryptKey()` usando `@noble/ciphers`
 - `lib/ai/provider-validators.ts` — `validateAnthropicKey()`, `validateOpenAIKey()`, `validateGoogleKey()` (ping `/v1/models`)
 - `app/api/v1/ai/credentials/route.ts` — GET list, POST create
@@ -618,6 +685,7 @@ CRUD de credentials BYO. Plaintext só recebido no POST. Cifra AES-GCM com key e
 - `lib/ai/credentials.ts` — `loadCredential(id, organization_id): Promise<{ apiKey, provider, label }>` (decrypt just-in-time)
 
 #### Implementation steps (sequential)
+
 1. `lib/crypto/aes_gcm.ts`: AES-256-GCM, IV 12 bytes random, tag 16 bytes
 2. Endpoint POST `/credentials`:
    - Zod validate body
@@ -663,14 +731,14 @@ Then response is 403 forbidden_role
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | api | POST cifra corretamente | inserir + manualmente decifrar com AES_KEY → match |
-| t2 | api | Validation async funciona | mock provider 200 → validated_at set; 401 → validation_error |
-| t3 | api | DELETE bloqueado se em uso | 409 + row preservada |
-| t4 | adversarial | Plaintext nunca em log | Sentry capture run, search breadcrumbs por 'sk-' → 0 |
-| t5 | rls | Tenant isolation | org A não vê credentials de B |
-| t6 | api | Revalidate endpoint reseta validated_at e retesta | POST + check validated_at atualizado |
+| ID  | Tipo        | Descrição                                         | Como testar                                                  |
+| --- | ----------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| t1  | api         | POST cifra corretamente                           | inserir + manualmente decifrar com AES_KEY → match           |
+| t2  | api         | Validation async funciona                         | mock provider 200 → validated_at set; 401 → validation_error |
+| t3  | api         | DELETE bloqueado se em uso                        | 409 + row preservada                                         |
+| t4  | adversarial | Plaintext nunca em log                            | Sentry capture run, search breadcrumbs por 'sk-' → 0         |
+| t5  | rls         | Tenant isolation                                  | org A não vê credentials de B                                |
+| t6  | api         | Revalidate endpoint reseta validated_at e retesta | POST + check validated_at atualizado                         |
 
 #### Architecture contracts emitted
 
@@ -699,6 +767,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] AES_KEY env var validada no startup (`lib/env.ts`)
 - [ ] Rotation playbook documentado em `docs/runbooks/ai-credentials-rotation.md`
@@ -711,9 +780,11 @@ exposes:
 **Points**: 5 | **Priority**: P0 | **Deps**: S-13.01, S-13.05 | **FR refs**: Spec 10 §4.3, §4.4, §4.5
 
 #### Contexto
+
 CRUD completo de agentes do tipo `mcp_agent`, versionamento Save/Publish atômico, endpoint `:test` (que usa o runtime parcialmente — preview before S-13.08 wires it fully). Toda mutação valida cross-references (credential exists+validated, channel_session working, tools válidas no catálogo MCP, modelo existe em `ai_models`).
 
 #### Files to create
+
 - `app/api/v1/ai/agents/[id]/route.ts` — GET detail, PATCH, DELETE (soft archive)
 - `app/api/v1/ai/agents/[id]/versions/route.ts` — GET list, POST create draft
 - `app/api/v1/ai/agents/[id]/versions/[vid]/route.ts` — GET, PATCH (only draft)
@@ -726,9 +797,11 @@ CRUD completo de agentes do tipo `mcp_agent`, versionamento Save/Publish atômic
 - `lib/ai/agents/publish.ts` — atomic transaction logic
 
 #### Files to modify
+
 - `app/api/v1/ai/agents/route.ts` — POST agora aceita `kind='mcp_agent'` + nested first version draft
 
 #### Implementation steps (sequential)
+
 1. Zod schemas em `lib/ai/agents/validation.ts` mirror Spec 10 §3.2 e §4.3
 2. POST `/agents` cria agent + version v1 atomicamente
 3. POST `/agents/:id/versions`:
@@ -795,17 +868,17 @@ And no WAHA call is made
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | api | Create agent + first version atomic | POST + select 2 tabelas |
-| t2 | api | Publish atomic transition | POST + select 3 estados em ordem |
-| t3 | api | Cross-ref validation falha | publish com credential.validated_at=null → 422 |
-| t4 | api | Edit published version blocked | PATCH version published → 409 |
-| t5 | api | Test mode dry_run flag | POST :test + select ai_agent_runs.is_dry_run=true |
-| t6 | api | Duplicate creates new agent | POST :duplicate + count agents +1 |
-| t7 | api | Pause clears published_version_id | POST :pause + select ai_agents |
-| t8 | api | Archive soft deletes | DELETE + select archived_at NOT NULL |
-| t9 | rls | Cross-tenant version access blocked | bearer A query version de B → 404 |
+| ID  | Tipo | Descrição                           | Como testar                                       |
+| --- | ---- | ----------------------------------- | ------------------------------------------------- |
+| t1  | api  | Create agent + first version atomic | POST + select 2 tabelas                           |
+| t2  | api  | Publish atomic transition           | POST + select 3 estados em ordem                  |
+| t3  | api  | Cross-ref validation falha          | publish com credential.validated_at=null → 422    |
+| t4  | api  | Edit published version blocked      | PATCH version published → 409                     |
+| t5  | api  | Test mode dry_run flag              | POST :test + select ai_agent_runs.is_dry_run=true |
+| t6  | api  | Duplicate creates new agent         | POST :duplicate + count agents +1                 |
+| t7  | api  | Pause clears published_version_id   | POST :pause + select ai_agents                    |
+| t8  | api  | Archive soft deletes                | DELETE + select archived_at NOT NULL              |
+| t9  | rls  | Cross-tenant version access blocked | bearer A query version de B → 404                 |
 
 #### Architecture contracts emitted
 
@@ -822,7 +895,8 @@ exposes:
   - type: api_route
     id: "api.POST /api/v1/ai/agents/:id:publish"
     body: "{ version_id }"
-    error_codes: ["credential_not_validated", "channel_session_offline", "tool_id_invalid", "model_not_found"]
+    error_codes:
+      ["credential_not_validated", "channel_session_offline", "tool_id_invalid", "model_not_found"]
   - type: api_route
     id: "api.POST /api/v1/ai/agents/:id/versions/:vid:test"
     body: "{ sample_message: string, sample_contact?: {...} }"
@@ -838,6 +912,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Test mode usa stub temporário até S-13.08 (flag `INTERNAL_AGENT_RUN_STUB=true`)
 - [ ] Commit `feat(EPIC-13): agents CRUD + versions + publish [wave 6]`
@@ -849,18 +924,22 @@ exposes:
 **Points**: 4 | **Priority**: P0 | **Deps**: S-13.06 | **FR refs**: Spec 10 §5
 
 #### Contexto
+
 Worker cron que consome `event_log` `ai_agent.dispatch_requested`, escolhe agente top-priority match, valida budget + rate limit, cria `ai_agent_runs` row e dispara `/api/internal/agents/run`. Concorrência garantida pelo partial unique index. Multi-agente: N publicados na mesma sessão; dispatcher escolhe 1 via priority + created_at.
 
 #### Files to create
+
 - `app/api/v1/cron/agent-dispatcher/route.ts` — cron handler
 - `lib/ai/dispatcher/index.ts` — `dispatchAgents()` algoritmo principal
 - `lib/ai/dispatcher/triggers.ts` — `triggerMatches()` (events, ignore_groups, ignore_self, keyword_regex, business_hours)
 - `lib/ai/dispatcher/budget.ts` — `checkTenantBudget()` reusing ai_budgets
 
 #### Files to modify
+
 - `vercel.json` — adicionar cron `*/1 * * * *` para dispatcher (Vercel não suporta sub-minute, processa batch)
 
 #### Implementation steps (sequential)
+
 1. Cron entrypoint valida `X-Cron-Secret`
 2. Pull events `is null processed_at`, limit 100, lock with `for update skip locked`
 3. Para cada event:
@@ -908,16 +987,16 @@ And event marked outcome='no_match'
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | worker | Multi-agent priority | seed 2 agents, run dispatcher, assert agent_id |
-| t2 | worker | Concurrency guard | seed running run + dispatch → 1 ainda |
-| t3 | worker | Group filter | inbound @g.us → no_match |
-| t4 | worker | Self filter | inbound fromMe=true → no_match |
-| t5 | worker | Keyword regex | inbound matching/not matching → match/no_match |
-| t6 | worker | Business hours | mock now() outside window → no_match |
-| t7 | worker | Budget block | budget exhausted → outcome budget_exceeded |
-| t8 | worker | Rate limit | 70 events same org/min → 60 dispatch + 10 requeue |
+| ID  | Tipo   | Descrição            | Como testar                                       |
+| --- | ------ | -------------------- | ------------------------------------------------- |
+| t1  | worker | Multi-agent priority | seed 2 agents, run dispatcher, assert agent_id    |
+| t2  | worker | Concurrency guard    | seed running run + dispatch → 1 ainda             |
+| t3  | worker | Group filter         | inbound @g.us → no_match                          |
+| t4  | worker | Self filter          | inbound fromMe=true → no_match                    |
+| t5  | worker | Keyword regex        | inbound matching/not matching → match/no_match    |
+| t6  | worker | Business hours       | mock now() outside window → no_match              |
+| t7  | worker | Budget block         | budget exhausted → outcome budget_exceeded        |
+| t8  | worker | Rate limit           | 70 events same org/min → 60 dispatch + 10 requeue |
 
 #### Architecture contracts emitted
 
@@ -936,6 +1015,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - ~~Cron registrado em `vercel.json`~~ — **superada**: `vercel.json` não existe neste repositório; o agendamento é do serviço `scheduler` do `docker-compose.prod.yml`
 - [ ] Sentry monitora `ai_dispatcher.no_match` se ratio > 30% (alarme info)
@@ -948,9 +1028,11 @@ exposes:
 **Points**: 6 | **Priority**: P0 | **Deps**: S-13.04, S-13.05, S-13.07 | **FR refs**: Spec 10 §6
 
 #### Contexto
+
 Coração do epic. Roda o `ToolLoopAgent` do Vercel AI SDK v6 com tools MCP. Gerencia budgets em 3 camadas (`stepCountIs`, `prepareStep` token+cost), envia resposta via WAHA, detecta handoff (tool ou sentinela), persiste trace, emite eventos. Não está em `/api/v1/` — interno, autenticado por `INTERNAL_SECRET`.
 
 #### Files to create
+
 - `app/api/internal/agents/run/route.ts` — endpoint runtime
 - `lib/ai/runtime/agent.ts` — `runAgent(run_id)` função principal
 - `lib/ai/runtime/history.ts` — `loadHistoryWithBudget(conv, msgWindow, tokenWindow)`
@@ -963,9 +1045,11 @@ Coração do epic. Roda o `ToolLoopAgent` do Vercel AI SDK v6 com tools MCP. Ger
 - `lib/waha/send.ts` — `sendWAHA(session_id, chat_id, text)` (se ainda não existe da EPIC-03)
 
 #### Files to modify
+
 - `app/api/v1/ai/agents/[id]/versions/[vid]/test/route.ts` — remover stub, chamar runtime real com `is_dry_run=true`
 
 #### Implementation steps (sequential)
+
 1. Endpoint valida `X-Internal-Secret`
 2. Load run + version + decrypt credential
 3. Update run status → 'running'
@@ -1035,17 +1119,17 @@ And response includes full trace
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | runtime | Happy path | seed run + inbound, exec, assert outbound + event |
-| t2 | runtime | Sentinela handoff | inbound matching keyword → handoff sem LLM |
-| t3 | runtime | Tool handoff | mock LLM call tool → conversation assigned |
-| t4 | runtime | Max steps abort | mock LLM forever-loop → abort step_count_reached |
-| t5 | runtime | Token budget abort | mock huge prompts → abort token_budget_exceeded |
-| t6 | runtime | Cost budget abort | model expensive → abort cost_budget_exceeded |
-| t7 | runtime | Dry run no WAHA | is_dry_run=true → 0 WAHA calls captured |
-| t8 | adversarial | API key leak | Sentry capture → 0 occurrences plaintext |
-| t9 | runtime | Invalid credential aborts | credential.validated_at=null → run.status='failed', error_code='credential_invalid' |
+| ID  | Tipo        | Descrição                 | Como testar                                                                         |
+| --- | ----------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| t1  | runtime     | Happy path                | seed run + inbound, exec, assert outbound + event                                   |
+| t2  | runtime     | Sentinela handoff         | inbound matching keyword → handoff sem LLM                                          |
+| t3  | runtime     | Tool handoff              | mock LLM call tool → conversation assigned                                          |
+| t4  | runtime     | Max steps abort           | mock LLM forever-loop → abort step_count_reached                                    |
+| t5  | runtime     | Token budget abort        | mock huge prompts → abort token_budget_exceeded                                     |
+| t6  | runtime     | Cost budget abort         | model expensive → abort cost_budget_exceeded                                        |
+| t7  | runtime     | Dry run no WAHA           | is_dry_run=true → 0 WAHA calls captured                                             |
+| t8  | adversarial | API key leak              | Sentry capture → 0 occurrences plaintext                                            |
+| t9  | runtime     | Invalid credential aborts | credential.validated_at=null → run.status='failed', error_code='credential_invalid' |
 
 #### Architecture contracts emitted
 
@@ -1076,6 +1160,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - ~~`vercel.json` configura `maxDuration: 300` para `/api/internal/agents/run`~~ — **superada**: `vercel.json` não existe neste repositório, e a rota roda dentro do contêiner `app` do compose, não numa função serverless com teto de duração
 - [ ] Sentry breadcrumbs estruturados (sem args completos das tools — só nome+latency+error)
@@ -1089,20 +1174,24 @@ exposes:
 **Points**: 1 | **Priority**: P0 | **Deps**: S-13.07 | **FR refs**: Spec 10 §4.6
 
 #### Contexto
+
 Tiny wave: estende o webhook WAHA existente (EPIC-03) para emitir `event_log` `ai_agent.dispatch_requested` após inserir mensagem inbound. Apenas mensagens não-grupo, não-fromMe. Não bloqueia o webhook (handler retorna 200 < 500ms).
 
 #### Files to modify
+
 - `app/api/v1/webhooks/waha/route.ts` — adicionar emissão após insert message
 
 #### Implementation steps (sequential)
+
 1. Após o INSERT da mensagem inbound bem-sucedido (sem 23505 conflict)
 2. Validar `kind='inbound'`, `!chat_id.endsWith('@g.us')`, `!from_me`
 3. Insert `event_log` em fire-and-forget batched com a transação principal:
    ```ts
-   await admin.from('event_log').insert({
-     organization_id, event_type: 'ai_agent.dispatch_requested',
-     payload: { conversation_id, contact_id, channel_session_id, inbound_message_id }
-   })
+   await admin.from("event_log").insert({
+     organization_id,
+     event_type: "ai_agent.dispatch_requested",
+     payload: { conversation_id, contact_id, channel_session_id, inbound_message_id },
+   });
    ```
 4. Não falhar webhook se event_log insert falhar (Sentry capture, return 200)
 
@@ -1132,13 +1221,13 @@ And Sentry captures the failure
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | api | Inbound non-group emits event | POST webhook + select event_log |
-| t2 | api | Group inbound skipped | POST webhook chat_id @g.us + assert no event |
-| t3 | api | fromMe skipped | POST webhook fromMe=true + assert no event |
-| t4 | api | Latency p99 < 500ms | k6 load test 100 webhooks |
-| t5 | api | Event_log fail doesn't fail webhook | mock insert fail → 200 + Sentry |
+| ID  | Tipo | Descrição                           | Como testar                                  |
+| --- | ---- | ----------------------------------- | -------------------------------------------- |
+| t1  | api  | Inbound non-group emits event       | POST webhook + select event_log              |
+| t2  | api  | Group inbound skipped               | POST webhook chat_id @g.us + assert no event |
+| t3  | api  | fromMe skipped                      | POST webhook fromMe=true + assert no event   |
+| t4  | api  | Latency p99 < 500ms                 | k6 load test 100 webhooks                    |
+| t5  | api  | Event_log fail doesn't fail webhook | mock insert fail → 200 + Sentry              |
 
 #### Architecture contracts emitted
 
@@ -1152,6 +1241,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Latência webhook não regrediu (k6 baseline)
 - [ ] Commit `feat(EPIC-13): WAHA webhook emits dispatch event [wave 9]`
@@ -1163,9 +1253,11 @@ exposes:
 **Points**: 4 | **Priority**: P0 | **Deps**: S-13.05, S-13.06 | **FR refs**: Spec 12 §2, §7
 
 #### Contexto
+
 Primeiras telas: `/ai/agents` (lista com cards, filtros, menu de ações) e `/ai/credentials` (gestão BYO keys, modal de criação). Adiciona item "Agentes IA" no sidebar. Server Components para fetch, Client Components para interatividade. Server Actions para mutations.
 
 #### Files to create
+
 - `app/(app)/ai/agents/page.tsx` — Server Component lista
 - `app/(app)/ai/agents/_components/AgentsList.tsx`
 - `app/(app)/ai/agents/_components/AgentCard.tsx`
@@ -1181,9 +1273,11 @@ Primeiras telas: `/ai/agents` (lista com cards, filtros, menu de ações) e `/ai
 - `hooks/useAgents.ts`, `hooks/useCredentials.ts`
 
 #### Files to modify
+
 - `components/Sidebar.tsx` (ou equivalente) — adicionar item "Agentes IA" entre Pipelines e Configurações
 
 #### Implementation steps (sequential)
+
 1. Sidebar entry com Phosphor icon `Robot`
 2. Page `/ai/agents` Server Component fetch via `GET /api/v1/ai/agents`
 3. AgentCard mostra: nome, status badge, prioridade, sessão, modelo, métricas hoje (counts), trigger summary
@@ -1236,15 +1330,15 @@ And row appears with last4
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | ui | Lista renderiza | Playwright /ai/agents + assert cards |
-| t2 | ui | Filtros funcionam | click filtro + assert count |
-| t3 | ui | Duplicate funciona | click + reload + assert +1 |
-| t4 | ui | RBAC viewer read-only | login viewer + assert no CTAs |
-| t5 | ui | Modal credential add → toast | exec + assert toast |
-| t6 | ui | Delete bloqueado se em uso | UI mostra disabled + tooltip |
-| t7 | ui | Empty state | usuário sem agentes → empty CTA |
+| ID  | Tipo | Descrição                    | Como testar                          |
+| --- | ---- | ---------------------------- | ------------------------------------ |
+| t1  | ui   | Lista renderiza              | Playwright /ai/agents + assert cards |
+| t2  | ui   | Filtros funcionam            | click filtro + assert count          |
+| t3  | ui   | Duplicate funciona           | click + reload + assert +1           |
+| t4  | ui   | RBAC viewer read-only        | login viewer + assert no CTAs        |
+| t5  | ui   | Modal credential add → toast | exec + assert toast                  |
+| t6  | ui   | Delete bloqueado se em uso   | UI mostra disabled + tooltip         |
+| t7  | ui   | Empty state                  | usuário sem agentes → empty CTA      |
 
 #### Architecture contracts emitted
 
@@ -1268,6 +1362,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Sidebar entry visible com role-aware
 - [ ] Empty/loading/error states implementados
@@ -1281,9 +1376,11 @@ exposes:
 **Points**: 5 | **Priority**: P0 | **Deps**: S-13.10, S-13.04 | **FR refs**: Spec 12 §3
 
 #### Contexto
+
 Tela cheia de configuração com form de duas colunas, todas as seções: Identificação, Provider+Modelo, Credencial, Limites, Prompt (com token counter), Tools (checklist via `GET /api/v1/mcp/tools`), WhatsApp session, Gatilhos (eventos + filtros + horário), Handoff. Estados de save/publish (clean/dirty/draft saved/invalid). Modal de confirmação para publish com diff vs versão atual.
 
 #### Files to create
+
 - `app/(app)/ai/agents/[id]/page.tsx` — Server Component com tabs
 - `app/(app)/ai/agents/new/page.tsx` — wrapper que reutiliza AgentForm vazio
 - `app/(app)/ai/agents/[id]/_components/AgentTabs.tsx` (Client) — Configuration | Test | Runs | History
@@ -1299,6 +1396,7 @@ Tela cheia de configuração com form de duas colunas, todas as seções: Identi
 - `hooks/useAgent.ts`
 
 #### Implementation steps (sequential)
+
 1. Page `[id]/page.tsx` Server Component fetch agent + last draft + published version
 2. Tabs Component (Client): mantém state localmente, primeiro tab = Configuration
 3. AgentForm com react-hook-form + Zod resolver (mesma schema Spec 10)
@@ -1357,16 +1455,16 @@ And shows token count vs context window with warning at >80%
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | ui | Form valida required | submit sem name → erro |
-| t2 | ui | ModelPicker muda com provider | switch anthropic → openai, models updated |
-| t3 | ui | CredentialPicker filtra | provider=openai → mostra só credentials openai |
-| t4 | ui | Save creates draft | save + reload + assert v existe |
-| t5 | ui | Publish atomic | publish + assert badge published_version_id mudou |
-| t6 | ui | Token counter | type long prompt → count atualiza |
-| t7 | ui | Publish blocked invalid | credential invalid → button disabled tooltip |
-| t8 | ui | Publish dialog diff | mostra diff visual |
+| ID  | Tipo | Descrição                     | Como testar                                       |
+| --- | ---- | ----------------------------- | ------------------------------------------------- |
+| t1  | ui   | Form valida required          | submit sem name → erro                            |
+| t2  | ui   | ModelPicker muda com provider | switch anthropic → openai, models updated         |
+| t3  | ui   | CredentialPicker filtra       | provider=openai → mostra só credentials openai    |
+| t4  | ui   | Save creates draft            | save + reload + assert v existe                   |
+| t5  | ui   | Publish atomic                | publish + assert badge published_version_id mudou |
+| t6  | ui   | Token counter                 | type long prompt → count atualiza                 |
+| t7  | ui   | Publish blocked invalid       | credential invalid → button disabled tooltip      |
+| t8  | ui   | Publish dialog diff           | mostra diff visual                                |
 
 #### Architecture contracts emitted
 
@@ -1391,6 +1489,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Form keyboard-accessible (Tab nav, Esc dismisses dialogs)
 - [ ] Skeleton durante save/publish
@@ -1403,9 +1502,11 @@ exposes:
 **Points**: 4 | **Priority**: P0 | **Deps**: S-13.08, S-13.11 | **FR refs**: Spec 12 §4, §5, §6
 
 #### Contexto
+
 Últimos 3 tabs do detail. Test panel envia sample message via `:test` e renderiza trace passo-a-passo. Runs tab mostra log paginated com Supabase Realtime (toast em new run). History tab compara versões side-by-side.
 
 #### Files to create
+
 - `app/(app)/ai/agents/[id]/_components/TestPanel.tsx` (Client)
 - `app/(app)/ai/agents/[id]/_components/RunTrace.tsx` (recursivo, expansível por step)
 - `app/(app)/ai/agents/[id]/_components/RunsTable.tsx` (Client, com Realtime)
@@ -1416,6 +1517,7 @@ exposes:
 - `app/(app)/ai/agents/[id]/_actions.ts` — testAgentAction (já estendido), revertToVersionAction
 
 #### Implementation steps (sequential)
+
 1. TestPanel: textarea sample message + opcional contact data + botão "Executar teste"
 2. testAgentAction → `:test` endpoint + retorna run com trace
 3. RunTrace: render lista de steps; cada step expansível com tool_name, args (JSON syntax highlight), result (truncated), latency, error
@@ -1460,15 +1562,15 @@ And toast "Revertido para versão equivalente a v2 (publicada como v5)"
 
 #### QA test cases
 
-| ID | Tipo | Descrição | Como testar |
-|---|---|---|---|
-| t1 | ui | Test panel run | submit + assert trace visible + final text |
-| t2 | ui | Trace expansível | click step → expanded |
-| t3 | ui | Realtime update | insert run via SQL → toast aparece |
-| t4 | ui | Run drawer | click row → drawer opens with full trace |
-| t5 | ui | Version diff | click → side-by-side render |
-| t6 | ui | Revert flow | click revert v2 → v5 created and published |
-| t7 | ui | Test mode tem warning custo | UI mostra "consome créditos do provider" |
+| ID  | Tipo | Descrição                   | Como testar                                |
+| --- | ---- | --------------------------- | ------------------------------------------ |
+| t1  | ui   | Test panel run              | submit + assert trace visible + final text |
+| t2  | ui   | Trace expansível            | click step → expanded                      |
+| t3  | ui   | Realtime update             | insert run via SQL → toast aparece         |
+| t4  | ui   | Run drawer                  | click row → drawer opens with full trace   |
+| t5  | ui   | Version diff                | click → side-by-side render                |
+| t6  | ui   | Revert flow                 | click revert v2 → v5 created and published |
+| t7  | ui   | Test mode tem warning custo | UI mostra "consome créditos do provider"   |
 
 #### Architecture contracts emitted
 
@@ -1490,6 +1592,7 @@ exposes:
 ```
 
 #### Definition of Done
+
 - [ ] Todos os ACs passam
 - [ ] Realtime subscribe/unsubscribe sem leak
 - [ ] Run drawer keyboard accessible
@@ -1502,34 +1605,34 @@ exposes:
 
 ## 6. Regression Suite Cumulativo (esperado ao final)
 
-| Categoria | # de tests | Origem |
-|---|---|---|
-| DB schema + RLS | 9 | S-13.01 |
-| REST handlers refactored | 5 | S-13.02 |
-| MCP server + read tools | 6 | S-13.03 |
-| MCP write + handoff tools | 6 | S-13.04 |
-| Credentials BYO + AES | 6 | S-13.05 |
-| Agents CRUD + versions + publish | 9 | S-13.06 |
-| Worker dispatcher | 8 | S-13.07 |
-| Runtime ToolLoopAgent | 9 | S-13.08 |
-| Webhook hook | 5 | S-13.09 |
-| UI lista + credentials | 7 | S-13.10 |
-| UI edit form | 8 | S-13.11 |
-| UI test + runs + history | 7 | S-13.12 |
-| **Total** | **85** | |
+| Categoria                        | # de tests | Origem  |
+| -------------------------------- | ---------- | ------- |
+| DB schema + RLS                  | 9          | S-13.01 |
+| REST handlers refactored         | 5          | S-13.02 |
+| MCP server + read tools          | 6          | S-13.03 |
+| MCP write + handoff tools        | 6          | S-13.04 |
+| Credentials BYO + AES            | 6          | S-13.05 |
+| Agents CRUD + versions + publish | 9          | S-13.06 |
+| Worker dispatcher                | 8          | S-13.07 |
+| Runtime ToolLoopAgent            | 9          | S-13.08 |
+| Webhook hook                     | 5          | S-13.09 |
+| UI lista + credentials           | 7          | S-13.10 |
+| UI edit form                     | 8          | S-13.11 |
+| UI test + runs + history         | 7          | S-13.12 |
+| **Total**                        | **85**     |         |
 
 ## 7. Riscos & Mitigações específicos do epic
 
-| Risco | Severidade | Mitigação |
-|---|---|---|
-| API key vaza em log/Sentry | CRÍTICO | Smoke test no CI; Sentry beforeSend strip; refusal em PR review |
-| Tool loop infinito custa $$$ | ALTO | stepCountIs + token + cost budget per-run + monthly cap |
-| Two agents responding to same msg | CRÍTICO | partial unique index + LIMIT 1 dispatcher + adversarial test |
-| Mastra/AI SDK function size > 250 MB | MÉDIO | HTTP MCP (no SDK bundle per server); monitor `vercel inspect` |
-| Provider deprecated model breaks prod | MÉDIO | `ai_models.deprecated_at`; alert quando agente usa deprecated; fallback documentado |
-| Refactor de S-13.02 quebra REST existente | ALTO | Suite REST existente como gate; rollback plan |
-| Realtime subscribe vaza memória | BAIXO | unsubscribe explicit no useEffect cleanup; teste manual |
-| Webhook latência regride com novo event_log insert | MÉDIO | k6 baseline antes/depois; fire-and-forget pattern |
+| Risco                                              | Severidade | Mitigação                                                                           |
+| -------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
+| API key vaza em log/Sentry                         | CRÍTICO    | Smoke test no CI; Sentry beforeSend strip; refusal em PR review                     |
+| Tool loop infinito custa $$$                       | ALTO       | stepCountIs + token + cost budget per-run + monthly cap                             |
+| Two agents responding to same msg                  | CRÍTICO    | partial unique index + LIMIT 1 dispatcher + adversarial test                        |
+| Mastra/AI SDK function size > 250 MB               | MÉDIO      | HTTP MCP (no SDK bundle per server); monitor `vercel inspect`                       |
+| Provider deprecated model breaks prod              | MÉDIO      | `ai_models.deprecated_at`; alert quando agente usa deprecated; fallback documentado |
+| Refactor de S-13.02 quebra REST existente          | ALTO       | Suite REST existente como gate; rollback plan                                       |
+| Realtime subscribe vaza memória                    | BAIXO      | unsubscribe explicit no useEffect cleanup; teste manual                             |
+| Webhook latência regride com novo event_log insert | MÉDIO      | k6 baseline antes/depois; fire-and-forget pattern                                   |
 
 ## 8. Decisões arquiteturais novas que este epic introduz
 

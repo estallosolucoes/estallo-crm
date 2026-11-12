@@ -245,7 +245,7 @@ export function AgendaInterativa({
               className={cn(
                 "rounded-full border px-2.5 py-0.5 transition-colors duration-fast",
                 t.id === tipo?.id
-                  ? "border-transparent bg-accent text-accent-foreground"
+                  ? "border-transparent bg-accent dark:bg-accent-700 text-accent-foreground"
                   : "border-border hover:border-border-strong hover:text-text",
               )}
             >

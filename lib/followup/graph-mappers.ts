@@ -1,6 +1,6 @@
 import type { Node, Edge } from "@xyflow/react";
 
-import { branchIdForCondition, nodeBranches } from "./graph-schema";
+import { branchIdForCondition, nodeBranches, ON_ERROR_BRANCH_ID } from "./graph-schema";
 import type { FlowGraph, FlowNode, FlowEdge, NodeType } from "./graph-schema";
 
 /**
@@ -35,7 +35,13 @@ export function toReactFlow(graph: FlowGraph): { nodes: RFNode[]; edges: RFEdge[
     // desenho mentiria, que é o tipo de defeito que ninguém percebe a tempo.
     const branches = source ? nodeBranches(source) : [];
     const branchId = source ? branchIdForCondition(source, e.condition) : null;
-    const sourceHandle = branches.length > 1 && branchId !== null ? branchId : undefined;
+    // Bloco de saída ÚNICA com "Fallback erro" (mensagem, tarefa, mover, etiqueta): o cartão desenha a saída
+    // normal como a bolinha de sempre, SEM id, e só a saída de erro tem id (`NodeCard`, `saidaDeErro`). Mandar
+    // `else` aqui apontava para uma bolinha que não existe: o React Flow descartava a aresta ao reabrir o
+    // fluxo — a ligação continuava gravada, só sumia do desenho, e cada nova ligação duplicava a anterior.
+    const saidaUnicaComErro = branches.length === 2 && branches[0]?.kind === "error";
+    const temBolinhaPorId = saidaUnicaComErro ? branchId === ON_ERROR_BRANCH_ID : branches.length > 1;
+    const sourceHandle = temBolinhaPorId && branchId !== null ? branchId : undefined;
     return {
       id: e.id,
       source: e.source,
@@ -79,6 +85,22 @@ export function toFlowNode(n: RFNode): FlowNode {
       return { ...shared, type, config: n.data.config as ConfigOf<"move_lead"> };
     case "edit_lead_tag":
       return { ...shared, type, config: n.data.config as ConfigOf<"edit_lead_tag"> };
+    case "find_or_create_contact":
+      return { ...shared, type, config: n.data.config as ConfigOf<"find_or_create_contact"> };
+    case "find_or_create_lead":
+      return { ...shared, type, config: n.data.config as ConfigOf<"find_or_create_lead"> };
+    case "http_request":
+      return { ...shared, type, config: n.data.config as ConfigOf<"http_request"> };
+    case "lead_product":
+      return { ...shared, type, config: n.data.config as ConfigOf<"lead_product"> };
+    case "update_lead_field":
+      return { ...shared, type, config: n.data.config as ConfigOf<"update_lead_field"> };
+    case "add_note":
+      return { ...shared, type, config: n.data.config as ConfigOf<"add_note"> };
+    case "assign_lead_owner":
+      return { ...shared, type, config: n.data.config as ConfigOf<"assign_lead_owner"> };
+    case "map_data":
+      return { ...shared, type, config: n.data.config as ConfigOf<"map_data"> };
     case "end":
       return { ...shared, type, config: n.data.config as ConfigOf<"end"> };
     case "collect":
@@ -107,8 +129,13 @@ export function graphsEqual(a: FlowGraph, b: FlowGraph): boolean {
   return stableStringify(a) === stableStringify(b);
 }
 
-export function fromReactFlow(nodes: RFNode[], edges: RFEdge[]): FlowGraph {
+export function fromReactFlow(
+  nodes: RFNode[],
+  edges: RFEdge[],
+  metadata: Omit<FlowGraph, "nodes" | "edges"> = {},
+): FlowGraph {
   return {
+    ...metadata,
     nodes: nodes.map(toFlowNode),
     edges: edges.map((e) => ({
       id: e.id,

@@ -276,7 +276,7 @@ export async function podeChamarFerramenta(entrada: {
     }
 
     case "alvo_polimorfico": {
-      // `crm_manage_tags` marca conversa, contato OU lead. Só o terceiro tem funil.
+      // `crm_manage_tags` marca contato OU lead. Só o lead tem funil.
       if (entrada.argumentos.target_kind !== "lead") return { permitido: true };
       const id = entrada.argumentos.target_id;
       if (typeof id !== "string") {

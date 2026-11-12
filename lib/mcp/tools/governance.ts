@@ -3,7 +3,7 @@
  *
  * Superfície para agentes externos (Vendaval):
  *   - crm_assign_conversation — atribui/transfere/libera (reuso de fn_conversation_assign)
- *   - crm_manage_tags         — add/remove tags em conversation|contact|lead (validação G3-05)
+ *   - crm_manage_tags         — add/remove tags em contact|lead (validação G3-05; conversa não tem tag desde a 0659)
  *   - crm_get_queue_status    — snapshot da fila da org (read-only)
  *
  * org SEMPRE do ctx (fonte confiável), NUNCA do input. Escrita → audit dedicado
@@ -156,13 +156,11 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
 // ---------------------------------------------------------------------------
 
 const TAG_TARGET_TABLE = {
-  conversation: "conversations",
   contact: "contacts",
   lead: "crm_leads",
 } as const;
 
 const TAG_AUDIT_ACTION = {
-  conversation: "conversation.tags_changed",
   contact: "contact.tags_changed",
   lead: "lead.tags_changed",
 } as const;
@@ -173,7 +171,7 @@ const TAG_AUDIT_ACTION = {
  * `app/api/v1/leads/_handler.ts`). Sem ele, a regra "Quando um contato ganhar
  * uma tag" disparava quando a pessoa punha a tag na tela e ficava muda quando
  * um sistema de fora (n8n) punha a mesma tag pela MCP — a mesma ação, dois
- * desfechos. Conversa não tem esse gatilho: fica de fora.
+ * desfechos.
  */
 const TAG_ADDED_EVENT = {
   contact: { eventType: "contact.tag_added", entityKind: "contact" },
@@ -181,7 +179,9 @@ const TAG_ADDED_EVENT = {
 } as const;
 
 const tagsInputShape = {
-  target_kind: z.enum(["conversation", "contact", "lead"]),
+  // Sem `conversation`: o Estallo não etiqueta conversa (migration 0659). A
+  // marca de quem conversa vai no contato.
+  target_kind: z.enum(["contact", "lead"]),
   target_id: z.string().uuid(),
   add: z.array(z.string()).optional(),
   remove: z.array(z.string()).optional(),
@@ -190,7 +190,7 @@ const tagsInputShape = {
 export const crmManageTags: McpToolDefinition<typeof tagsInputShape> = {
   name: "crm_manage_tags",
   description:
-    "Adiciona/remove tags em uma conversation, contact ou lead. Tags são normalizadas " +
+    "Adiciona/remove tags em um contact ou lead (conversa não tem tag). Tags são normalizadas " +
     "(lowercase, trim, ≤40 chars cada, ≤20 no total). Informe ao menos um de add/remove. " +
     "Recusa alvo de outra org.",
   inputSchema: tagsInputShape,
@@ -228,7 +228,7 @@ export const crmManageTags: McpToolDefinition<typeof tagsInputShape> = {
 
     // Só as tags que o alvo NÃO tinha: pôr de novo a que já estava não é "ganhar".
     const addedTags = nextTags.filter((t) => !current.includes(t));
-    const eventoDeTag = input.target_kind === "conversation" ? null : TAG_ADDED_EVENT[input.target_kind];
+    const eventoDeTag = TAG_ADDED_EVENT[input.target_kind];
     const contatoDoAlvo =
       input.target_kind === "contact"
         ? input.target_id

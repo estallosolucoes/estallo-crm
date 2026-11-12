@@ -11,13 +11,10 @@ export function recorteDaResposta(body: string): string {
 }
 
 export function interpolarDestino(saveTo: ReplySaveTo, events: EnrollmentEventRef[]): ReplySaveTo {
-  if (saveTo.kind !== "lead_custom") return saveTo;
+  if (saveTo.kind === "contact_name") return saveTo;
   const volta = latestRepeatIndex(events);
   if (!volta) return saveTo;
-  return {
-    kind: "lead_custom",
-    key: saveTo.key.replaceAll("{{volta}}", String(volta.index)),
-  };
+  return { kind: saveTo.kind, key: saveTo.key.replaceAll("{{volta}}", String(volta.index)) };
 }
 
 export type PersistirRespostaInput = {
@@ -38,6 +35,31 @@ export async function persistirRespostaFollowupSupabase(
     const { error } = await admin
       .from("contacts")
       .update({ name: value, updated_at: new Date().toISOString() })
+      .eq("organization_id", input.organization_id)
+      .eq("id", input.contact_id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  if (input.save_to.kind === "contact_custom") {
+    const { data: contato, error: lerErr } = await admin
+      .from("contacts")
+      .select("custom_fields")
+      .eq("organization_id", input.organization_id)
+      .eq("id", input.contact_id)
+      .maybeSingle();
+    if (lerErr) throw new Error(lerErr.message);
+    if (!contato) return;
+    const atuais =
+      contato.custom_fields && typeof contato.custom_fields === "object" && !Array.isArray(contato.custom_fields)
+        ? (contato.custom_fields as Record<string, unknown>)
+        : {};
+    const { error } = await admin
+      .from("contacts")
+      .update({
+        custom_fields: { ...atuais, [input.save_to.key]: value },
+        updated_at: new Date().toISOString(),
+      })
       .eq("organization_id", input.organization_id)
       .eq("id", input.contact_id);
     if (error) throw new Error(error.message);
@@ -82,6 +104,17 @@ export async function persistirRespostaFollowupPg(
       `update contacts set name = $3, updated_at = now()
        where organization_id = $1 and id = $2`,
       [input.organization_id, input.contact_id, value],
+    );
+    return;
+  }
+
+  if (input.save_to.kind === "contact_custom") {
+    await query(
+      `update contacts
+          set custom_fields = coalesce(custom_fields, '{}'::jsonb) || jsonb_build_object($3::text, to_jsonb($4::text)),
+              updated_at = now()
+        where organization_id = $1 and id = $2`,
+      [input.organization_id, input.contact_id, input.save_to.key, value],
     );
     return;
   }

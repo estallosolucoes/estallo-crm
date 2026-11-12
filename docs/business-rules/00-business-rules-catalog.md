@@ -262,6 +262,7 @@ owner: Rafael Melgaço
 ## 4. Pipeline & Lead (P)
 
 ### P-01 — Lead vive em UM pipeline; mover entre pipelines não é suportado
+- **Estallo (14/10/2026)**: o dossiê e o menu do card movem o MESMO negócio de funil por `POST /api/v1/leads/[id]/move-pipeline` (etapa aberta de destino, campos obrigatórios do destino, trava otimista, atividade `stage_changed` com `from_pipeline_id`, auditoria `lead.moved_to_pipeline` com `modo: mesmo_negocio`). O `/move` continua recusando etapa de outro funil, e `/clone` segue existindo para automações e MCP.
 - **Origem**: Sub-PRD 02 §3.2
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN lead criado; WHEN qualquer endpoint tenta mudar `pipeline_id` da linha; THEN retorna 422 `pipeline_immutable_use_clone`. Pra "mover" entre funis, o caminho é `POST /api/v1/leads/[id]/clone`: cria o negócio no funil destino (etapa aberta informada, ou a primeira) com os dados da origem e encerra a origem como `lost`.

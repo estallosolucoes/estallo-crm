@@ -113,7 +113,7 @@ export function LoseLeadDialog({
             {opcoes.map((opcao) => (
               <label
                 key={opcao.valor}
-                className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent dark:hover:bg-accent-800 hover:text-accent-foreground has-[:checked]:border-accent has-[:checked]:bg-accent dark:has-[:checked]:bg-accent-700 has-[:checked]:text-accent-foreground"
               >
                 <input
                   type="radio"

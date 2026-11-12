@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { FlowGraph, FlowNode } from "@/lib/followup/graph-schema";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
-import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
+import { toFlowNode, type RFNode, type RFNodeData } from "@/lib/followup/graph-mappers";
 import { Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -21,14 +21,27 @@ import { InternalTaskForm } from "./forms/InternalTaskForm";
 import { MatchReplyForm } from "./forms/MatchReplyForm";
 import { MoveLeadForm } from "./forms/MoveLeadForm";
 import { EditLeadTagForm } from "./forms/EditLeadTagForm";
+import { MapDataForm } from "./forms/MapDataForm";
+import { AssignLeadOwnerForm } from "./forms/AssignLeadOwnerForm";
+import { AddNoteForm } from "./forms/AddNoteForm";
+import { UpdateLeadFieldForm } from "./forms/UpdateLeadFieldForm";
+import { LeadProductForm } from "./forms/LeadProductForm";
+import { HttpRequestForm } from "./forms/HttpRequestForm";
+import { FindOrCreateContactForm } from "./forms/FindOrCreateContactForm";
+import { FindOrCreateLeadForm } from "./forms/FindOrCreateLeadForm";
+import { AlvoDoBloco } from "./VariaveisDoFluxo";
+import { NODES_COM_APLICAR_EM } from "@/lib/followup/graph-schema";
 import { RepeatForm } from "./forms/RepeatForm";
 import { SkillForm } from "./forms/SkillForm";
 import { WaitForm } from "./forms/WaitForm";
 import type { ConfigOf } from "./forms/shared";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
+import { SaidaDoBloco } from "./SaidaDoBloco";
 
 interface Props {
   node: RFNode;
+  /** Rótulos dos blocos que usam variáveis deste: excluí-lo os deixa sem valor (e a publicação recusa). */
+  dependentes?: string[];
   onChange: (patch: Partial<RFNodeData>) => void;
   onDelete: () => void;
   /** Ramos deste nó que já têm aresta — quem sabe isso é o canvas, que é dono do grafo. */
@@ -55,6 +68,7 @@ export function NodeConfigPanel({
   node,
   onChange,
   onDelete,
+  dependentes = [],
   ramosLigados,
   surface = "followup",
   flowId,
@@ -170,6 +184,39 @@ export function NodeConfigPanel({
             onChange={(config) => onChange({ config })}
           />
         )}
+        {type === "find_or_create_contact" && (
+          <FindOrCreateContactForm
+            config={node.data.config as ConfigOf<"find_or_create_contact">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "find_or_create_lead" && (
+          <FindOrCreateLeadForm config={node.data.config as ConfigOf<"find_or_create_lead">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "http_request" && (
+          <HttpRequestForm config={node.data.config as ConfigOf<"http_request">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "lead_product" && (
+          <LeadProductForm config={node.data.config as ConfigOf<"lead_product">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "update_lead_field" && (
+          <UpdateLeadFieldForm
+            config={node.data.config as ConfigOf<"update_lead_field">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "add_note" && (
+          <AddNoteForm config={node.data.config as ConfigOf<"add_note">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "assign_lead_owner" && (
+          <AssignLeadOwnerForm
+            config={node.data.config as ConfigOf<"assign_lead_owner">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "map_data" && (
+          <MapDataForm config={node.data.config as ConfigOf<"map_data">} onChange={(config) => onChange({ config })} />
+        )}
         {type === "end" && (
           <EndForm
             config={node.data.config as ConfigOf<"end">}
@@ -178,9 +225,29 @@ export function NodeConfigPanel({
             {...(flowId !== undefined ? { flowId } : {})}
           />
         )}
+        {NODES_COM_APLICAR_EM.has(type) && (
+          <div className="space-y-1">
+            <Label htmlFor="aplicar-em">{t("Aplicar em")}</Label>
+            <AlvoDoBloco
+              id="aplicar-em"
+              valor={(node.data.config as { aplicar_em?: string }).aplicar_em ?? ""}
+              onChange={(aplicar_em) => {
+                const { aplicar_em: _antigo, ...resto } = node.data.config as { aplicar_em?: string };
+                onChange({ config: (aplicar_em ? { ...resto, aplicar_em } : resto) as typeof node.data.config });
+              }}
+            />
+          </div>
+        )}
+        <SaidaDoBloco no={toFlowNode(node)} />
       </div>
 
       <div className="mt-auto border-t border-border pt-4">
+        {dependentes.length > 0 && (
+          <p className="mb-2 text-xs text-warning-fg" data-testid="dependentes-do-no">
+            {t("Usado por:")} {dependentes.join(", ")}.{" "}
+            {t("Excluir este bloco deixa essas variáveis sem valor, e a publicação fica bloqueada até você corrigi-las.")}
+          </p>
+        )}
         <Button
           type="button"
           variant="outline"

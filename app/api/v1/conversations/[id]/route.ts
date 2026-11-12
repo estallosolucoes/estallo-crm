@@ -1,13 +1,15 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET   /api/v1/conversations/[id] — single conversation (handler em ../_handler.ts)
- * PATCH /api/v1/conversations/[id] — update status e/ou tags (handler em ../_handler.ts)
+ * PATCH /api/v1/conversations/[id] — update status (handler em ../_handler.ts)
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ApiError } from "@/lib/api/types";
+import { audit } from "@/lib/audit";
+import { apagarConversa } from "@/lib/inbox/acoes-da-conversa";
 import { ok, fail } from "@/lib/api/wrappers";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -148,6 +150,35 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
     }
+    throw err;
+  }
+}
+
+/** DELETE — apaga a conversa e as mensagens dela (só no CRM; o WhatsApp do cliente não muda). `manager`+. */
+export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
+  const requestId = randomUUID();
+  const { id } = await ctx.params;
+  const authz = await requireRole("manager", { requestId, resource: "conversations" });
+  if (!authz.ok) return authz.response;
+  const supabase = await createClient();
+
+  try {
+    const resultado = await apagarConversa(supabase, { organizationId: authz.org.orgId, userId: authz.user.id, requestId }, id);
+    void audit({
+      action: "conversation.deleted",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
+      resourceType: "conversation",
+      resourceId: id,
+      requestId,
+      metadata: { mensagens_apagadas: resultado },
+    });
+    return ok({ id, resultado: resultado ?? null }, { requestId });
+  } catch (err) {
+    if (err instanceof ApiError) return fail(err.code, err.message, err.status, { requestId });
     throw err;
   }
 }

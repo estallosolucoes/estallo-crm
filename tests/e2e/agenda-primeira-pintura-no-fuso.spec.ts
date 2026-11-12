@@ -76,6 +76,8 @@ async function fixture(fuso: string) {
     slug: `fuso-${randomUUID()}`,
     display_name: "Agenda no fuso de quem olha",
     legal_name: "Agenda no fuso de quem olha",
+    // A Agenda nasce desligada no Estallo (settings.agenda_habilitada): a org desta spec a liga.
+    settings: { agenda_habilitada: true },
     timezone: fuso,
     onboarded_at: new Date().toISOString(),
   });

@@ -85,25 +85,6 @@ describe("recibo da conferência", () => {
   });
 });
 
-it("spinning compara texto minimizado sem conservar credencial da sala", async () => {
-  const { normalizeCopy, hashNormalized, decideSpinning } =
-    await import("@/lib/agent-engine/spinning/engine");
-  const { SPINNING_DEFAULTS } = await import("@/lib/agent-engine/spinning/defaults");
-  const body = "Sua reunião: https://meet.google.com/abc-defg-hij";
-  const normalized = normalizeCopy(body);
-  expect(normalized).not.toContain("abc-defg-hij");
-  expect(normalized).toContain("[meet-link]");
-  const result = decideSpinning({
-    candidate: body,
-    knobs: { ...SPINNING_DEFAULTS, allowlistMaxLength: 0 },
-    window: Array.from({ length: 20 }, () => ({
-      normalizedText: normalized,
-      normalizedHash: hashNormalized(normalized),
-    })),
-  });
-  expect(result.allow).toBe(false);
-});
-
 it("mensagem determinística usa texto e data do destinatário", async () => {
   const { meetingDeliveryBody } = await import("@/lib/agent-engine/agent/meet-delivery");
   const at = "2030-01-02T13:05:00Z",

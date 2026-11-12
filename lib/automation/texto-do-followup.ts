@@ -21,6 +21,9 @@
  */
 import type pg from "pg";
 
+import type { ExecutionLeadTarget } from "@/lib/followup/execution-lead";
+import { loadExecutionLeadPg } from "@/lib/followup/execution-lead-pg";
+
 import { renderTemplate } from "./template";
 
 /** Só palavra e ponto, como no renderizador das automações — o destino de todo o resto é ficar como está. */
@@ -62,27 +65,25 @@ export function renderizarTextoDeFollowup(texto: string, contexto: Record<string
  *
  * O MESMO par de consultas que `loadLeadFacts` faz, mas com as linhas INTEIRAS:
  * o renderizador resolve caminho (`{{contact.email}}`, `{{lead.title}}`), e
- * caminho é coluna, não fato condensado. O negócio é o mais recente do contato
- * (`updated_at desc`), igualzinho à escolha de `loadLeadFacts` — dois caminhos
- * que escolhem negócios diferentes dariam nomes diferentes na mesma mensagem.
+ * caminho é coluna, não fato condensado. No contrato novo o alvo é explícito;
+ * no legado continua sendo o mais recente (`updated_at desc`), igualzinho à
+ * escolha de `loadLeadFacts`. Os dois leitores usam a mesma seleção.
  */
 export async function contextoDoContato(
   pool: pg.Pool,
   organizationId: string,
   contactId: string,
+  target?: ExecutionLeadTarget,
 ): Promise<Record<string, unknown>> {
-  const [contatos, negocios] = await Promise.all([
+  const [contatos, lead] = await Promise.all([
     pool.query<Record<string, unknown>>(
       `select * from contacts where organization_id = $1 and id = $2 limit 1`,
       [organizationId, contactId],
     ),
-    pool.query<Record<string, unknown>>(
-      `select * from crm_leads where organization_id = $1 and contact_id = $2 order by updated_at desc limit 1`,
-      [organizationId, contactId],
-    ),
+    loadExecutionLeadPg(pool, organizationId, contactId, target),
   ]);
   const contexto: Record<string, unknown> = {};
   if (contatos.rows[0]) contexto.contact = contatos.rows[0];
-  if (negocios.rows[0]) contexto.lead = negocios.rows[0];
+  if (lead) contexto.lead = lead;
   return contexto;
 }

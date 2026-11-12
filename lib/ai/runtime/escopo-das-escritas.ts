@@ -42,7 +42,7 @@ export type DonoDoCampo =
   | "retorno"
   /** `agent_cases.conversation_id` → `conversations.contact_id`. */
   | "chamado"
-  /** `target_id` cujo dono depende de `target_kind` (conversation|contact|lead). */
+  /** `target_id` cujo dono depende de `target_kind` (contact|lead). */
   | "alvo_de_tag"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
@@ -180,8 +180,6 @@ async function campoEhDoContato(
       switch (args.target_kind) {
         case "contact":
           return id.toLowerCase() === contato.toLowerCase();
-        case "conversation":
-          return existeDoContato(supabase, "conversations", organizationId, contato, id);
         case "lead":
           return existeDoContato(supabase, "crm_leads", organizationId, contato, id);
         default:

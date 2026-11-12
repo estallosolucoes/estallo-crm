@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "agenda"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -25,8 +25,11 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
  * e é aqui, e não em cada consumidor, que as duas se somam: tela, menu, rota,
  * ferramenta do agente e cron leem a mesma resposta.
  */
-const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional> = {
+const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional | null> = {
   propostas: "propostas",
+  // A Agenda é do núcleo: não há módulo de instalação, só a chave da empresa
+  // (`settings.agenda_habilitada`, ligada em /app/crm). Padrão: desligada.
+  agenda: null,
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -43,7 +46,13 @@ export function capacidadesLigadas(
 ): CapacidadeDaOrganizacao[] {
   const propostas = objeto(objeto(settings)?.proposals);
   const daEmpresa: CapacidadeDaOrganizacao[] = propostas?.enabled === true ? ["propostas"] : [];
-  return daEmpresa.filter((c) => modulos.includes(MODULO_DA_CAPACIDADE[c]));
+  // Fora de `settings.agenda` de propósito: aquele objeto é REESCRITO inteiro
+  // por `fn_agenda_settings`, e a chave sumiria no próximo salvamento.
+  if (objeto(settings)?.agenda_habilitada === true) daEmpresa.push("agenda");
+  return daEmpresa.filter((c) => {
+    const modulo = MODULO_DA_CAPACIDADE[c];
+    return modulo === null || modulos.includes(modulo);
+  });
 }
 
 /** Lê a linha da organização. Nunca lança: erro = nenhuma capacidade. */

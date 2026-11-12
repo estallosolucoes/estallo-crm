@@ -15,6 +15,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * Auth: sessão por cookie, papel manager+. `organization_id` sai do JWT — nunca
  * do body nem da URL.
  */
+import { COR_DE_ETAPA } from "@/lib/kanban/cor-da-etapa";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
@@ -65,6 +66,8 @@ const bodySchema = z
      * aqui é mandar a frase em português antes de tocar no banco.
      */
     expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+    /** Cor da coluna no quadro, #rrggbb (o CHECK do banco é o mesmo). */
+    color: z.string().regex(COR_DE_ETAPA).nullable().optional(),
   })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: "Nada para alterar." });

@@ -1,5 +1,6 @@
 import {
   branchIdForCondition,
+  branchesForShape,
   nodeBranches,
   type FlowEdge,
   type FlowNode,
@@ -51,13 +52,22 @@ const TYPE_ORDER: Record<NodeType, number> = {
   // porque são o MEIO do caminho (mover o card, etiquetar) e não o epílogo.
   move_lead: 8.5,
   edit_lead_tag: 8.6,
+  // Fase 4: preparação de dados — vem antes de quem os usa (mensagem, tarefa).
+  map_data: 7.5,
+  assign_lead_owner: 8.7,
+  add_note: 8.8,
+  update_lead_field: 8.65,
+  lead_product: 8.66,
+  http_request: 8.67,
+  find_or_create_contact: 8.61,
+  find_or_create_lead: 8.62,
   end: 9,
 };
 
 export type NodeSize = { width: number; height: number };
 
 export function estimateNodeSize(node: FlowNode): NodeSize {
-  const branches = nodeBranches(node);
+  const branches = branchesForShape(node);
   const height =
     branches.length > 1 ? 48 + branches.length * BRANCH_ROW_HEIGHT : LAYOUT_NODE_HEIGHT;
   return { width: LAYOUT_NODE_WIDTH, height };
@@ -242,7 +252,7 @@ function estimateEdgeLabelWidth(text: string): number {
 
 /** Folga à direita de um nó com bolinhas laterais: offset do SmoothStep + etiqueta. */
 function rightExitGap(node: FlowNode, edges: readonly FlowEdge[], nomes: NomesDeValor): number {
-  const branches = nodeBranches(node);
+  const branches = branchesForShape(node);
   if (branches.length <= 1) return 0;
   let widest = 0;
   for (const e of edges) {

@@ -140,7 +140,6 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "ao absorver `lib/waha/`. Consertar aqui, antes disso, espalharia um " +
       "alias por 3 arquivos sem tirar o nome de lugar nenhum.",
     files: [
-      "app/api/v1/ai/pacing/route.ts",
       "app/api/v1/cron/contact-avatars/route.ts",
       // (#573) Fixture do teste do reconciliador de sessão: monta a linha que
       // `session-reconciler.ts` (dívida de TRANSPORTE, logo acima) seleciona, e

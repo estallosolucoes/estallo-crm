@@ -54,7 +54,7 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => n
 vi.mock("next/navigation", () => ({ redirect: redirecionar, useRouter: () => ({ refresh: vi.fn() }) }));
 
 import { GET, POST } from "@/app/api/v1/tags/vocabulario/route";
-import TagsPage from "@/app/app/settings/tags/page";
+import TagsPage from "@/app/app/crm/tags/page";
 
 /** As RPCs que a rota e a página chamam, na ordem em que chamaram. */
 const chamadas = () => rpc.mock.calls.map((c) => c[0] as string);
@@ -90,7 +90,7 @@ describe("platform admin sem papel de gerente NESTA organização", () => {
   });
 
   it("⭐ POST da rota recusa com 403 antes de chamar a operação", async () => {
-    const resposta = await postar({ acao: "renomear", tag: "vip", destino: "cliente-vip" });
+    const resposta = await postar({ acao: "renomear", entidade: "lead", tag: "vip", destino: "cliente-vip" });
     expect(resposta.status).toBe(403);
     expect(chamadas()).not.toContain("fn_vocabulario_de_tags_operar");
   });
@@ -114,14 +114,13 @@ describe("CONTROLE: com papel de gerente a porta abre — senão os casos acima 
   });
 
   it("POST devolve 200 e chama a operação", async () => {
-    const resposta = await postar({ acao: "renomear", tag: "vip", destino: "cliente-vip" });
+    const resposta = await postar({ acao: "renomear", entidade: "lead", tag: "vip", destino: "cliente-vip" });
     expect(resposta.status, await resposta.clone().text()).toBe(200);
     expect(chamadas()).toContain("fn_vocabulario_de_tags_operar");
   });
 
-  it("a página lê o vocabulário sem redirecionar", async () => {
+  it("a página abre sem redirecionar (a lista vem da rota, pelo cliente)", async () => {
     await TagsPage();
     expect(redirecionar).not.toHaveBeenCalled();
-    expect(chamadas()).toContain("fn_vocabulario_de_tags");
   });
 });

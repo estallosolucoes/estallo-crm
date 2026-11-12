@@ -22,6 +22,8 @@ import { apiClient } from "@/lib/api/client";
 export interface EtapaDoFunil {
   id: string;
   name: string;
+  /** Cor da coluna no quadro (#rrggbb); `null` = cinza. */
+  color?: string | null;
   is_won: boolean;
   is_lost: boolean;
   /**

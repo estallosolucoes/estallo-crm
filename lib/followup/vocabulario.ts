@@ -49,6 +49,7 @@ import {
   NO_REPLY_BRANCH_ID,
   REPEAT_BODY_BRANCH_ID,
   REPEAT_DONE_BRANCH_ID,
+  ON_ERROR_BRANCH_ID,
   type RESERVED_BRANCH_IDS,
   type actionConfigSchema,
   type aiClassifyConfigSchema,
@@ -88,7 +89,7 @@ export function opcoes<K extends string>(mapa: Record<K, string>): ReadonlyArray
  * `stage_id` (um UUID, veja `engine.ts` → `loadLeadFacts`), então um campo de
  * texto livre pede ao dono da clínica que digite um identificador interno.
  */
-export type TipoDeValor = "etapa" | "etiqueta" | "numero" | "texto";
+export type TipoDeValor = "etapa" | "etiqueta" | "numero" | "texto" | "produto" | "variavel";
 
 export interface CampoDeCondicao {
   rotulo: string;
@@ -100,6 +101,11 @@ export const CAMPOS_DA_CONDICAO: Record<CampoDaCondicao, CampoDeCondicao> = {
   tag: { rotulo: "Etiqueta do contato", tipoDeValor: "etiqueta" },
   steps_taken: { rotulo: "Passos já dados no fluxo", tipoDeValor: "numero" },
   last_outcome: { rotulo: "Desfecho do passo anterior", tipoDeValor: "texto" },
+  // ESCOLHIDO no catálogo, nunca digitado: o motor compara o NOME do item do negócio (copiado do
+  // catálogo ao vincular), e um campo livre pedia ao dono que acertasse a grafia à mão.
+  product: { rotulo: "Produto do negócio", tipoDeValor: "produto" },
+  // Fase 5: a saída de um bloco anterior (um campo do Mapear dados, o id da tarefa criada...).
+  variavel: { rotulo: "Dado de um bloco anterior", tipoDeValor: "variavel" },
 };
 
 // ─── condição: o par (campo, operador) ───────────────────────────────────
@@ -160,8 +166,20 @@ function passos(valor: string | number): string {
  * A frase de cada par. Ordem das chaves = ordem no seletor (o mais usado
  * primeiro), então mexer na ordem aqui mexe na tela.
  */
+/**
+ * «Tem valor / não tem valor» (Fase 5). Nos campos antigos o motor entende o par, mas ele não entra no seletor —
+ * só no do dado de um bloco anterior, onde a pergunta «veio alguma coisa?» é a que importa.
+ */
+function presenca(tem: string, naoTem: string, oferecido = false): Record<"exists" | "not_exists", Comparador> {
+  return {
+    exists: { rotulo: "tem valor", frase: () => tem, oferecido },
+    not_exists: { rotulo: "não tem valor", frase: () => naoTem, oferecido },
+  };
+}
+
 const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparador>> = {
   lead_stage: {
+    ...presenca("O lead está em alguma etapa", "O lead não está em etapa nenhuma"),
     eq: {
       rotulo: "está na etapa",
       frase: (v) => `O lead está na etapa ${aspas(v)}`,
@@ -193,6 +211,7 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
     },
   },
   tag: {
+    ...presenca("O contato tem alguma etiqueta", "O contato não tem etiqueta nenhuma"),
     // O par que dá nome à regra deste módulo: no motor, `tag` é lista.
     eq: {
       rotulo: "tem a etiqueta",
@@ -225,6 +244,7 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
     },
   },
   steps_taken: {
+    ...presenca("O fluxo já deu algum passo", "O fluxo ainda não deu passo nenhum"),
     gte: {
       rotulo: "é pelo menos",
       frase: (v) => `O fluxo já deu pelo menos ${passos(v)}`,
@@ -253,6 +273,7 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
     },
   },
   last_outcome: {
+    ...presenca("O passo anterior teve um desfecho", "O passo anterior não teve desfecho"),
     eq: {
       rotulo: "foi",
       frase: (v) => `O desfecho do passo anterior foi ${aspas(v)}`,
@@ -280,6 +301,48 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       oferecido: false,
       aviso: AVISO_SO_NUMERO,
     },
+  },
+  product: {
+    ...presenca("O negócio tem algum produto", "O negócio não tem produto nenhum"),
+    // No motor, `product` é lista de nomes (como `tag`), comparada sem diferença de caixa.
+    // O valor é ESCOLHIDO no catálogo, então o par que a tela oferece é o exato. `contains` continua
+    // entendido pelo motor (fluxo salvo com ele precisa ser lido), mas fica fora do seletor.
+    eq: {
+      rotulo: "tem o produto",
+      frase: (v) => `O negócio tem o produto ${aspas(v)}`,
+      oferecido: true,
+    },
+    neq: {
+      rotulo: "não tem o produto",
+      frase: (v) => `O negócio não tem o produto ${aspas(v)}`,
+      oferecido: true,
+    },
+    contains: {
+      rotulo: "tem um produto com o nome contendo",
+      frase: (v) => `O negócio tem um produto com o nome contendo ${aspas(v)}`,
+      oferecido: false,
+    },
+    gte: {
+      rotulo: "é pelo menos",
+      frase: (v) => `Os produtos do negócio são pelo menos ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_SO_NUMERO,
+    },
+    lte: {
+      rotulo: "é no máximo",
+      frase: (v) => `Os produtos do negócio são no máximo ${aspas(v)}`,
+      oferecido: false,
+      aviso: AVISO_SO_NUMERO,
+    },
+  },
+  variavel: {
+    // A ordem é a do seletor: a pergunta mais comum sobre um dado que veio de outro bloco vem primeiro.
+    eq: { rotulo: "é igual a", frase: (v) => `O dado do bloco anterior é igual a ${aspas(v)}`, oferecido: true },
+    neq: { rotulo: "é diferente de", frase: (v) => `O dado do bloco anterior é diferente de ${aspas(v)}`, oferecido: true },
+    contains: { rotulo: "contém", frase: (v) => `O dado do bloco anterior contém ${aspas(v)}`, oferecido: true },
+    gte: { rotulo: "é pelo menos", frase: (v) => `O dado do bloco anterior é pelo menos ${aspas(v)}`, oferecido: true },
+    lte: { rotulo: "é no máximo", frase: (v) => `O dado do bloco anterior é no máximo ${aspas(v)}`, oferecido: true },
+    ...presenca("O dado do bloco anterior tem valor", "O dado do bloco anterior não tem valor", true),
   },
 };
 
@@ -390,6 +453,7 @@ export const RAMOS_RESERVADOS_EM_FRASE: Record<RamoReservado, string> = {
   [CONDITION_FALSE_BRANCH_ID]: "quando a condição é falsa",
   [REPEAT_BODY_BRANCH_ID]: "quando ainda falta uma volta",
   [REPEAT_DONE_BRANCH_ID]: "quando as voltas acabaram",
+  [ON_ERROR_BRANCH_ID]: "quando o bloco falha",
 };
 
 /**
@@ -448,6 +512,7 @@ export const RAMOS_RESERVADOS: Record<RamoReservado, string> = {
   [CONDITION_FALSE_BRANCH_ID]: conditionLabel({ type: "cond_result", value: false }),
   [REPEAT_BODY_BRANCH_ID]: "Próxima volta",
   [REPEAT_DONE_BRANCH_ID]: "Acabou",
+  [ON_ERROR_BRANCH_ID]: "Fallback erro",
 };
 
 // ─── classificação pela IA ───────────────────────────────────────────────
@@ -507,10 +572,12 @@ export const ALVOS_DA_CLASSIFICACAO: Record<AlvoDaClassificacao, string> = {
 export const MODOS_DE_ESPERA: Record<ModoDeEspera, string> = {
   fixed: "Tempo fixo",
   smart: "A IA escolhe a hora",
+  until: "Até uma data ou horário",
 };
 
 export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
+  messages: "Mensagens com anexos (texto, imagem, vídeo, áudio, documento)",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
 };
@@ -523,6 +590,71 @@ export const PRIORIDADES_DA_TAREFA: Record<PrioridadeDaTarefa, string> = {
   medium: "Média",
   high: "Alta",
   urgent: "Urgente",
+};
+
+// ─── destino da tag (nó edit_lead_tag) ───────────────────────────────────
+
+/** Por onde o bloco Buscar ou criar contato procura. */
+export const BUSCAS_DO_CONTATO: Record<"phone" | "email", string> = {
+  phone: "Telefone",
+  email: "E-mail",
+};
+
+/** Métodos do bloco Requisição HTTP — o nome do método é o que o sistema externo documenta; o rótulo diz o uso. */
+export const METODOS_HTTP_ROTULOS: Record<"GET" | "POST" | "PUT" | "PATCH" | "DELETE", string> = {
+  GET: "GET — consultar",
+  POST: "POST — criar ou enviar",
+  PUT: "PUT — substituir",
+  PATCH: "PATCH — alterar parte",
+  DELETE: "DELETE — apagar",
+};
+
+/** O que o bloco Produto do negócio faz — rótulos do formulário. */
+export const ACOES_DO_PRODUTO: Record<"add" | "remove", string> = {
+  add: "Acrescentar produto",
+  remove: "Tirar produto",
+};
+
+/** O que o bloco de tag faz — rótulos do formulário (Fase 5: também remove). */
+export const ACOES_DA_TAG: Record<"add" | "remove", string> = {
+  add: "Adicionar tags",
+  remove: "Remover tags",
+};
+
+/** Onde o bloco de tag grava — rótulos do formulário. */
+export const DESTINOS_DA_TAG: Record<"card" | "contato", string> = {
+  card: "No negócio",
+  contato: "No contato",
+};
+
+/** O que o bloco Atualizar campo do negócio grava — rótulos do formulário. */
+export const ALVOS_DO_CAMPO_DO_NEGOCIO: Record<"custom_field" | "deal_value" | "contact_field", string> = {
+  custom_field: "Campo personalizado",
+  deal_value: "Valor do negócio",
+  contact_field: "Campo do contato",
+};
+
+/** Onde o bloco Nota interna grava — rótulos do formulário. */
+export const DESTINOS_DA_NOTA: Record<"lead_timeline" | "conversation_notes", string> = {
+  lead_timeline: "No negócio (linha do tempo)",
+  conversation_notes: "Na conversa (notas internas)",
+};
+
+/** Tipos de campo do bloco Mapear dados — a conversão explícita que cada campo faz. */
+export const TIPOS_DO_CAMPO_DO_MAPA: Record<"text" | "number" | "boolean" | "list", string> = {
+  text: "Texto",
+  number: "Número",
+  boolean: "Sim/não",
+  list: "Lista",
+};
+
+/** Tipos de envio do bloco de mensagens — rótulos do seletor de cada envio. */
+export const TIPOS_DO_ENVIO: Record<"text" | "image" | "video" | "audio" | "document", string> = {
+  text: "Texto",
+  image: "Imagem",
+  video: "Vídeo",
+  audio: "Áudio",
+  document: "Documento",
 };
 
 // ─── pergunta do fluxo de atendimento (nó collect) ───────────────────────

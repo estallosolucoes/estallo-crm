@@ -22,7 +22,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PERFIS_DO_PAIS, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 
 const orgAtiva = vi.hoisted(() => ({ atual: null as { currency?: string | null; country?: string | null } | null }));
-vi.mock("@/hooks/auth/AuthProvider", () => ({ useActiveOrg: () => orgAtiva.atual }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useActiveOrg: () => orgAtiva.atual,
+  // O seletor de tags (0659) lê o cadastro de etiquetas pela organização ativa.
+  useAuth: () => ({ activeOrg: orgAtiva.atual, user: { id: "u-1" } }),
+  useUser: () => ({ id: "u-1", is_platform_admin: false, support: null }),
+}));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({ apiClient: api }));
@@ -85,18 +90,24 @@ afterEach(() => {
 
 const FUNIL = "33333333-3333-4333-8333-333333333333";
 
-describe("o valor do negócio usa a moeda certa — e o eco embaixo do campo também", () => {
+/** O campo de dinheiro: o texto mascarado e o símbolo desenhado ao lado. */
+function campoDoValor() {
+  const campo = document.getElementById("valueReais") as HTMLInputElement;
+  return { valor: campo.value, simbolo: campo.parentElement?.textContent ?? "" };
+}
+
+describe("o valor do negócio usa a moeda certa — no rótulo e no símbolo do campo", () => {
   it("negócio JÁ GRAVADO manda na moeda, mesmo se a empresa trocou depois", () => {
     // Trocar a moeda da organização não reescreve o que nasceu antes: o cartão
     // e o dossiê mostram a persistida, e a edição precisa concordar com eles.
     orgAtiva.atual = { currency: "BRL", country: null };
     render(<LeadFieldsForm lead={NEGOCIO} pipelineId={FUNIL} />);
     expect(screen.getByText(/Valor \(€\)/)).toBeTruthy();
-    expect(screen.getByText(/= 249,90/)).toBeTruthy();
+    expect(campoDoValor()).toEqual({ valor: "249,90", simbolo: "€" });
     expect(screen.queryByText(/R\$/)).toBeNull();
   });
 
-  it("moeda SEM centavos: o eco usa a régua do negócio, não a das unidades menores", () => {
+  it("moeda SEM centavos: o campo usa a régua do negócio (×100), não a das unidades menores", () => {
     // `value_cents` guarda ×100 em qualquer moeda; `formatCents` lê unidades
     // menores. Em guarani as duas divergem por cem, e o eco mostraria
     // `Gs. 12.500.000` embaixo de um card que diz `Gs. 125.000`.
@@ -107,7 +118,7 @@ describe("o valor do negócio usa a moeda certa — e o eco embaixo do campo tam
         pipelineId={FUNIL}
       />,
     );
-    expect(screen.getByText(/= Gs\.\s?125\.000$/)).toBeTruthy();
+    expect(campoDoValor().valor).toBe("125.000,00");
   });
 
   it("negócio sem moeda gravada cai na da organização", () => {
@@ -120,7 +131,7 @@ describe("o valor do negócio usa a moeda certa — e o eco embaixo do campo tam
     orgAtiva.atual = { currency: "BRL", country: null };
     render(<LeadFieldsForm lead={{ ...(NEGOCIO as object), currency: "BRL" } as never} pipelineId={FUNIL} />);
     expect(screen.getByText(/Valor \(R\$\)/)).toBeTruthy();
-    expect(screen.getByText(/= R\$\s?249,90/)).toBeTruthy();
+    expect(campoDoValor()).toEqual({ valor: "249,90", simbolo: "R$" });
   });
 
   it("negócio NOVO nasce na moeda da organização", () => {

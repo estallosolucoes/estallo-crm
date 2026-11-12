@@ -29,12 +29,12 @@ services:
     build:
       args:
         APP_VERSION: ${APP_VERSION:-local}
-    image: ${WORKER_IMAGE:-deskcomm-worker:local}
+    image: ${WORKER_IMAGE:-estallo-crm-worker:local}
     pull_policy: never
 
   scheduler:
     build:
       args:
         APP_VERSION: ${APP_VERSION:-local}
-    image: ${SCHEDULER_IMAGE:-deskcomm-scheduler:local}
+    image: ${SCHEDULER_IMAGE:-estallo-crm-scheduler:local}
     pull_policy: never

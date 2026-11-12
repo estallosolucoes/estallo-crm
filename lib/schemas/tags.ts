@@ -25,7 +25,11 @@ import { corDeEtiquetaValida, normalizarCorDeEtiqueta } from "@/lib/tags/cor-da-
 export const TAG_MAX = 60;
 
 /** Ações do vocabulário. Cada uma é uma operação atômica do banco. */
-export const ACOES_DE_VOCABULARIO = ["renomear", "juntar", "excluir", "definir_cor"] as const;
+export const ACOES_DE_VOCABULARIO = ["criar", "renomear", "juntar", "excluir", "definir_cor"] as const;
+
+/** De quem é a etiqueta (0659): oportunidade (`lead`) ou contato. */
+export const ENTIDADES_DE_ETIQUETA = ["lead", "contact"] as const;
+export type EntidadeDeEtiqueta = (typeof ENTIDADES_DE_ETIQUETA)[number];
 export type AcaoDeVocabulario = (typeof ACOES_DE_VOCABULARIO)[number];
 
 export const tagSchema = z
@@ -60,11 +64,19 @@ export const vocabularioDeTagsSchema = z
     acao: z.enum(ACOES_DE_VOCABULARIO, {
       error: "acao_invalida",
     }),
+    entidade: z.enum(ENTIDADES_DE_ETIQUETA, { error: "entidade_invalida" }),
     tag: tagSchema,
     destino: tagSchema.nullish(),
     cor: corDeEtiquetaSchema.nullish(),
   })
   .superRefine((valor, ctx) => {
+    if (valor.acao === "criar") {
+      // Criar leva nome, entidade e (opcional) cor; destino não faz sentido.
+      if (valor.destino != null) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["destino"], message: "destino_invalido_para_acao" });
+      }
+      return;
+    }
     if (valor.acao === "definir_cor") {
       // Presente-e-nula é pedido legítimo ("tirar a cor"); AUSENTE é erro de
       // quem chamou: sem o campo não dá para distinguir "limpe" de "esqueci de
@@ -106,13 +118,9 @@ export const vocabularioDeTagsSchema = z
       });
       return;
     }
-    if (
-      valor.acao === "renomear" &&
-      valor.destino.toLowerCase() === valor.tag.toLowerCase()
-    ) {
-      // Renomear para o mesmo nome (mesmo com outra caixa) não é operação: a
-      // função de banco devolveria `alterou: false` e a tela diria "nada mudou"
-      // sem explicar por quê.
+    if (valor.acao === "renomear" && valor.destino === valor.tag) {
+      // Renomear para o MESMO nome não é operação. Trocar só a caixa ("vip" →
+      // "VIP") é, e passa.
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["destino"],
@@ -126,9 +134,11 @@ export type VocabularioDeTagsInput = z.infer<typeof vocabularioDeTagsSchema>;
 /** Uma linha do vocabulário, como a função de leitura devolve. */
 export type LinhaDeVocabulario = {
   tag: string;
-  uso_em_contatos: number;
-  uso_em_leads: number;
-  uso_em_conversas: number;
+  /** 0659: uma linha por (entidade, etiqueta). */
+  entidade: EntidadeDeEtiqueta;
+  /** Quantos registros da entidade (contatos ou negócios) carregam a etiqueta. */
+  uso: number;
+  /** Regras `add_tag` que escrevem esta etiqueta nesta entidade. */
   em_regras: number;
   cor: string | null;
   descricao: string | null;

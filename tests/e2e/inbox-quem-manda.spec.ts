@@ -325,6 +325,8 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // Sem `if`: com o negócio semeado a linha TEM de aparecer. Uma asserção
     // condicional aqui passaria calada justamente no caso em que a feature não
     // funciona — que é o modo de falha que esta entrega existe para acabar.
+    const ficha = page.getByRole("button", { name: "Informações do contato", exact: true });
+    if ((await ficha.getAttribute("aria-pressed")) === "false") await ficha.click();
     await expect(page.getByText("Atividade", { exact: true }).first()).toBeVisible({
       timeout: 30_000,
     });
@@ -338,6 +340,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // -----------------------------------------------------------------
     // (6) A VOLTA existe e funciona — o interruptor tem os dois lados.
     // -----------------------------------------------------------------
+    await page.getByRole("button", { name: "Mais ações da conversa", exact: true }).click();
     const voltar = page.getByTestId("devolver-ao-automatico");
     await expect(voltar).toBeVisible();
     await voltar.click();
@@ -364,7 +367,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     if (erroLimpeza) throw new Error(`limpar turnos fictícios: ${erroLimpeza.message}`);
   });
 
-  test("a conversa que o automático escalou APARECE na Fila", async ({ page }) => {
+  test("a conversa que o automático escalou continua visível em Todas", async ({ page }) => {
     // ESTE CASO É A ÚLTIMA PONTA DA RECLAMAÇÃO Nº 1, e ela não era de tela.
     //
     // `performHumanHandoff` deixa a conversa em `status='pending'` sem dono, e a
@@ -388,7 +391,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     expect((escalada.data as { status: string } | null)?.status).toBe("pending");
 
     await login(page, creds.users.agent!.email, creds.password);
-    await page.goto("/app/inbox?filter=unassigned");
+    await page.goto("/app/inbox?filter=all");
 
     // A conversa está na lista da Fila, pelo nome do contato.
     const naFila = page.getByText(NOME_DO_CONTATO, { exact: false }).first();
@@ -397,7 +400,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
 
     // E o BADGE da aba a conta — badge que não bate com a lista manda o atendente
     // procurar um trabalho que a aba não mostra (ou o contrário, que é este caso).
-    const abaFila = page.getByRole("tab", { name: /Fila/i }).first();
+    const abaFila = page.getByRole("tab", { name: /^Todas/ }).first();
     await expect(abaFila).toContainText(/[1-9]/, { timeout: 30_000 });
 
     // Abrindo, a tela diz que ninguém está no comando — nem pessoa, nem automático.

@@ -23,8 +23,7 @@ vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: mocks.enviar }));
 vi.mock("@/lib/automation/start-conversation", () => ({ ensureConversation: async () => "conversa-1" }));
-vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: async () => null }));
-vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({ esperarRitmo: async () => {} }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async () => ({ data: 0, error: null }),

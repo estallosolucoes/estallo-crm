@@ -6,6 +6,8 @@ version: 0.1
 date: 2026-04-28
 ---
 
+> **Padrão visual vigente:** [Design System Estallo](../README.md). Esta pasta registra jornadas e estados operacionais; referências visuais herdadas não substituem os tokens atuais. O catálogo executável de navegação é `lib/navigation/registry.ts`.
+
 # 07 — Responsive Strategy
 
 > Como cada superfície responde a cada breakpoint. **Desktop ≥1280px é o foco MVP** (atendente passa o dia em laptop). Mobile não é foco mas degrada graciosamente para o atendente em deslocamento.
@@ -179,7 +181,7 @@ QR code pra connect-whatsapp em mobile: tamanho fixo 280×280 e instrução "abr
 
 1. **Imagens em mensagens** sempre `max-width: 100%`, mantendo aspect ratio
 2. **Mídia preview** clicável → lightbox full-screen
-3. **Foco visível** sempre (`focus-visible:ring-2 ring-sage-500`)
+3. **Foco visível** sempre (`focus-visible:ring-2 ring-ring`)
 4. **Hover states** apenas com `@media (hover: hover)` (não em touch)
 5. **Atalhos de teclado** invisíveis em mobile (não confunde)
 

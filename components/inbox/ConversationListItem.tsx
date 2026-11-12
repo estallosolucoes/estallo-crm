@@ -5,15 +5,15 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import type { Locale } from "date-fns";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { Robot } from "@/lib/ui/icons";
+import { PushPin, Robot } from "@/lib/ui/icons";
+import { AckIndicator } from "@/components/inbox/AckIndicator";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
-import { OwnerBadge } from "@/components/kanban/OwnerBadge";
+import { AcoesDaConversa } from "@/components/inbox/AcoesDaConversa";
 import {
   comandoDaConversa,
-  esperaDaConversa,
   ROTULO_DO_COMANDO,
   STATUS_ENCERRADOS,
 } from "@/lib/inbox/comando-da-conversa";
@@ -22,13 +22,14 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { FormatacaoWhatsApp } from "@/lib/mensagens/formatacao-whatsapp";
 
 interface Props {
   conversation: ConversationWithContact;
   isSelected: boolean;
   onSelect: (id: string) => void;
-  /** Posição 1-based na fila (G5-03). Presente só na visão Fila. */
-  queuePosition?: number;
   /**
    * Mostrar POR ONDE a conversa entrou.
    *
@@ -46,6 +47,7 @@ interface Props {
    * área onde vivem os avisos que importam. Quem decide é a lista, que é quem
    * sabe quantos donos distintos ela tem.
    */
+  /** Sem efeito desde 16/10/2026: o dono aparece na linha de operação ("Com Fulano"). */
   mostrarAtendente?: boolean;
   /**
    * Mostrar o ícone de robô na prévia da mensagem, quando quem manda é o
@@ -62,29 +64,9 @@ interface Props {
    * afirme nada".
    */
   automaticoDaOrg?: boolean;
+  /** Fecha a conversa aberta (o menu da linha pede ao marcar como não lida ou apagar). */
+  onFecharConversa?: () => void;
 }
-
-/**
- * A COR SAI DE QUEM MANDA, NÃO DO STATUS.
- *
- * O mapa anterior era por `conversations.status`, e o `bg-purple-500` de
- * `ai_handling` era a mesma mentira das abas em forma de cor: `ai_handling` é
- * escrito por UM caminho só em produção, então a bolinha do automático quase
- * nunca aparecia — enquanto o robô atendia a maior parte da lista — e, quando
- * aparecia, sobrevivia ao silêncio, porque o status não muda quando o atendente
- * cala o automático.
- *
- * As chaves são as de `Comando["quem"]`, ao lado de `ROTULO_DO_COMANDO`, pela
- * mesma razão que ele mora ali: a cor e a palavra dizem a mesma coisa e não
- * podem ser mantidas em arquivos diferentes.
- */
-const COR_DO_COMANDO: Record<string, string> = {
-  humano: "bg-blue-500",
-  automatico: "bg-purple-500",
-  aguardando: "bg-amber-500",
-  ninguem: "bg-muted-foreground/60",
-  encerrada: "bg-muted-foreground/30",
-};
 
 function initials(name: string | null | undefined, fallback: string): string {
   const v = (name ?? "").trim();
@@ -109,32 +91,62 @@ function relativeTime(iso: string | null, locale: Locale): string {
 }
 
 /**
- * "Aguardando há 5 min" — desde quando o cliente ESPERA.
- *
- * A régua é `esperaDaConversa`, a mesma `awaiting_since` que ordena a Fila
- * (#990): `last_inbound_at` é a ÚLTIMA mensagem do cliente, então a pílula de
- * quem insistia voltava para "há 1 min" a cada mensagem dele — o tempo na linha
- * contradizia a posição do lado e a ordem da lista. O fallback segue sendo a
- * criação, para a conversa que nunca recebeu mensagem.
+ * O tom pastel do avatar, fixo por pessoa (o modelo tem seis). A cor é
+ * decoração: sai do nome, então a mesma pessoa tem o mesmo tom em toda tela.
  */
-function waitingLabel(
-  conversation: ConversationWithContact,
-  t: (texto: string) => string = (texto) => texto, locale: Locale,
-): string {
-  const since = esperaDaConversa(conversation);
-  if (!since) return t("Aguardando");
-  return `${t("Aguardando")} ${formatDistanceToNowStrict(new Date(since), { addSuffix: true, locale: locale })}`;
+const TONS_DO_AVATAR = [
+  "ibx-tom-areia",
+  "ibx-tom-rosa",
+  "ibx-tom-salvia",
+  "ibx-tom-lilas",
+  "ibx-tom-ceu",
+  "ibx-tom-neutro",
+];
+export function corDoAvatar(nome: string): string {
+  let h = 0;
+  for (let i = 0; i < nome.length; i += 1) h = (h * 31 + nome.charCodeAt(i)) >>> 0;
+  return TONS_DO_AVATAR[h % TONS_DO_AVATAR.length]!;
+}
+
+/**
+ * QUEM ATENDE, EM 20px — no lugar do texto "Com <nome>" (pedido de 17/10/2026).
+ *
+ * O texto disputava a atenção com a prévia da mensagem logo acima, nos dois
+ * temas. O avatar diz a mesma coisa sem competir: a foto do perfil do
+ * atendente, ou as iniciais, e o nome no passar do mouse (e para leitor de
+ * tela). A foto vem da lista de membros, que o cabeçalho já carrega — uma
+ * leitura por tela, não por linha.
+ */
+function AvatarDoAtendente({ userId, nome }: { userId: string | null; nome: string }) {
+  const membros = useAssignableMembers(true);
+  const foto = membros.data?.find((m) => m.user_id === userId)?.avatar_url ?? null;
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="ibx-attendant" role="img" aria-label={nome}>
+            <Avatar className="size-5">
+              {foto ? <AvatarImage src={foto} alt="" className="object-cover" /> : null}
+              <AvatarFallback className={cn("text-[9px] font-semibold", corDoAvatar(nome))}>
+                {initials(nome, "?")}
+              </AvatarFallback>
+            </Avatar>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top">{nome}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function ConversationListItem({
   conversation,
   isSelected,
   onSelect,
-  queuePosition,
   mostrarCanal,
-  mostrarAtendente,
   mostrarAutomatico = true,
   automaticoDaOrg,
+  onFecharConversa,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -145,31 +157,14 @@ export function ConversationListItem({
   const visibleTags = tags.slice(0, 2);
   const overflow = tags.length - visibleTags.length;
   const preview = conversation.last_message_preview?.trim() || t("Sem mensagens");
-  const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
-  const naFila = queuePosition !== undefined;
-  /**
-   * A HORA DO CANTO RESPONDE À MESMA PERGUNTA QUE ORDENA A LISTA.
-   *
-   * Na Fila a lista sai por TEMPO DE ESPERA (`ORDEM_DA_ESPERA`: `awaiting_since`
-   * crescente — a mensagem mais antiga sem resposta, #990), mas a hora do canto era
-   * sempre a da última mensagem de QUALQUER lado. Bastava o atendente responder para o número daquela linha pular para
-   * agora sem que a linha saísse do lugar: lida de cima para baixo, a coluna de
-   * horas saía fora de ordem (#464 — "a lista parece aleatória") embaixo de uma
-   * lista que estava certa.
-   *
-   * Fora da Fila a ordem é por atividade recente, e aí a última mensagem de
-   * qualquer lado É a resposta certa — a régua do relógio segue a régua da lista.
-   *
-   * A origem é a MESMA da pílula "Aguardando há…" (`waitingLabel`), inclusive no
-   * fallback: duas respostas para o mesmo "desde quando?" na mesma linha, a 40px
-   * de distância, seriam a próxima divergência.
-   */
-  const horaDaOrdem = naFila
-    ? esperaDaConversa(conversation)
-    : conversation.last_message_at;
-  const time = relativeTime(horaDaOrdem, localeDaData);
+  // A última mensagem é NOSSA quando a saída é a mais recente — a mesma régua do
+  // `status_do_chat`. É o que põe o tique antes da prévia, como no WhatsApp.
+  const ultimaFoiDeSaida =
+    !!conversation.last_outbound_at &&
+    (!conversation.last_inbound_at || conversation.last_outbound_at >= conversation.last_inbound_at);
+  // O canto acompanha a última atividade, a mesma data da ordenação da lista.
+  const time = relativeTime(conversation.last_message_at, localeDaData);
   const unread = conversation.unread_count_for_assignee ?? 0;
-
 
   /**
    * Quem manda, pela MESMA regra do cabeçalho.
@@ -192,7 +187,6 @@ export function ConversationListItem({
     automaticoDaOrg,
   });
   const isAi = comando.quem === "automatico";
-  const dot = COR_DO_COMANDO[comando.quem] ?? COR_DO_COMANDO.ninguem;
   // A cor sozinha não se explica: quem não decorou a tabela perguntava o que
   // cada bolinha queria dizer. A palavra é a de ROTULO_DO_COMANDO, o rótulo que
   // o produto já define para cada estado, no passar do mouse e no leitor de
@@ -221,82 +215,97 @@ export function ConversationListItem({
   const canal = conversation.channel_sessions ?? null;
   const rotuloCanal = rotuloDoCanalDaConversa(canal, t);
 
+  // Conversa com atendente (e aberta): o avatar entra na linha dos selos.
+  const atendente =
+    comando.quem === "humano" && !STATUS_ENCERRADOS.has(conversation.status)
+      ? (comando.nome ?? t("Atendente"))
+      : null;
+
   const temSelos =
+    atendente != null ||
     visibleTags.length > 0 ||
-    (mostrarAtendente && comando.quem === "humano") ||
     (mostrarCanal && rotuloCanal != null) ||
     Boolean(c?.is_blocked) ||
     Boolean(c?.is_anonymized);
 
-  return (
-    <button
-      type="button"
-      data-conversation-id={conversation.id}
-      onClick={() => onSelect(conversation.id)}
-      className={cn(
-        "group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
-        "focus-visible:outline-hidden focus-visible:bg-surface-elevated",
-        isSelected && "bg-accent-50 hover:bg-accent-50",
-      )}
-      aria-current={isSelected ? "true" : undefined}
-    >
-      {isSelected && (
-        <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" aria-hidden />
-      )}
-      <div className="relative shrink-0">
-        <Avatar className="h-10 w-10">
-          {/* Só monta a <img> quando existe arquivo: sem isso o browser pediria
-              a rota para TODO contato da lista e levaria 404 em cada um sem
-              foto — que é a maioria. O AvatarFallback do Radix já cobre o caso
-              de a imagem não carregar, então as iniciais nunca somem. */}
-          {c?.avatar_storage_path && !c?.is_anonymized ? (
-            <AvatarImage
-              src={`/api/v1/contacts/${c.id}/avatar`}
-              alt=""
-              className="object-cover"
-            />
-          ) : null}
-          <AvatarFallback className="bg-surface-elevated text-xs font-medium text-text-muted">
-            {initials(displayName, phoneFallback)}
-          </AvatarFallback>
-        </Avatar>
-        <span
-          className={cn(
-            "absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full border-2 border-background",
-            dot,
-          )}
-          role="img"
-          aria-label={rotuloDoComando}
-          title={rotuloDoComando}
-        />
-        <ChannelLogo channel={canal} size={16} className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-background ring-2 ring-background" />
-      </div>
+  // A linha do modelo do dono (16/10/2026): nome + hora + setinha em cima, a
+  // prévia no meio e a OPERAÇÃO embaixo ("1º na fila · Espera de 21h"). A
+  // espera saiu do canto direito — ali agora mora a hora da última mensagem e
+  // a setinha do menu, como no modelo.
+  const operacao = STATUS_ENCERRADOS.has(conversation.status) ? (
+    <span>{t("Conversa fechada")}</span>
+  ) : isAi ? (
+    <>
+      <Robot size={11} weight="duotone" className="ibx-icon" aria-hidden />
+      <span>{t("Atendimento automático")}</span>
+    </>
+  ) : comando.quem === "humano" ? null : (
+    <span>{rotuloDoComando}</span>
+  );
 
-      <div className="min-w-0 flex-1">
-        {naFila && (
-          <div className="mb-1 flex items-center gap-1.5">
-            <span
-              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium tabular-nums text-accent"
-              aria-label={`${t("Posição")} ${queuePosition} ${t("na fila")}`}
-            >
-              {queuePosition}º
-            </span>
-            <span className="text-[11px] text-text-muted">
-              {waitingLabel(conversation, t, localeDaData)}
-            </span>
-          </div>
-        )}
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 items-center gap-1.5">
+  return (
+    <div
+      className={cn(
+        "ibx-conversation",
+        isSelected && "ibx-selected",
+        unread > 0 && "ibx-is-unread",
+      )}
+    >
+      <button
+        type="button"
+        data-conversation-id={conversation.id}
+        onClick={() => onSelect(conversation.id)}
+        className="ibx-open-conversation"
+        aria-current={isSelected ? "true" : undefined}
+      >
+        <span className="ibx-avatar">
+          <Avatar className="ibx-avatar-face">
+            {/* Só monta a <img> quando existe arquivo: sem isso o browser pediria
+                a rota para TODO contato da lista e levaria 404 em cada um sem
+                foto — que é a maioria. O AvatarFallback do Radix já cobre o caso
+                de a imagem não carregar, então as iniciais nunca somem. */}
+            {c?.avatar_storage_path && !c?.is_anonymized ? (
+              <AvatarImage
+                src={`/api/v1/contacts/${c.id}/avatar`}
+                alt=""
+                className="object-cover"
+              />
+            ) : null}
+            <AvatarFallback className={cn("font-medium text-[inherit]", corDoAvatar(displayName))}>
+              {initials(displayName, phoneFallback)}
+            </AvatarFallback>
+          </Avatar>
+          {/* Quem manda, para leitor de tela e no passar do mouse: o desenho do
+              modelo não tem a bolinha colorida, mas a informação continua. */}
+          <span
+            className="sr-only"
+            role="img"
+            aria-label={rotuloDoComando}
+            title={rotuloDoComando}
+          />
+          <span className="ibx-channel-badge">
+            <ChannelLogo channel={canal} size={11} />
+          </span>
+        </span>
+
+        <span className="ibx-contact-copy">
+          <span className="ibx-contact-name-row">
             <span
               className={cn(
-                "truncate text-sm",
-                unread > 0 ? "font-semibold text-text" : "font-medium text-text",
-                c?.is_anonymized && "font-normal italic text-text-muted",
+                "ibx-contact-name",
+                c?.is_anonymized && "font-normal text-text-muted italic",
               )}
             >
               {displayName}
             </span>
+            {conversation.fixada && (
+              <PushPin
+                size={11}
+                weight="fill"
+                className="ibx-pin-indicator"
+                aria-label={t("Conversa fixada")}
+              />
+            )}
             {/*
               A ETIQUETA "GRUPO", ao lado do nome.
               `conversations.is_group` já chega no SELECT do handler (schema
@@ -311,75 +320,72 @@ export function ConversationListItem({
               </Badge>
             )}
           </span>
-          <span
-            className="shrink-0 text-[11px] tabular-nums text-text-subtle"
-            // O mesmo lugar da tela mostra duas coisas diferentes conforme a aba:
-            // na Fila é "desde quando o cliente ESPERA" (a mensagem mais antiga sem
-            // resposta — #990), nas outras é "há quanto tempo a conversa mexeu". O
-            // rótulo existe só onde a leitura muda.
-            title={naFila ? t("Desde quando o cliente espera resposta") : undefined}
-          >
-            {time}
-          </span>
-        </div>
-
-        <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p
-            className={cn(
-              "min-w-0 truncate text-[13px]",
-              unread > 0 ? "text-text" : "text-text-muted",
-            )}
-          >
+          <span className="ibx-message-preview">
             {isAi && mostrarAutomatico ? (
               <Robot size={12} weight="duotone" className="mr-1 inline align-[-2px]" aria-hidden />
             ) : null}
-            {truncated}
-          </p>
-          {unread > 0 && (
-            <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
-              {unread}
+            {ultimaFoiDeSaida ? (
+              <span className="mr-1 inline-flex align-[-2px]">
+                {/* Sem status conhecido (resposta antiga ou envio em curso), o ✓ simples. */}
+                <AckIndicator status={conversation.ultimo_status_de_saida ?? "sent"} t={t} />
+              </span>
+            ) : null}
+            <FormatacaoWhatsApp texto={preview} modo="linha" />
+          </span>
+          {operacao && <span className="ibx-operational">{operacao}</span>}
+
+          {temSelos && (
+            <span className="ibx-badges">
+              {atendente && (
+                <AvatarDoAtendente userId={conversation.assigned_to_user_id ?? null} nome={atendente} />
+              )}
+              {visibleTags.map((t) => (
+                <ChipDeEtiqueta
+                  key={t}
+                  tag={t}
+                  entidade="contact"
+                  className="h-4 px-1.5 text-[10px]"
+                />
+              ))}
+              {overflow > 0 && <span className="text-[10px] text-text-muted">+{overflow}</span>}
+              {/* #2383: `min-w-0` + `max-w` + `truncate` — o mesmo tratamento do
+                  badge do cabeçalho. O `title` devolve o texto inteiro. */}
+              {mostrarCanal && rotuloCanal && (
+                <Badge
+                  variant="outline"
+                  className="h-4 max-w-[9rem] min-w-0 gap-1 truncate px-1.5 text-[10px] font-normal text-text-muted"
+                  title={`${t("Entrou por")} ${rotuloCanal}`}
+                >
+                  <span className="truncate">{rotuloCanal}</span>
+                </Badge>
+              )}
+              {c?.is_blocked && (
+                <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+                  {t("Bloqueado")}
+                </Badge>
+              )}
+              {c?.is_anonymized && (
+                <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                  {t("Anonimizado")}
+                </Badge>
+              )}
             </span>
           )}
-        </div>
-
-        {temSelos && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            {visibleTags.map((t) => (
-              <ChipDeEtiqueta key={t} tag={t} className="h-4 px-1.5 text-[10px]" />
-            ))}
-            {overflow > 0 && (
-              <span className="text-[10px] text-text-muted">+{overflow}</span>
-            )}
-            {mostrarAtendente && comando.quem === "humano" && (
-              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
-            )}
-            {/* #2383: `min-w-0` + `max-w` + `truncate` — o mesmo tratamento do
-                badge do cabeçalho. Uma linha de badges é `flex-wrap`, então um
-                nome de canal comprido ESTOURARIA a faixa para fora da coluna da
-                lista (critério de aceite: layout utilizável com nomes maiores).
-                O `title` devolve o texto inteiro para quem passa o mouse. */}
-            {mostrarCanal && rotuloCanal && (
-              <Badge
-                variant="outline"
-                className="h-4 min-w-0 max-w-[9rem] gap-1 truncate px-1.5 text-[10px] font-normal text-text-muted"
-                title={`${t("Entrou por")} ${rotuloCanal}`}
-              >
-                <span className="truncate">{rotuloCanal}</span>
-              </Badge>
-            )}
-            {c?.is_blocked && (
-              <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
-                {t("Bloqueado")}
-              </Badge>
-            )}
-            {c?.is_anonymized && (
-              <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                {t("Anonimizado")}
-              </Badge>
-            )}
-          </div>
-        )}
-      </div>
-    </button>
+        </span>
+      </button>
+      <span className="ibx-row-time">{time}</span>
+      <AcoesDaConversa
+        conversationId={conversation.id}
+        nome={displayName}
+        fixada={conversation.fixada === true}
+        aberta={isSelected}
+        onFecharConversa={onFecharConversa}
+      />
+      {unread > 0 && (
+        <span className="ibx-unread-count" aria-label={`${unread} ${t("não lidas")}`}>
+          {unread}
+        </span>
+      )}
+    </div>
   );
 }

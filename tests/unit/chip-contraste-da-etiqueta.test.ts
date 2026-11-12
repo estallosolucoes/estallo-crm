@@ -49,6 +49,7 @@ import {
   PISO_DE_SEPARACAO_SIMULADA,
   PISOS,
   deltaESimulado,
+  ehFundoAzul,
   melhorFrenteSobre,
   razaoDeContraste,
 } from "@/lib/branding/contraste";
@@ -149,10 +150,14 @@ describe("a frente do texto do chip (issue #2373)", () => {
       const nome = nomes[tom] ?? tom;
       const estilo = estiloDoChip(tom);
       const frente = estilo?.color;
-      if (frente !== melhorFrenteSobre(tom)) {
-        forasDoPiso.push(`${nome} (${tom}): frente ${frente ?? "ausente"} não é a da régua (${melhorFrenteSobre(tom)})`);
+      // Sobre azul a frente é branca por decisão do dono (2026-10-15), mesmo
+      // abaixo do piso — ver `frenteSobreCor`. Os outros tons seguem a régua.
+      const esperada = ehFundoAzul(tom) ? "#ffffff" : melhorFrenteSobre(tom);
+      if (frente !== esperada) {
+        forasDoPiso.push(`${nome} (${tom}): frente ${frente ?? "ausente"} não é a esperada (${esperada})`);
         continue;
       }
+      if (ehFundoAzul(tom)) continue;
       const razao = razaoDeContraste(frente, tom);
       if (razao < PISOS.texto) {
         forasDoPiso.push(`${nome} (${tom}): frente ${frente} dá contraste ${razao.toFixed(3)}, abaixo do piso ${PISOS.texto}`);
@@ -207,6 +212,8 @@ describe("a frente do texto do chip (issue #2373)", () => {
         fora.push(`${cor}: o chip não pintou frente`);
         continue;
       }
+      // Azul é branco por decisão do dono, fora do piso — vigiado no caso abaixo.
+      if (ehFundoAzul(cor)) continue;
       const razao = razaoDeContraste(frente, cor);
       if (razao < pior) {
         pior = razao;
@@ -220,6 +227,19 @@ describe("a frente do texto do chip (issue #2373)", () => {
     ).toEqual([]);
     // O piso teórico de `max(branco, preto)`: 4,582671 em L (WCAG) = 0,17912.
     expect(pior, "o piso caiu abaixo do mínimo teórico — a régua deixou de escolher o melhor par").toBeGreaterThanOrEqual(4.58);
+  });
+
+  it("⭐ FUNDO AZUL É TEXTO BRANCO — decisão do dono (2026-10-15)", () => {
+    // O chip "teste" da captura do dono: Azul `#0091ff`, que a régua pintava de
+    // preto. Os tons da marca e os azuis de etapa entram junto.
+    const azuis = ["#0091ff", "#3e63dd", "#1099d3", "#0b6e9a", "#54bce8", "#3b82f6", "#06b6d4", "#0ea5e9"];
+    const fora = azuis.filter((cor) => estiloDoChip(cor)?.color !== "#ffffff");
+    expect(fora, `azuis com frente escura: ${fora.join(", ")}`).toEqual([]);
+    // Tons pastel e as cores vizinhas seguem a régua (texto escuro onde ela manda).
+    for (const cor of ["#e7f5fc", "#d9effa", "#b3e0f3", "#8fd9f5", "#00655a", "#ab4aba", "#ffe629", "#6f6f6f"]) {
+      expect(ehFundoAzul(cor), cor).toBe(false);
+      expect(estiloDoChip(cor)?.color, cor).toBe(melhorFrenteSobre(cor));
+    }
   });
 
   it("⭐ o pior par da paleta continua separável — recalculado, a olho nu E sob dicromacia", () => {
@@ -284,8 +304,9 @@ describe("o caminho único de render do chip", () => {
     const importadores: string[] = [];
     for (const arquivo of arquivosDaUi()) {
       const texto = readFileSync(join(raiz, arquivo), "utf8");
-      if (texto.includes("estiloDoChip")) importadores.push(arquivo);
+      if (texto.includes("estiloDoChip")) importadores.push(arquivo.replace(/\\/g, "/"));
     }
-    expect(importadores.sort()).toEqual(["components/tags/ChipDeEtiqueta.tsx"]);
+    // `StageColumn` pinta a pílula do NOME DA ETAPA com a mesma régua de contraste (cor de etapa, não de etiqueta).
+    expect(importadores.sort()).toEqual(["components/kanban/StageColumn.tsx", "components/tags/ChipDeEtiqueta.tsx"]);
   });
 });

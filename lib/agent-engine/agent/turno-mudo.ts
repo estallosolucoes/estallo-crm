@@ -30,13 +30,11 @@ export function turnoMudoPedeCorrecao(t: {
   enviadas: number;
   turnoDescartado: boolean;
   passouParaAEquipe: boolean;
-  capDeEnvio: boolean;
 }): boolean {
   return (
     t.tentativasDeEnvio === 0 &&
     t.enviadas === 0 &&
     !t.turnoDescartado &&
-    !t.passouParaAEquipe &&
-    !t.capDeEnvio
+    !t.passouParaAEquipe
   );
 }

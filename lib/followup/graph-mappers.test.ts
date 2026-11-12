@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { toReactFlow, fromReactFlow, graphsEqual } from "./graph-mappers";
-import type { FlowGraph } from "./graph-schema";
+import type { FlowGraph, FlowNode } from "./graph-schema";
 
 /** Exercises all 6 node types + all 3 edge condition variants, non-trivial positions. */
 const SAMPLE_GRAPH: FlowGraph = {
@@ -214,6 +214,46 @@ describe("toReactFlow — de qual bolinha a aresta sai", () => {
   });
 
   it("o campo é derivado: a volta pelo mapper não o grava no grafo", () => {
+    const { nodes, edges } = toReactFlow(GRAFO);
+    expect(fromReactFlow(nodes, edges)).toEqual(GRAFO);
+  });
+});
+
+/**
+ * Medido em produção (03/11/2026, Prática Biomed): o bloco "Agradecimento" voltava desligado do "Esperar" toda vez
+ * que o fluxo era reaberto. Bloco de saída única com "Fallback erro" desenha a saída normal SEM id (só a de erro
+ * tem), mas o mapper mandava `sourceHandle: "else"` — a aresta apontava para uma bolinha que não existe, o React
+ * Flow a descartava, e a ligação gravada sumia do desenho.
+ */
+describe("toReactFlow — bloco de saída única com Fallback erro", () => {
+  const no = (id: string, type: FlowNode["type"], config: unknown): FlowNode =>
+    ({ id, type, label: id, position: { x: 0, y: 0 }, config }) as FlowNode;
+  const GRAFO: FlowGraph = {
+    nodes: [
+      no("t", "trigger", {}),
+      no("msg", "action", { mode: "text", body: "oi" }),
+      no("tag", "edit_lead_tag", { tags: ["x"] }),
+      no("esp", "wait", { mode: "fixed", duration_ms: 180_000 }),
+      no("fim", "end", { outcome: "converted" }),
+      no("erro", "end", { outcome: "custom" }),
+    ],
+    edges: [
+      { id: "a", source: "msg", target: "esp", priority: 0, condition: { type: "always" } },
+      { id: "b", source: "tag", target: "esp", priority: 0, condition: { type: "always" } },
+      { id: "c", source: "msg", target: "erro", priority: 0, condition: { type: "branch", branch_id: "on_error" } },
+      { id: "d", source: "esp", target: "fim", priority: 0, condition: { type: "always" } },
+    ],
+  };
+  const handles = () => Object.fromEntries(toReactFlow(GRAFO).edges.map((e) => [e.id, e.sourceHandle]));
+
+  it("a saída normal NÃO leva handle (a bolinha de sempre); só a saída de erro leva o id dela", () => {
+    expect(handles().a).toBeUndefined();
+    expect(handles().b).toBeUndefined();
+    expect(handles().c).toBe("on_error");
+    expect(handles().d).toBeUndefined();
+  });
+
+  it("a volta pelo mapper continua igual ao grafo salvo", () => {
     const { nodes, edges } = toReactFlow(GRAFO);
     expect(fromReactFlow(nodes, edges)).toEqual(GRAFO);
   });

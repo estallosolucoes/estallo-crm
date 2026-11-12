@@ -1,8 +1,11 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { resumeAudio } from "@/lib/notifications/sounds";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraInferior } from "@/components/shell/BarraInferior";
+import { ProvedorDoChatSuspenso } from "@/components/chat-suspenso/ChatSuspensoContext";
+import { ChatSuspenso } from "@/components/chat-suspenso/ChatSuspenso";
 import { BarraDeProgressoNavegacao } from "@/components/shell/BarraDeProgressoNavegacao";
 import { useSinalDePresenca } from "@/hooks/atendimento/useSinalDePresenca";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
@@ -35,6 +38,19 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
   // no Inbox e na Agenda; um emissor amarrado à tela de gestão diria que só o
   // gerente está presente.
   useSinalDePresenca(podeAtender);
+  // O navegador só deixa tocar som depois de um gesto na página. Antes o áudio
+  // era destravado apenas no clique que ATIVA os alertas — e depois de um F5 o
+  // bipe de mensagem nova ficava mudo para sempre. O primeiro clique ou tecla
+  // em qualquer tela destrava.
+  useEffect(() => {
+    const destravar = () => void resumeAudio().catch(() => {});
+    window.addEventListener("pointerdown", destravar, { once: true });
+    window.addEventListener("keydown", destravar, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", destravar);
+      window.removeEventListener("keydown", destravar);
+    };
+  }, []);
   // O que as peças fixas do rodapé declararam ocupar agora (issue #1305). Sem
   // chamada nenhuma é ZERO, e aí o `<main>` fica exatamente como sempre foi —
   // o `p-6` inteiro é rodapé. Com o painel de chamada na tela, é ele que
@@ -51,6 +67,9 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
       sumindo. Princípio 2 de `docs/design-system/screen-flow/07-responsive-strategy.md`,
       escrito em abril de 2026 e aplicado em 6 lugares de 33 até aqui.
     */
+    // O chat suspenso mora na casca: navegar entre módulos não o desmonta, e o
+    // card do funil e a lista de tarefas (filhos do `<main>`) o alcançam.
+    <ProvedorDoChatSuspenso>
     <div className="flex min-h-dvh w-full bg-background">
       <BarraDeProgressoNavegacao />
       <div className="hidden md:block">
@@ -119,6 +138,8 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
         lateral aparece, logo acima.
       */}
       <BarraInferior />
+      <ChatSuspenso />
     </div>
+    </ProvedorDoChatSuspenso>
   );
 }

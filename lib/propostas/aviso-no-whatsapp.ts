@@ -19,7 +19,6 @@ import {
   mascara,
   type CanalDoAviso,
   type ConfigDoAviso,
-  type PacingDoAviso,
   type TransporteDoAviso,
 } from "@/lib/escalacao/aviso-ao-suporte";
 import { primeiroNome } from "@/lib/escalacao/texto-do-aviso";
@@ -43,7 +42,7 @@ export interface AvisoDePropostaDb {
 export interface AvisoDePropostaDeps {
   db: AvisoDePropostaDb;
   transporte: TransporteDoAviso;
-  pacing: PacingDoAviso;
+  esperarRitmo: (canalId: string) => Promise<void>;
   clock: () => Date;
   urlPublica: string;
   origemDoDreno: () => "worker" | "request";
@@ -139,9 +138,6 @@ export async function aplicaAvisoDeProposta(deps: AvisoDePropostaDeps, row: Even
     return retry(new Date(agora.getTime() + ADIAMENTO_DO_CANAL_MS), "transporte fora do ar");
   }
 
-  const pacing = await deps.pacing.decide(orgId, canalId, agora);
-  if (!pacing.liberado) return retry(pacing.liberaEm, `pacing:${pacing.motivo}`);
-
   const to = await deps.transporte.resolveDestino(orgId, canal, cfg.telefone_destino);
   if (!to) return falha("destino_invalido");
 
@@ -155,6 +151,7 @@ export async function aplicaAvisoDeProposta(deps: AvisoDePropostaDeps, row: Even
     link: linkDaProposta(deps.urlPublica, propostaId),
   });
 
+  await deps.esperarRitmo(canalId);
   try {
     await deps.transporte.envia(orgId, canal, to, body);
   } catch {
@@ -164,11 +161,6 @@ export async function aplicaAvisoDeProposta(deps: AvisoDePropostaDeps, row: Even
 
   // Depois do envio TUDO falha aberto: a mensagem já saiu, e lançar aqui faria
   // o dreno reprocessar e a equipe receber de novo.
-  try {
-    await deps.pacing.registraEnvio(orgId, canalId, agora);
-  } catch {
-    /* o ledger é best-effort depois do envio — ver comentário acima */
-  }
   try {
     await deps.db.registraJidDoAviso(orgId, to);
   } catch {

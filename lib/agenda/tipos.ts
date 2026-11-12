@@ -56,6 +56,8 @@ export const LOCAIS_DE_AGENDAMENTO = [
   "phone",
   "whatsapp",
   "video_link",
+  // Legado: compromissos antigos podem ter o valor. O Estallo não oferece mais
+  // Google Meet (a API de tipos e a tela não aceitam; migration 0658).
   "google_meet",
 ] as const;
 export type LocalDeAgendamento = (typeof LOCAIS_DE_AGENDAMENTO)[number];

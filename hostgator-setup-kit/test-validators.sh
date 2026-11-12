@@ -970,7 +970,7 @@ echo "cron: instalar uma instância não pode silenciar a outra"
 # apagava as duas linhas da primeira, em silêncio.
 CRONTAB_VIZINHO='0 8 * * * /root/trend-radar/run_full_vps.sh
 * * * * * curl -fsS -H "Authorization: Bearer SEGREDO" "https://crm.deskcomm.com.br/api/v1/cron/event-log-drain" >/dev/null 2>&1
-*/5 * * * * cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh >/dev/null 2>&1'
+*/5 * * * * cd /root/Aula-Youtube/estallo-crm && bash hostgator-setup-kit/agent.sh >/dev/null 2>&1'
 
 cron_ok() {  # cron_ok <descrição> <esperado_no_resultado> <marcador> <legado> <linha_nova>
   local desc="$1" espera="$2" marcador="$3" legado="$4" nova="$5" out
@@ -982,7 +982,7 @@ NOVO_TAG='# deskcomm:/root/instalacao-nova'
 NOVA_URL='https://crm-novo.exemplo.com.br/api/v1/cron/event-log-drain'
 cron_ok "o drain do vizinho sobrevive"  'crm.deskcomm.com.br/api/v1/cron/event-log-drain' \
         "$NOVO_TAG" "$NOVA_URL" "* * * * * curl \"$NOVA_URL\" $NOVO_TAG"
-cron_ok "o agente do vizinho sobrevive" 'cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh' \
+cron_ok "o agente do vizinho sobrevive" 'cd /root/Aula-Youtube/estallo-crm && bash hostgator-setup-kit/agent.sh' \
         "$NOVO_TAG" "cd /root/instalacao-nova && bash hostgator-setup-kit/agent.sh" \
         "*/5 * * * * cd /root/instalacao-nova && bash hostgator-setup-kit/agent.sh $NOVO_TAG"
 cron_ok "a linha alheia (trend-radar) sobrevive" '/root/trend-radar/run_full_vps.sh' \
@@ -990,9 +990,9 @@ cron_ok "a linha alheia (trend-radar) sobrevive" '/root/trend-radar/run_full_vps
 
 # Re-executar a MESMA instalação substitui a própria linha em vez de empilhar —
 # inclusive a legada, escrita antes de o marcador existir.
-reexec="$(printf '%s\n' "$CRONTAB_VIZINHO" | cron_merge '# deskcomm:/root/Aula-Youtube/DeskcommCRM' \
-          'cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh' \
-          '*/5 * * * * cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh # deskcomm:/root/Aula-Youtube/DeskcommCRM')"
+reexec="$(printf '%s\n' "$CRONTAB_VIZINHO" | cron_merge '# deskcomm:/root/Aula-Youtube/estallo-crm' \
+          'cd /root/Aula-Youtube/estallo-crm && bash hostgator-setup-kit/agent.sh' \
+          '*/5 * * * * cd /root/Aula-Youtube/estallo-crm && bash hostgator-setup-kit/agent.sh # deskcomm:/root/Aula-Youtube/estallo-crm')"
 n_agent="$(printf '%s\n' "$reexec" | grep -cF 'hostgator-setup-kit/agent.sh')"
 if [ "$n_agent" = 1 ]; then printf '  ✓ re-executar a mesma instalação não duplica a linha\n'
 else printf '  ✗ re-executar duplicou: %s linhas de agent.sh\n' "$n_agent"; fail=1; fi
@@ -1448,7 +1448,7 @@ fi
 
 echo "proxy reverso: quem está com as portas 80/443"
 # A versão anterior só sabia procurar Traefik. Qualquer outro proxy — inclusive o
-# Caddy de OUTRO DeskcommCRM na mesma VPS — caía no ramo "portas livres", e a
+# Caddy de OUTRO Estallo CRM na mesma VPS — caía no ramo "portas livres", e a
 # instalação seguia até a fase 4 para morrer com "Bind for 0.0.0.0:80 failed:
 # port is already allocated". Medido numa VPS com produção rodando.
 # dono_das_portas lê o que o `docker ps` imprime de verdade. Os casos com "->"
@@ -1512,27 +1512,27 @@ dec_ok "Caddy de OUTRO Deskcomm → bloqueia" bloqueia "80 e 443" "outro"     "c
 # O fixture acima nomeia "outro Deskcomm" mas usa projeto DIFERENTE ("outro" vs
 # "crm") — e é justamente o nome do projeto que NÃO difere no caso real: o
 # projeto do compose é o basename da pasta, e toda cópia do repo se chama
-# DeskcommCRM. Medido numa VPS de produção em 2026-08-24: a instalação de uma
-# aula em /root/apagar7/DeskcommCRM viu o Caddy da produção em
-# /root/DeskcommCRM com o MESMO projeto `deskcommcrm`, concluiu "é a
+# Estallo CRM. Medido numa VPS de produção em 2026-08-24: a instalação de uma
+# aula em /root/apagar7/estallo-crm viu o Caddy da produção em
+# /root/estallo-crm com o MESMO projeto `estallo-crm`, concluiu "é a
 # re-execução" e subiu por cima — trocando o banco do CRM no ar sem um aviso.
 # Quem distingue as duas é a ÁRVORE (label com.docker.compose.project.working_dir),
 # não o nome.
 dec_ok "cópia irmã: mesmo projeto, OUTRA árvore → bloqueia" \
-  bloqueia "80 e 443" "deskcommcrm" "deskcommcrm" "caddy:2-alpine" "deskcommcrm-caddy-1" \
-  "/root/DeskcommCRM" "/root/apagar7/DeskcommCRM"
+  bloqueia "80 e 443" "estallo-crm" "estallo-crm" "caddy:2-alpine" "estallo-crm-caddy-1" \
+  "/root/estallo-crm" "/root/apagar7/estallo-crm"
 # O outro lado da mesma moeda: re-execução DE VERDADE é mesma árvore, e tem de
 # seguir passando (é o caminho que o kit manda usar para corrigir uma resposta).
 dec_ok "re-execução real: mesmo projeto, MESMA árvore → segue" \
-  caddy "80 e 443" "deskcommcrm" "deskcommcrm" "caddy:2-alpine" "deskcommcrm-caddy-1" \
-  "/root/DeskcommCRM" "/root/DeskcommCRM"
+  caddy "80 e 443" "estallo-crm" "estallo-crm" "caddy:2-alpine" "estallo-crm-caddy-1" \
+  "/root/estallo-crm" "/root/estallo-crm"
 # Contêiner sem o label de árvore (não foi o compose que criou, ou é antigo):
 # não dá para afirmar que é cópia irmã, e fechar aqui quebraria re-execução
 # legítima. Mantém o comportamento anterior — a varredura de portas continua
 # sendo a rede que pega o resto.
 dec_ok "sem árvore conhecida: mantém o comportamento anterior" \
-  caddy "80 e 443" "deskcommcrm" "deskcommcrm" "caddy:2-alpine" "deskcommcrm-caddy-1" \
-  "" "/root/apagar7/DeskcommCRM"
+  caddy "80 e 443" "estallo-crm" "estallo-crm" "caddy:2-alpine" "estallo-crm-caddy-1" \
+  "" "/root/apagar7/estallo-crm"
 dec_ok "Traefik da hospedagem → por ele"    traefik  "80 e 443" "coolify"   "crm" "traefik:v3.3"   "coolify-proxy"
 dec_ok "ocupante não identificado → bloqueia" bloqueia "80"     ""          "crm" ""              ""
 dec_ok "projeto vazio não casa projeto vazio" bloqueia "80"     ""          ""    "nginx"         "web"
@@ -2040,7 +2040,7 @@ STUB
   # sobrevive aos dois caminhos, com rede e sem.
   img_app="$(valor_no_env "$VPS_PROJ/.env" APP_IMAGE)"
   tag_app="${img_app##*:}"
-  for par in "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
+  for par in "WORKER_IMAGE:estallo-crm-worker" "SCHEDULER_IMAGE:estallo-crm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
     if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "${IMG_NS}/${repo}:${tag_app}" ]; then
       printf '  ✗ %s não acompanha a versão do app (%s): %s\n' "$chave" "$tag_app" \
@@ -2222,7 +2222,7 @@ STUB
   rodar install.sh --yes >/dev/null
   unset REPO_URL
 
-  for par in "APP_IMAGE:deskcommcrm" "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
+  for par in "APP_IMAGE:estallo-crm" "WORKER_IMAGE:estallo-crm-worker" "SCHEDULER_IMAGE:estallo-crm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
     if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "${IMG_NS}/${repo}:1.10.0" ]; then
       printf '  ✗ %s não foi pinado na versão resolvida (1.10.0): %s\n' "$chave" \
@@ -2240,7 +2240,7 @@ rm -rf "$TMP_PIN"
 
 echo "packaging: a tag do git não basta — as imagens têm de existir"
 # A tag nasce minutos antes das imagens, e as do worker/scheduler só passaram a
-# existir depois das releases que já estão publicadas: `deskcomm-worker:1.2.1`
+# existir depois das releases que já estão publicadas: `estallo-crm-worker:1.2.1`
 # nunca vai existir, porque a v1.2.1 é passado. Sem sondar o registry, o .env do
 # cliente receberia referências impossíveis e o kit as construiria aqui EM
 # SILÊNCIO, do topo da main — app de uma release, worker de outro código.
@@ -2708,13 +2708,13 @@ echo "integração: instalar de uma CÓPIA IRMÃ, com o CRM já no ar (2026-08-2
 # regra (dentro de decide_proxy) ou o call site (deixar de passar a árvore). Um
 # teste só da função fica verde enquanto o produto instala por cima da produção.
 #
-# A VPS deste teste é a que aconteceu de verdade: um DeskcommCRM no ar em
-# /root/DeskcommCRM (Caddy publicando 80/443, projeto `deskcommcrm`), e o
-# instalador rodando de OUTRA cópia — cuja pasta também se chama DeskcommCRM,
+# A VPS deste teste é a que aconteceu de verdade: um Estallo CRM no ar em
+# /root/estallo-crm (Caddy publicando 80/443, projeto `estallo-crm`), e o
+# instalador rodando de OUTRA cópia — cuja pasta também se chama Estallo CRM,
 # então o projeto colide e a versão anterior dizia "é a re-execução, siga".
 TMP_IRMA="$(mktemp -d)"
 (
-  montar_vps "$TMP_IRMA" "DeskcommCRM" <<'STUB'
+  montar_vps "$TMP_IRMA" "estallo-crm" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
 case "$1" in
@@ -2724,10 +2724,10 @@ case "$1" in
   # O Caddy da instalação que está NO AR, com o MESMO nome de projeto.
   ps)      for a in "$@"; do [ "$a" = "network=host" ] && em_host=1; done
            [ "${em_host:-0}" = 1 ] && exit 0
-           printf 'deskcommcrm-caddy-1|deskcommcrm|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
+           printf 'estallo-crm-caddy-1|estallo-crm|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
            exit 0 ;;
   # A árvore que pariu aquele contêiner — o dado que separa irmã de re-execução.
-  inspect) case "$*" in *working_dir*) printf '/root/DeskcommCRM\n' ;; esac; exit 0 ;;
+  inspect) case "$*" in *working_dir*) printf '/root/estallo-crm\n' ;; esac; exit 0 ;;
   network) case "$2" in inspect) exit 1 ;; esac; exit 0 ;;
 esac
 exit 0
@@ -2739,12 +2739,12 @@ STUB
 
   # 1. Recusa. O sintoma do defeito era instalar em silêncio; qualquer coisa que
   #    não seja parar aqui é o defeito de volta.
-  if ! grep -q 'Já existe um DeskcommCRM NO AR' <<<"$saida"; then
+  if ! grep -q 'Já existe um Estallo CRM NO AR' <<<"$saida"; then
     printf '  ✗ NÃO recusou a instalação por cima da que está no ar\n'
     printf '     últimas linhas: %s\n' "$(printf '%s' "$saida" | tail -3 | tr '\n' ' ')"; exit 1
   fi
   # 2. Nomeia a árvore do OUTRO — sem isso quem lê não sabe qual pasta usar.
-  if ! grep -q '/root/DeskcommCRM' <<<"$saida"; then
+  if ! grep -q '/root/estallo-crm' <<<"$saida"; then
     printf '  ✗ a recusa não diz ONDE está a instalação que já existe\n'; exit 1
   fi
   # 3. Ensina a saída acionável (atualizar a que existe).
@@ -2770,7 +2770,7 @@ case "\$1" in
   run)     case "\$*" in *--entrypoint*) exit 1 ;; esac; exit 0 ;;
   ps)      for a in "\$@"; do [ "\$a" = "network=host" ] && em_host=1; done
            [ "\${em_host:-0}" = 1 ] && exit 0
-           printf 'deskcommcrm-caddy-1|deskcommcrm|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
+           printf 'estallo-crm-caddy-1|estallo-crm|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp\n'
            exit 0 ;;
   inspect) case "\$*" in *working_dir*) printf '%s\n' "$VPS_PROJ" ;; esac; exit 0 ;;
   network) case "\$2" in inspect) exit 1 ;; esac; exit 0 ;;
@@ -2780,7 +2780,7 @@ STUB2
   chmod +x "$VPS_RAIZ/bin/docker"
   saida="$(rodar install.sh --yes)"
   chegou_na_deteccao || exit 1
-  if grep -q 'Já existe um DeskcommCRM NO AR' <<<"$saida"; then
+  if grep -q 'Já existe um Estallo CRM NO AR' <<<"$saida"; then
     printf '  ✗ bloqueou a RE-EXECUÇÃO legítima (mesma árvore) — o kit manda rodar de novo\n'; exit 1
   fi
   printf '  ✓ e a re-execução de dentro da própria árvore continua passando\n'
@@ -3515,8 +3515,8 @@ np_ok() {  # np_ok <caminho> <esperado>
   if [ "$real" = "$2" ]; then printf '  ✓ %s → %s\n' "$1" "$real"
   else printf '  ✗ %s → deu [%s], esperava [%s]\n' "$1" "$real" "$2"; fail=1; fi
 }
-np_ok /root/deskcommcrm  deskcommcrm
-np_ok /root/DeskcommCRM  deskcommcrm
+np_ok /root/estallo-crm  estallo-crm
+np_ok /root/Estallo-CRM  estallo-crm
 np_ok /root/_deskcomm    deskcomm
 np_ok /root/-deskcomm    deskcomm
 np_ok /root/_-_crm       crm
@@ -3536,7 +3536,7 @@ echo "re-execução: o kit é chamado por caminho RELATIVO, como o README manda"
 # leitura do próprio script), que é o que regride em silêncio.
 reexec_ok() {
   local desc="$1" dir raiz achou linha
-  raiz="$(mktemp -d)"; dir="$raiz/deskcommcrm"; mkdir -p "$dir"
+  raiz="$(mktemp -d)"; dir="$raiz/estallo-crm"; mkdir -p "$dir"
   cp ./install.sh "$raiz/install.sh"
   # A LINHA REAL do install.sh, extraída do arquivo — não uma reimplementação.
   # Reimplementar o mecanismo aqui deixaria este caso VERDE com o install.sh
@@ -3569,7 +3569,7 @@ reexec_ok() {
 # decorativo.
 reexec_neg() {
   local dir raiz linha achou
-  raiz="$(mktemp -d)"; dir="$raiz/deskcommcrm"; mkdir -p "$dir"
+  raiz="$(mktemp -d)"; dir="$raiz/estallo-crm"; mkdir -p "$dir"
   cp ./install.sh "$raiz/install.sh"
   linha="$(grep -n 'CONHECIDAS=' "$raiz/install.sh" | head -1 | cut -d: -f2-)"
   if [ -z "$linha" ]; then

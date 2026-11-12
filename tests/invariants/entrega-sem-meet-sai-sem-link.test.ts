@@ -58,17 +58,6 @@ async function cenario(local: string, meetingState: string, url: string | null) 
     [contact, org],
   );
   const boundary = await criarOrigemDeFollowup(pool, org, contact);
-  const canal = (
-    await pool.query("select channel_session_id c from conversations where id=$1", [
-      boundary.conversation_id,
-    ])
-  ).rows[0].c as string;
-  // Sem throttle e com janela de 24h: o que está sob teste é o conteúdo da
-  // mensagem, não a régua de anti-banimento.
-  await pool.query(
-    "insert into channel_knobs(organization_id,channel_session_id,throttle_ms,jitter_max_ms,window_start_hour,window_end_hour) values($1,$2,0,0,0,24)",
-    [org, canal],
-  );
   await pool.query(
     "update conversations set assignee_kind='ai',bot_silenced_until=null where id=$1",
     [boundary.conversation_id],

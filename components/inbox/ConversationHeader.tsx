@@ -1,5 +1,5 @@
 "use client";
-import { useState, type RefObject } from "react";
+import { useMemo, useState, type RefObject } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import {
@@ -12,11 +12,32 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, ArrowRight, MagnifyingGlass } from "@/lib/ui/icons";
+import {
+  ArrowRight,
+  ArrowsLeftRight,
+  CaretLeft,
+  Check,
+  DotsThree,
+  MagnifyingGlass,
+  Robot,
+  SidebarSimple,
+  UserCircle,
+  VideoCamera,
+} from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
+import { SnoozeButton } from "@/components/inbox/SnoozeButton";
+import { DialButton } from "@/components/voice/DialButton";
+import { servidorDeVideo } from "@/lib/video/jitsi";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -26,7 +47,6 @@ import {
 } from "@/hooks/contacts/usePersonalContact";
 import { ROLE_RANK } from "@/lib/auth/types";
 import {
-  useArchiveConversation,
   useCloseConversation,
   useReopenConversation,
 } from "@/hooks/inbox/useCloseConversation";
@@ -36,8 +56,6 @@ import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
-import { SnoozeButton } from "@/components/inbox/SnoozeButton";
-import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -57,6 +75,12 @@ interface Props {
   botaoBuscaRef?: RefObject<HTMLButtonElement | null>;
   /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
   onAbrirConversa?: (id: string) => void;
+  /** A ficha do contato está à vista (coluna ou gaveta) — pinta o botão da ficha. */
+  fichaVisivel?: boolean;
+  /** Mostra/esconde a ficha do contato (o botão à direita do cabeçalho). */
+  onAlternarFicha?: () => void;
+  /** A seta de voltar para a lista — só aparece onde há uma coluna por vez. */
+  onVoltar?: () => void;
 }
 
 /**
@@ -85,12 +109,22 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Arquivada",
 };
 
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  if (partes.length === 1) return (partes[0] ?? "").slice(0, 2).toUpperCase();
+  return ((partes[0]?.[0] ?? "") + (partes[partes.length - 1]?.[0] ?? "")).toUpperCase();
+}
+
 export function ConversationHeader({
   conversation,
   onAbrirConversa,
   onBuscar,
   buscaAberta,
   botaoBuscaRef,
+  fichaVisivel = false,
+  onAlternarFicha,
+  onVoltar,
 }: Props) {
   const t = useT();
   const { user, activeOrg } = useAuth();
@@ -98,7 +132,6 @@ export function ConversationHeader({
   const release = useReleaseConversation();
   const close = useCloseConversation();
   const reopen = useReopenConversation();
-  const arquivar = useArchiveConversation();
   const retomar = useResumeAiAttendance();
   const pausar = usePauseAiAttendance();
   // "Existe automático nesta org?" — sem isto o selo afirmava que o robô estava
@@ -106,8 +139,9 @@ export function ConversationHeader({
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
-  const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
+  const [videoAberto, setVideoAberto] = useState(false);
+  const temVideo = useMemo(() => servidorDeVideo() !== null, []);
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
@@ -197,143 +231,103 @@ export function ConversationHeader({
   if (user.support?.access_mode === "support_readonly") return <header className="flex items-center justify-between border-b p-4">
     <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>
   </header>;
+  // 16/10/2026 — o cabeçalho do MODELO do dono: identidade à esquerda (avatar,
+  // nome, situação, telefone · quem manda) e, à direita, só o que se usa a
+  // toda hora: buscar, Assumir/Liberar, Fechar/Reabrir, o "⋯" com o resto e o
+  // botão da ficha. Transferir, Lembrar, pessoal, Devolver/Pausar o automático,
+  // Ligar e Vídeo moram no "⋯" (antes eram botões que quebravam a barra em duas
+  // linhas). Os rótulos e `data-testid` de cada ação continuam os mesmos.
   return (
-    // `flex-wrap` porque este header travava a LARGURA DA TELA INTEIRA. Ele
-    // media 707px de `min-content` — a identidade do contato encolhia bem
-    // (`min-w-0` + `truncate`), mas a barra de ações era `shrink-0` e não
-    // quebrava. Como a coluna do meio do inbox é `1fr`, que é
-    // `minmax(auto, 1fr)`, ela não podia ficar menor que esses 707px, e o
-    // painel de CRM era empurrado 311px para fora da viewport em 1280px.
-    //
-    // Reorganizar em vez de esconder: acima de ~1440px o header fica IDÊNTICO ao
-    // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
-    // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
-    // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <ChannelLogo channel={conversation.channel_sessions} size={20} />
-          <h2 className="min-w-0 truncate text-sm font-semibold" title={displayName}>{displayName}</h2>
-          <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px]">
-            {t(STATUS_LABEL[status] ?? status)}
-          </Badge>
-          {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
-              escrever agora?" se faz ANTES de digitar, não depois de receber um
-              `failed` com um código de cinco dígitos. */}
-          <JanelaSelo
-            provider={conversation.channel_sessions?.provider ?? null}
-            lastInboundAt={conversation.last_inbound_at}
-          />
-          {/* #2383: O CANAL DESTA CONVERSA, NO CABEÇALHO — a acepção que faltava
-              da issue: a lista já dizia por onde a conversa entrou, a conversa
-              ABERTA não dizia. O logo ao lado nomeia o provedor, não o número:
-              com "Peças" e "Vendas" conectados, ele é idêntico nos dois casos.
-
-              O TEXTO é o mesmo da lista e da tela `/app/connections`
-              (`rotuloDoCanalDaConversa` → `nomeDoCanal`): uma segunda cadeia de
-              regras aqui seria como as leituras de "quem manda" divergiram —
-              três telas, um fato, uma fonte.
-
-              `max-w` + `truncate` respondem ao critério de aceite "layout
-              utilizável com nomes de canal maiores": o badge encolhe e o `title`
-              devolve o texto inteiro. Sem canal (grupo, conversa sem sessão,
-              não-WA) não há rótulo nenhum e esta barra fica exatamente como
-              estava — o badge é acréscimo, não substituição. */}
-          {rotuloCanal && (
-            <Badge
-              variant="outline"
-              className="h-4 min-w-0 max-w-[9rem] truncate px-1.5 text-[10px]"
-              title={`${t("Entrou por")} ${rotuloCanal}`}
-              data-testid="canal-da-conversa"
-            >
-              <span className="truncate">{rotuloCanal}</span>
-            </Badge>
-          )}
+    <>
+    <div className="ibx-chat-header">
+      {onVoltar && (
+        <button
+          type="button"
+          className="ibx-icon-button ibx-show-list"
+          onClick={onVoltar}
+          aria-label={t("Voltar para a lista de conversas")}
+          title={t("Conversas")}
+        >
+          <CaretLeft className="ibx-icon" aria-hidden />
+        </button>
+      )}
+      <div className="ibx-chat-identity">
+        <span className="ibx-avatar">
+          <Avatar className="ibx-avatar-face">
+            {c?.avatar_storage_path && !c?.is_anonymized ? (
+              <AvatarImage src={`/api/v1/contacts/${c.id}/avatar`} alt="" className="object-cover" />
+            ) : null}
+            <AvatarFallback className="ibx-tom-areia text-[inherit] font-medium">
+              {iniciais(displayName)}
+            </AvatarFallback>
+          </Avatar>
+        </span>
+        <div className="ibx-chat-identity-text">
+          <div className="ibx-chat-name-row">
+            <h2 className="ibx-chat-contact-name" title={displayName}>
+              {displayName}
+            </h2>
+            <span className="ibx-status">{t(STATUS_LABEL[status] ?? status)}</span>
+            {/* Ao lado do estado: a pergunta "dá para escrever agora?" se faz
+                ANTES de digitar, não depois de um `failed` de cinco dígitos. */}
+            <JanelaSelo
+              provider={conversation.channel_sessions?.provider ?? null}
+              lastInboundAt={conversation.last_inbound_at}
+            />
+            {/* #2383: por onde a conversa entrou — o mesmo texto da lista e da
+                tela de canais. Sem canal, não existe. */}
+            {rotuloCanal && (
+              <Badge
+                variant="outline"
+                className="h-4 min-w-0 max-w-[9rem] truncate px-1.5 text-[10px]"
+                title={`${t("Entrou por")} ${rotuloCanal}`}
+                data-testid="canal-da-conversa"
+              >
+                <span className="truncate">{rotuloCanal}</span>
+              </Badge>
+            )}
+          </div>
+          <div className="ibx-chat-subtitle">
+            <ChannelLogo channel={conversation.channel_sessions} size={11} />
+            {phone && <span>{phone}</span>}
+            {phone && <span aria-hidden>·</span>}
+            {/* QUEM ESTÁ NO COMANDO — o mesmo componente do card do funil e do
+                dossiê, para a pergunta ter uma resposta só. */}
+            <span className="ibx-chat-owner" data-testid="comando-da-conversa">
+              {comando.quem === "humano" ? (
+                <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
+              ) : comando.quem === "automatico" ? (
+                <OwnerBadge ownerKind="ai" ownerName={t("Automático")} compacto />
+              ) : (
+                t("Sem responsável")
+              )}
+            </span>
+          </div>
         </div>
-
-        {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
-            pessoa, anel vazado para o automático. É o mesmo componente do card do
-            funil e do dossiê: um terceiro jeito de dizer "quem manda", por cor ou
-            por texto, faria a mesma pergunta ter três respostas diferentes na
-            mesma tela. Cor não sobrevive ao daltonismo nem ao teste do metro. */}
-        <div className="mt-1 flex items-center gap-2" data-testid="comando-da-conversa">
-          {comando.quem === "humano" ? (
-            <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} />
-          ) : comando.quem === "automatico" ? (
-            <OwnerBadge ownerKind="ai" ownerName={t("Automático")} />
-          ) : (
-            // `ninguem`, `aguardando` e `encerrada` sem dono caem aqui: o disco
-            // TRACEJADO do OwnerBadge, que é como o funil já desenha "ninguém".
-            <OwnerBadge ownerKind={null} ownerName={null} />
-          )}
-        </div>
-        {phone && (
-          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
-            <Phone size={11} weight="regular" aria-hidden /> {phone}
-          </p>
-        )}
       </div>
 
-      {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
-          barra pode encolher e quebrar internamente, e os botões continuam
-          todos visíveis e clicáveis — só que em duas linhas quando preciso.
-          Esta coluna existe para o selo do automático morar ABAIXO da barra
-          (#1625): na linha do nome ele alargava a identidade e empurrava a
-          barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
-          motivo da barra. */}
-      <div className="flex min-w-0 flex-col items-end gap-1">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {/* Primeira da barra e sem rótulo escrito: é ferramenta de LEITURA, não
-            ação de atendimento, e não muda de lugar com o estado da conversa.
-            Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez
-            (ver o comentário do interruptor abaixo). */}
+      <div className="ibx-chat-actions">
         {onBuscar && (
-          <Button
+          <button
             ref={botaoBuscaRef}
-            size="sm"
-            variant="ghost"
-            className="w-11 px-0 lg:w-8"
+            type="button"
+            className="ibx-icon-button ibx-busca-na-conversa"
             onClick={onBuscar}
             aria-label={t("Buscar nesta conversa")}
             title={t("Buscar nesta conversa")}
             aria-expanded={buscaAberta}
           >
-            <MagnifyingGlass size={16} aria-hidden />
-          </Button>
+            <MagnifyingGlass className="ibx-icon" aria-hidden />
+          </button>
         )}
-        {/* A chamada usa o telefone da ficha, mesmo quando o contato chegou por
-            outro canal. Grupos não representam uma pessoa para ligar. */}
-        {!conversation.is_group && c?.id && (
-          <DialButton contactId={c.id} hasPhone={!!c.phone_number} />
-        )}
-        {/* Videochamada (#2440): sem JITSI_SERVER_URL este botão não renderiza,
-            então ele não ocupa lugar nem na instalação que não oferece a feature.
-            A sala é aleatória por chamada (#2441) — não depende de telefone,
-            só do link ir pelo chat.
-
-            `provider`/`lastInboundAt`, `bloqueio` e `encerrada` vêm para o
-            botão seguir a MESMA régua do composer: janela de 24h (a rota não
-            barra quem envia da tela — vira 131047 silencioso, #1614), a trava
-            de contato e a de conversa encerrada. Os textos saem da mesma função
-            do composer (lib/inbox/motivo-do-envio-bloqueado.ts); encerrada só
-            desabilita, sem texto, como o composer faz. `supportReadonly` fica
-            de fora: ele mora no `user`, que este componente não recebe. */}
-        <VideoCallButton
-          conversationId={conversation.id}
-          provider={conversation.channel_sessions?.provider ?? null}
-          lastInboundAt={conversation.last_inbound_at}
-          bloqueio={motivoDoContato(c, t)}
-          encerrada={status === "closed"}
-        />
         {isOpen && (
-          <Button
-            size="sm"
-            variant="default"
+          <button
+            type="button"
+            className="ibx-button ibx-primary"
             disabled={claim.isPending}
             // O rótulo NÃO muda (é contrato: `inbox-header-nao-trava` e o
-            // dicionário de espanhol o citam). O que faltava era a consequência
-            // dita: desde a 0173 assumir também para o atendimento automático, e
-            // um botão que muda duas coisas precisa anunciar as duas.
+            // dicionário de espanhol o citam). Desde a 0173 assumir também para
+            // o atendimento automático, e o botão anuncia as duas coisas.
             title={t("Você passa a responder esta conversa e o atendimento automático para aqui.")}
             onClick={() =>
               claim.mutate({
@@ -343,169 +337,192 @@ export function ConversationHeader({
             }
           >
             {t("Assumir")}
-          </Button>
+          </button>
         )}
         {isMineAssigned && (
-          <Button
-            size="sm"
-            variant="outline"
+          <button
+            type="button"
+            className="ibx-button ibx-secondary"
             disabled={release.isPending}
             onClick={() => release.mutate({ conversation_id: conversation.id })}
           >
             {t("Liberar")}
-          </Button>
+          </button>
         )}
-        {/* O INTERRUPTOR. Um botão, dois rótulos, um slot.
-            Fica ANTES de transferir/fechar porque é a ação que a pessoa procura
-            quando terminou o que tinha para fazer aqui.
-
-            Dois botões lado a lado foi medido e recusado: a barra de ações já
-            estourou a caixa útil de 392px em 1280px uma vez (ver o comentário no
-            topo do JSX), e um botão a mais custa ~85px — o cabeçalho ganharia uma
-            segunda fileira justo na largura mais apertada. Os dois estados são
-            mutuamente exclusivos, então nunca precisam existir juntos.
-
-            O `data-testid` do lado de VOLTA é o mesmo de antes: `escalacao-ciclo`
-            o clica, e rótulo/testid visível é contrato. */}
-        {podeDevolver && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={retomar.isPending}
-            data-testid="devolver-ao-automatico"
-            // O ALCANCE DA VOLTA NÃO É SEMPRE O MESMO, e a tela precisa dizer qual é.
-            //
-            // `devolverAtendimentoAoAgente` limpa `contacts.force_human`, que é do
-            // CLIENTE e não desta conversa: quando foi ela que travou, o clique
-            // religa o automático para TODAS as conversas daquela pessoa. Um botão
-            // que às vezes faz mais do que o nome promete precisa dizer quando.
-            title={
-              motivo === "contato_travado"
-                ? t("Religa o atendimento automático para este cliente — vale para todas as conversas dele.")
-                : t("Devolve esta conversa ao atendimento automático.")
-            }
-            onClick={() => retomar.mutate({ conversation_id: conversation.id })}
-          >
-            {retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}
-          </Button>
-        )}
-        {podePausar && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pausar.isPending}
-            data-testid="pausar-o-automatico"
-            // `podePausar` já exige dono != null, então este botão NUNCA aparece
-            // sem dono — prometer "você assume" aqui seria prometer o que a rota
-            // não faz: com dono, ela só cala, nunca rouba a conversa de quem a tem.
-            title={t("O atendimento automático para nesta conversa. O dono não muda.")}
-            onClick={() => pausar.mutate({ conversation_id: conversation.id })}
-          >
-            {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
-          </Button>
-        )}
-        {!encerrada && (
-          <Button size="sm" variant="outline" onClick={() => setReassignOpen(true)}>
-            {t("Transferir")}
-          </Button>
-        )}
-        {!encerrada && (
-          <SnoozeButton
-            conversationId={conversation.id}
-            snoozeUntil={conversation.snooze_until ?? null}
-          />
-        )}
-        {!encerrada && (
-          <Button
-            size="sm"
-            variant="outline"
+        {!encerrada ? (
+          <button
+            type="button"
+            className="ibx-button ibx-secondary ibx-close-conversation"
             disabled={close.isPending}
             onClick={() => setConfirmFecharOpen(true)}
+            aria-label={t("Fechar")}
+            title={t("Fechar")}
           >
-            {t("Fechar")}
-          </Button>
-        )}
-        {encerrada && <Button size="sm" variant="outline" disabled={reopen.isPending}
-          onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
-          {t("Reabrir")}
-        </Button>}
-        {/* ARQUIVAR (#923): tira da frente sem destruir.
-            A conversa já arquivada não mostra o botão — arquivar duas vezes não
-            é um gesto que exista, e o botão só reapareceria como um clique que
-            não muda nada. Fechada E resolvida mostram: são exatamente as que se
-            quer mandar para o arquivo depois de encerradas, e é o caminho que
-            faz a aba "Arquivadas" deixar de ser uma pasta morta.
-            A permissão é a mesma de fechar (a rota `/conversations/[id]` é
-            `requireSupportWrite`): quem pode encerrar, pode arquivar. */}
-        {status !== "archived" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={arquivar.isPending}
-            onClick={() => setConfirmArquivarOpen(true)}
+            <Check className="ibx-icon" aria-hidden />
+            <span>{t("Fechar")}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ibx-button ibx-secondary"
+            disabled={reopen.isPending}
+            onClick={() =>
+              reopen.mutate({
+                conversation_id: conversation.id,
+                expected_revision: conversation.service_revision,
+              })
+            }
           >
-            {arquivar.isPending ? t("Arquivando...") : t("Arquivar")}
-          </Button>
+            {t("Reabrir")}
+          </button>
         )}
-        {/* PESSOAL (spec 21, etapa 15): marcar tira a conversa do inbox na
-            hora; desmarcar relista. O `data-testid` é contrato do e2e da
-            spec (`contato-pessoal-sai-da-operacao.spec.ts`). */}
-        {podeMarcarPessoal && c?.id && !ehPessoal && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={marcarPessoal.isPending}
-            data-testid="marcar-pessoal"
-            title={t("Tira este contato da operação: a conversa sai do inbox.")}
-            onClick={() => setConfirmPessoalOpen(true)}
+        <span className="ibx-toolbar-divider" aria-hidden />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="ibx-icon-button"
+              aria-label={t("Mais ações da conversa")}
+              title={t("Mais ações da conversa")}
+              data-testid="mais-acoes-da-conversa"
+            >
+              <DotsThree className="ibx-icon" weight="bold" aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={6} className="ibx ibx-floating ibx-menu">
+            {!encerrada && (
+              <DropdownMenuItem className="ibx-menu-item" onSelect={() => setReassignOpen(true)}>
+                <ArrowsLeftRight className="ibx-icon" aria-hidden />
+                {t("Transferir")}
+              </DropdownMenuItem>
+            )}
+            {!encerrada && (
+              <SnoozeButton
+                conversationId={conversation.id}
+                snoozeUntil={conversation.snooze_until ?? null}
+                comoItemDeMenu
+              />
+            )}
+            {/* O INTERRUPTOR do automático: um item, dois rótulos — os dois
+                estados são mutuamente exclusivos. Os `data-testid` são os de
+                antes (`escalacao-ciclo` e afins os clicam). */}
+            {podeDevolver && (
+              <DropdownMenuItem
+                className="ibx-menu-item"
+                disabled={retomar.isPending}
+                data-testid="devolver-ao-automatico"
+                title={
+                  motivo === "contato_travado"
+                    ? t("Religa o atendimento automático para este cliente — vale para todas as conversas dele.")
+                    : t("Devolve esta conversa ao atendimento automático.")
+                }
+                onSelect={() => retomar.mutate({ conversation_id: conversation.id })}
+              >
+                <Robot className="ibx-icon" aria-hidden />
+                {retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}
+              </DropdownMenuItem>
+            )}
+            {podePausar && (
+              <DropdownMenuItem
+                className="ibx-menu-item"
+                disabled={pausar.isPending}
+                data-testid="pausar-o-automatico"
+                title={t("O atendimento automático para nesta conversa. O dono não muda.")}
+                onSelect={() => pausar.mutate({ conversation_id: conversation.id })}
+              >
+                <Robot className="ibx-icon" aria-hidden />
+                {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
+              </DropdownMenuItem>
+            )}
+            {/* PESSOAL (spec 21, etapa 15). O `data-testid` é contrato do e2e. */}
+            {podeMarcarPessoal && c?.id && !ehPessoal && (
+              <DropdownMenuItem
+                className="ibx-menu-item"
+                disabled={marcarPessoal.isPending}
+                data-testid="marcar-pessoal"
+                title={t("Tira este contato da operação: a conversa sai do inbox.")}
+                onSelect={() => setConfirmPessoalOpen(true)}
+              >
+                <UserCircle className="ibx-icon" aria-hidden />
+                {t("Marcar como pessoal")}
+              </DropdownMenuItem>
+            )}
+            {podeMarcarPessoal && c?.id && ehPessoal && (
+              <DropdownMenuItem
+                className="ibx-menu-item"
+                disabled={desmarcarPessoal.isPending}
+                data-testid="desmarcar-pessoal"
+                title={t("Devolve este contato à operação: a conversa volta ao inbox.")}
+                onSelect={() => desmarcarPessoal.mutate()}
+              >
+                <UserCircle className="ibx-icon" aria-hidden />
+                {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
+              </DropdownMenuItem>
+            )}
+            <div className="ibx-menu-separator" role="separator" />
+            {/* A chamada usa o telefone da ficha; grupos não têm uma pessoa
+                para ligar. A régua (sessão de voz pareada) mora no DialButton. */}
+            {!conversation.is_group && c?.id && (
+              <DialButton contactId={c.id} hasPhone={!!c.phone_number} comoItemDeMenu />
+            )}
+            {temVideo && (
+              <DropdownMenuItem
+                className="ibx-menu-item"
+                data-testid="btn-videochamada"
+                onSelect={() => setVideoAberto(true)}
+              >
+                <VideoCamera className="ibx-icon" aria-hidden />
+                {t("Videochamada")}
+              </DropdownMenuItem>
+            )}
+            {c?.id && (
+              <DropdownMenuItem className="ibx-menu-item" asChild>
+                <Link href={`/app/contacts/${c.id}`}>
+                  <ArrowRight className="ibx-icon" aria-hidden />
+                  {t("Ver contato")}
+                </Link>
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {onAlternarFicha && (
+          <button
+            type="button"
+            className={cn("ibx-icon-button", fichaVisivel && "ibx-ativo")}
+            onClick={onAlternarFicha}
+            aria-label={t("Informações do contato")}
+            aria-pressed={fichaVisivel}
+            title={t("Informações do contato")}
+            data-testid="alternar-ficha"
           >
-            {t("Marcar como pessoal")}
-          </Button>
-        )}
-        {podeMarcarPessoal && c?.id && ehPessoal && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={desmarcarPessoal.isPending}
-            data-testid="desmarcar-pessoal"
-            title={t("Devolve este contato à operação: a conversa volta ao inbox.")}
-            onClick={() => desmarcarPessoal.mutate()}
-          >
-            {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
-          </Button>
-        )}
-        {/* `xl:hidden` porque a partir de 1280px o painel lateral de CRM entra
-            na tela — e ele já tem um "Ver contato", para o MESMO contato, a um
-            palmo de distância. Duas portas idênticas na mesma tela não são
-            redundância inofensiva: são a linha a mais que empurrava a barra de
-            ações para uma segunda fileira justo na largura mais apertada.
-            Medido: sem a duplicata, os botões voltam a caber em UMA linha em
-            1280px.
-
-            Abaixo de 1280 o painel não existe, e aí esta é a única porta para o
-            contato — por isso a condição é a mesma do painel, e não um valor
-            escolhido à parte. Não é esconder ação; é não repeti-la. */}
-        {c?.id && (
-          <Button asChild size="sm" variant="ghost" className="xl:hidden">
-            <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
-              {t("Ver contato")}
-              <ArrowRight size={12} weight="regular" aria-hidden />
-            </Link>
-          </Button>
+            <SidebarSimple className="ibx-icon" mirrored aria-hidden />
+          </button>
         )}
       </div>
-        {/* O aviso pertence à operação automática. Abaixo da barra ele não
-            alarga a ficha do contato nem muda a posição dos botões.
-            Sem esta marca, a conversa em que o robô está calado tem exatamente
-            a mesma cara de uma conversa normal. O testid é contrato:
-            `escalacao-ciclo.spec.ts` o clica. */}
-        {motivo !== null && (
-          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
-            title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
-            {t(ROTULO_DO_MOTIVO[motivo])}
-          </Badge>
-        )}
+    </div>
+    {/* O aviso pertence à operação automática: sem esta marca, a conversa em
+        que o robô está calado tem a mesma cara de uma conversa normal. O
+        testid é contrato: `escalacao-ciclo.spec.ts` o lê. */}
+    {motivo !== null && (
+      <div className="ibx-motivo">
+        <Badge
+          variant="outline"
+          className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+          title={t(ROTULO_DO_MOTIVO[motivo])}
+          data-testid="badge-atendimento-humano"
+        >
+          {t(ROTULO_DO_MOTIVO[motivo])}
+        </Badge>
       </div>
+    )}
+    <VideoCallButton
+      conversationId={conversation.id}
+      provider={conversation.channel_sessions?.provider ?? null}
+      lastInboundAt={conversation.last_inbound_at}
+      bloqueio={motivoDoContato(c, t)}
+      encerrada={status === "closed"}
+      controle={{ aberto: videoAberto, onAbertoChange: setVideoAberto }}
+    />
       <ReassignDialog
         conversationId={conversation.id}
         open={reassignOpen}
@@ -544,42 +561,6 @@ export function ConversationHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {/* A confirmação precisa dizer o que ACONTECE, e o que acontece depende
-          do estado. `fn_conversation_set_status` trata `archived` como
-          terminal: encerra o atendimento (grava `service_closed_at`,
-          incrementa a revisão) e, com isso, desfaz a pausa do automático. Um
-          atendente que leia "arquivar = tirar da vista, volto depois"
-          encerraria o atendimento sem saber — e o robô voltaria a responder
-          no próximo "oi" do cliente. Por isso a descrição só aparece quando
-          `!encerrada`: quando já está encerrada, arquivar não muda o
-          atendimento, só o lugar onde a conversa mora. */}
-      <AlertDialog open={confirmArquivarOpen} onOpenChange={setConfirmArquivarOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("Arquivar esta conversa?")}</AlertDialogTitle>
-            {!encerrada && (
-              <AlertDialogDescription>
-                {t(
-                  "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta.",
-                )}
-              </AlertDialogDescription>
-            )}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() =>
-                arquivar.mutate({
-                  conversation_id: conversation.id,
-                  expected_revision: conversation.service_revision,
-                })
-              }
-            >
-              {t("Arquivar")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       {/* A confirmação diz o que ACONTECE ao marcar: a conversa fecha e sai do
           atendente, e o contato fica inutilizado para envio — sem apagar nada.
           Desmarcar é direto no botão porque só relista o que já está lá. */}
@@ -601,6 +582,6 @@ export function ConversationHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

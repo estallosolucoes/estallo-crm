@@ -6,6 +6,8 @@ version: 0.1
 date: 2026-04-28
 ---
 
+> **Padrão visual vigente:** [Design System Estallo](../README.md). Esta pasta registra jornadas e estados operacionais; referências visuais herdadas não substituem os tokens atuais. O catálogo executável de navegação é `lib/navigation/registry.ts`.
+
 # 04 — Clickflows
 
 > Diagramas Mermaid `flowchart` dos fluxos críticos. Decisões com `{}`, telas/estados com `()`. Cada fluxo cobre caminho feliz + falhas principais.

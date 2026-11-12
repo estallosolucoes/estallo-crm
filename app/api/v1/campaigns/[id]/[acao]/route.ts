@@ -34,7 +34,7 @@ import {
   type Desfecho,
 } from "@/lib/campanhas/acoes";
 import { agendarSchema, testarSchema } from "@/lib/campanhas/schemas";
-import { knobsDoCanal } from "@/lib/automation/janela-do-canal";
+import { fusoDaOrganizacao } from "@/lib/tempo/fuso-da-organizacao";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -133,10 +133,10 @@ export async function POST(
       if (!parsed.success) {
         return fail("validation_failed", t("Escolha um contato para o teste."), 422, { requestId });
       }
-      // O fuso é o do NÚMERO (channel_knobs), que é o mesmo que a janela de
-      // envio usa — a saudação do teste tem de ser a que o destinatário veria.
-      const knobs = await knobsDoCanal(admin, authz.org.orgId, campanha.channel_session_id);
-      desfecho = await testarAcao(admin, campanha, parsed.data.contact_id, agora, knobs.timezone);
+      // O fuso é o da ORGANIZAÇÃO, o mesmo que a janela da campanha usa — a saudação do
+      // teste tem de ser a que o destinatário veria.
+      const fuso = await fusoDaOrganizacao(admin, authz.org.orgId);
+      desfecho = await testarAcao(admin, campanha, parsed.data.contact_id, agora, fuso);
       acaoAuditada = "campaign.test_sent";
       break;
     }

@@ -36,17 +36,17 @@ vi.mock("@/hooks/pipelines/useDefaultPipeline", () => ({
   useDefaultPipeline: () => ({ data: null, isError: false }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useUpdateConversationTags: () => ({ mutate: vi.fn(), isPending: false }),
-  useConversationTagVocabulary: () => ({ data: [] }),
-}));
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
   useContactTagVocabulary: () => ({ data: [] }),
 }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({
   useUpdateContact: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { support: null } }) }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useAuth: () => ({ user: { support: null } }),
+  useActiveOrg: () => ({ currency: "BRL", country: null }),
+  useUser: () => ({ id: "0b000000-0000-4000-8000-0000000000aa", full_name: null }),
+}));
 
 function renderPainel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -133,7 +133,7 @@ describe("painel do inbox — leads recentes dizem funil, etapa e status traduzi
     get.mockResolvedValue(resposta([leadRow("l-1", "GMN Advogados", "Novo", "lost")]));
     renderPainel();
 
-    const linha = await screen.findByTestId("inbox-lead-unico");
+    const linha = await screen.findByTestId("inbox-lead-l-1");
     expect(linha.textContent).toContain("GMN Advogados · Novo");
     expect(linha.textContent).toContain("Perdido");
     expect(linha.textContent).not.toMatch(/\blost\b/);

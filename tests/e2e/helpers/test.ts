@@ -79,6 +79,18 @@ export const test = base.extend({
   // Sem JavaScript os reveladores não rodam e a caixa fica por definição.
   context: async ({ context, javaScriptEnabled }, usar) => {
     if (javaScriptEnabled !== false) context.on("page", esperarARevelacaoNasCargas);
+    // O menu do Estallo começa com os grupos Agente de IA, Canais e Análise FECHADOS (preferência por navegador,
+    // chave `sidebar-grupos-fechados`). A maioria das specs clica um item de menu sem saber disso; abrimos todos
+    // UMA vez, só quando o navegador ainda não tem preferência salva — quem testa o fechar/abrir salva a sua.
+    await context.addInitScript(() => {
+      try {
+        if (window.localStorage.getItem("sidebar-grupos-fechados") === null) {
+          window.localStorage.setItem("sidebar-grupos-fechados", "[]");
+        }
+      } catch {
+        // storage bloqueado: o padrão do menu vale.
+      }
+    });
     await usar(context);
   },
   page: async ({ page, javaScriptEnabled }, usar) => {

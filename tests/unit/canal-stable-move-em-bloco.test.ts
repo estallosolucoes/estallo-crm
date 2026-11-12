@@ -14,8 +14,8 @@ import { describe, expect, it } from "vitest";
  *
  *     deskcommcrm          1.12.0   404
  *     deskcommcrm          stable   sha256:0235d02b…   ← 1.11.0
- *     deskcomm-worker      stable   sha256:66c7bde4…   ← 1.12.0
- *     deskcomm-scheduler   stable   sha256:ac6b87cc…   ← 1.12.0
+ *     estallo-crm-worker      stable   sha256:66c7bde4…   ← 1.12.0
+ *     estallo-crm-scheduler   stable   sha256:ac6b87cc…   ← 1.12.0
  *
  * Quem instalasse por `stable` naquela janela recebia **app 1.11.0 com worker e
  * scheduler 1.12.0**. Os três serviços saem do mesmo repositório e compartilham
@@ -133,8 +133,8 @@ describe("o canal `stable` move em bloco", () => {
     expect(needs?.split(",").map((s) => s.trim()).sort()).toEqual([
       "build-and-push",
       "imagem-do-app-sobe",
-      // As imagens de fundo entram na #604: `deskcomm-worker` e
-      // `deskcomm-scheduler` construíam e publicavam sem que nenhum job as
+      // As imagens de fundo entram na #604: `estallo-crm-worker` e
+      // `estallo-crm-scheduler` construíam e publicavam sem que nenhum job as
       // executasse — e o canal `stable` andava sobre um laço morto.
       "imagens-de-fundo-sobem",
       // #1938: `stable` copia o índice multi-arquitetura, que só existe depois

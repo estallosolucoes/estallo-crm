@@ -43,15 +43,20 @@ export const dynamic = "force-dynamic";
 
 /** Insere o job followup_turn na fila existente (migration 0050) — consumido
  *  pelo handler já pronto em lib/agent-engine/agent/followup-turn.ts. */
-async function enqueueJob(job: FollowupJobRequest): Promise<void> {
+async function enqueueJob(job: FollowupJobRequest): Promise<{ job_id: string }> {
   const admin = createAdminClient();
-  const { error } = await admin.from("job_queue").insert({
-    organization_id: job.organization_id,
-    contact_id: job.contact_id,
-    kind: "followup_turn",
-    payload: job.payload,
-  });
+  const { data, error } = await admin
+    .from("job_queue")
+    .insert({
+      organization_id: job.organization_id,
+      contact_id: job.contact_id,
+      kind: "followup_turn",
+      payload: job.payload,
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(error.message);
+  return { job_id: data.id };
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -77,7 +82,8 @@ async function handle(req: NextRequest): Promise<Response> {
 
   let summary;
   try {
-    summary = await runFollowupTick(deps);
+    // Encadeia as passadas por ~18 s (o cron tem 25): o fluxo corre em segundos, não um bloco por minuto.
+    summary = await runFollowupTick(deps, { encadearMs: 18_000 });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[followup-flow-worker.cron] runFollowupTick threw", { error: detail, requestId });

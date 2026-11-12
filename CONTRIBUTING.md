@@ -1,3 +1,5 @@
+> **Direção atual do fork:** [Estallo CRM SaaS](docs/estallo-produto.md). Marca fixa, Stripe futuro e planos demonstrativos. Textos históricos de monetização/self-host do upstream não definem a oferta Estallo.
+
 # Contributing — DeskcommCRM
 
 🇧🇷 Português · [🇺🇸 English](CONTRIBUTING.en.md)
@@ -85,6 +87,7 @@ Ao finalizar um epic:
      da VPS edite alguma coisa na mão** — se exigir, abra issue com plano de migração em vez de PR
    - Docs atualizadas se mudou contrato (PRD/spec)
    - `pnpm test:e2e` (subset relevante) — **opcional se você contribui de fora**, ver abaixo
+
 4. Abrir PR contra `main`. Description deve referenciar o epic e listar evidências (logs/screenshots dos testes).
 5. **Tocou um documento de autoridade?** Corrija as afirmações de estado **daquele** documento —
    as que dizem o que está ativo, o que falta, o que aponta para onde. Não saia caçando nos

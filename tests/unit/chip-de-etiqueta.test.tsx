@@ -64,10 +64,10 @@ describe("ChipDeEtiqueta", () => {
 
     const chip = screen.getByText("VIP");
     await waitFor(() => expect(pintado(chip)).toContain("background-color"));
-    // O texto sai da régua, não do gosto de quem escolheu: sobre #0091ff o preto
-    // ganha (6,5 contra 3,0 do branco) — medido, e é por isso que este caso não
-    // afirma "branco sobre azul" como o olho pediria.
-    expect(pintado(chip)).toContain("color:rgb(0,0,0)");
+    // Regra do design system Estallo (b64df18d0): todo fundo azul leva texto branco, nos dois temas.
+    // `frenteSobreCor()` devolve branco para o azul #0091ff, mesmo onde a régua pura preferiria preto
+    // (6,5 contra 3,0): a identidade vale mais que o ganho de contraste.
+    expect(pintado(chip)).toContain("color:rgb(255,255,255)");
   });
 
   it("o texto vira branco quando o fundo é escuro — a régua decide, não a lista", async () => {

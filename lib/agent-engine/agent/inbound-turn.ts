@@ -70,7 +70,6 @@ import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
-import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
 import {
   copiarFotoNoStorage,
@@ -155,9 +154,7 @@ import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
-import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
-import { loadChannelKnobs } from '../pacing/store';
-import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
+import { RITMO_MAXIMO_MS, RITMO_MINIMO_MS } from '@/lib/messaging/ritmo-entre-envios';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
 import {
   hasOpenCaseForContact,
@@ -185,7 +182,6 @@ import {
   loadChannelProvider,
   nomesDasFerramentas,
   runBeforeSend,
-  tipoDeEnvio,
 } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
@@ -229,7 +225,6 @@ import {
   type ManipulacaoDoJev,
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
-import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -1696,9 +1691,6 @@ export async function deteccoesDeterministicasDoAssistido(
         ? deps.channel(pool)
         : new WahaChannelAdapter(pool, { ...deps.crmCfg, agentActorId: agent.agentId }),
       optedOutThisTurn,
-      // #2112: o TIPO do turno decide a janela do aviso — inbound/case respondem,
-      // follow-up dispara. Mesmo discriminador do resto do turno (`eTurnoDeResposta`).
-      origem: tipoDeEnvio(eTurnoDeResposta(job)),
       now: clock(),
       log,
       ...(lgpd !== undefined ? { lgpd } : {}),
@@ -1865,9 +1857,6 @@ export async function runAgentTurn(
             channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(
               pool,
             ),
-            // #2112: a escolta roda no turno INTEIRO, inclusive num follow-up —
-            // o tipo do turno é o que diz qual janela o gate do aviso avalia.
-            origem: tipoDeEnvio(eTurnoDeResposta(job)),
             now: deps.clock?.() ?? new Date(),
             log: logDaEscolta,
             ...(deps.knobs.disclosureMode !== undefined
@@ -1893,20 +1882,6 @@ export async function runAgentTurn(
  *     planejamento: não abrem o WhatsApp de ninguém.
  *   * `operator_turn` — retaguarda (mexe no funil), nunca fala com o lead.
  */
-/**
- * ═══ RESPOSTA vs RETOMADA — a distinção que a janela da 0495 faz ═══
- *
- * `turnoVaiFalarComOLead` admite `followup_turn`, que RETOMA conversa parada — e
- * retomar NÃO é responder: abrir `followup_turn` junto faria o número mandar
- * "e aí, tudo certo?" às 4h para quem dormiu.
- *
- * Só a REAÇÃO a uma mensagem recebida lê a janela de resposta. `case_reply_turn`
- * entra porque responde a um caso em aberto: ninguém "chama" um caso, o caso chama.
- */
-export function eTurnoDeResposta(job: Pick<JobRow, 'kind'>): boolean {
-  return job.kind === 'inbound_turn' || job.kind === 'case_reply_turn';
-}
-
 function turnoVaiFalarComOLead(job: JobRow): boolean {
   if (job.kind === 'inbound_turn' || job.kind === 'case_reply_turn') return true;
   if (job.kind !== 'followup_turn') return false;
@@ -2022,90 +1997,6 @@ async function executarTurnoDoAgente(
     } catch (err) {
       runLog.warn('checagem de elegibilidade falhou no turno — seguindo', {
         error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
-      });
-    }
-  }
-
-  // JANELA ANTI-BAN (7h–22h por padrão, fuso do tenant): fora dela o turno é
-  // ADIADO, não gasto.
-  //
-  // ⚠️ ISTO CONSERTA UMA MENSAGEM PERDIDA, não um custo. O gate de envio
-  // (`pacingGate` em guardrails/before-send.ts) já vetava o envio fora da
-  // janela — mas, no caminho do agente, esse veto vira ERRO DE ENSINO devolvido
-  // ao modelo dentro do tool `send_message`. O turno terminava `ok`, sem
-  // exceção, sem reagendamento e sem mensagem: o lead escrevia 22h e não recebia
-  // NADA, nem naquele momento nem às 7h. Medido em produção (2026-08-18): run
-  // `agent_turn` com status `ok` às 22:56 e zero outbound na conversa.
-  //
-  // O caminho determinístico de re-entrada já fazia o certo — "veto por JANELA
-  // anti-ban não dropa — re-agenda para a próxima abertura" (followup-turn.ts) —
-  // e é essa regra que passa a valer também para a resposta do agente.
-  //
-  // Só a JANELA adia. Cap diário e warm-up continuam com o gate de envio: eles
-  // dependem de quanto já saiu hoje, e antecipá-los aqui adiaria turno que, na
-  // hora do envio, teria passado.
-  if (!preview && turnoVaiFalarComOLead(liveJob())) {
-    const { knobs } = await loadChannelKnobs(pool, tenantId, input.channelSessionId, runLog);
-    const agora = clock();
-    const resposta = eTurnoDeResposta(liveJob());
-    // `resposta` separa as janelas: reação a quem escreveu lê `resposta*` (0495,
-    // que herda `window*` quando vazia); retomada e disparo leem `window*`.
-    if (!janelaDeEnvioAberta(agora, knobs, resposta)) {
-      const abertura = proximaAberturaDaJanela(agora, knobs, resposta);
-      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
-        acquiredAt: claimOfJob(liveJob())?.acquired_at,
-        delayMs: Math.max(abertura.getTime() - agora.getTime(), 1_000),
-        reason: 'fora da janela anti-ban de envio — turno adiado para a abertura',
-      });
-      runLog.info('turno adiado — fora da janela anti-ban de envio', {
-        janela: `${resposta ? knobs.respostaStartHour : knobs.windowStartHour}h-${resposta ? knobs.respostaEndHour : knobs.windowEndHour}h`,
-        tipo: resposta ? 'resposta' : 'retomada',
-        timezone: knobs.timezone,
-        abertura: abertura.toISOString(),
-      });
-      // O adiamento deixa RASTRO VISÍVEL. Sem isto, o único registro de que o
-      // número está calado morre no log do contêiner — e foi assim que uma
-      // instalação passou um domingo inteiro muda, com todos os contêineres
-      // `healthy` e o dono sem nada para olhar. Um aviso por canal, deduplicado
-      // enquanto durar o silêncio; ver o cabeçalho de `aviso-de-janela.ts`.
-      //
-      // Fire-and-forget: telemetria nunca derruba um turno que já decidiu o que
-      // fazer com a mensagem do cliente — e o job JÁ foi reagendado acima.
-      try {
-        const criados = await avisarJanelaFechada(pool, {
-          tenantId,
-          channelSessionId: input.channelSessionId,
-          abertura,
-          janela: `${resposta ? knobs.respostaStartHour : knobs.windowStartHour}h-${resposta ? knobs.respostaEndHour : knobs.windowEndHour}h`,
-          timezone: knobs.timezone,
-          domingoDesligado: !knobs.allowSunday,
-        });
-        if (criados > 0) {
-          runLog.info('aviso de janela fechada aberto na Central', {
-            channel_session_id: input.channelSessionId,
-          });
-        }
-      } catch (err) {
-        runLog.warn('não consegui abrir o aviso de janela fechada', {
-          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-        });
-      }
-      throw new JobSettledError(
-        'fora da janela anti-ban — job reagendado para a abertura da janela',
-      );
-    }
-    // A janela está ABERTA: se havia aviso de silêncio pendurado, ele morre
-    // AQUI — no mesmo ponto que o abriu. Um aviso que só o humano fecha vira
-    // dívida: na segunda o número volta a atender e o painel seguiria dizendo
-    // que está calado.
-    try {
-      await resolverAvisoDeJanela(pool, {
-        tenantId,
-        channelSessionId: input.channelSessionId,
-      });
-    } catch (err) {
-      runLog.warn('não consegui resolver o aviso de janela fechada', {
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
       });
     }
   }
@@ -2507,11 +2398,6 @@ async function executarTurnoDoAgente(
     base: {
       channel: liveChannel(),
       optedOutThisTurn,
-      // #2112: o TIPO do turno decide a janela do aviso — `inbound_turn`/
-      // `case_reply_turn` respondem a quem escreveu; `followup_turn` é disparo
-      // (retomada), e o aviso de escalação dentro dele tem de cair na janela de
-      // `window_*`. Mesmo discriminador do resto do turno.
-      origem: tipoDeEnvio(eTurnoDeResposta(liveJob())),
       now: clock(),
       log: runLog,
       lgpd,
@@ -2892,28 +2778,14 @@ async function executarTurnoDoAgente(
   // turno com dois vetos ficaria mudo por mais de 20 segundos: o conserto do
   // "rápido demais" viraria o defeito simétrico, mais caro que o original.
   let jaEsperouComoHumano = false;
-  // Knobs de atraso humano por conexão (0499) — lidos UMA vez por turno para a
-  // pausa antes da 1ª bolha (`esperarComoHumano`) e para o jitter entre bolhas
-  // (`throttle_ms + jitter_max_ms`). Sem linha em channel_knobs caem nos defaults
-  // de defaults.ts — que espelham os valores históricos (regressão zero).
-  const pacingDoTurno = !preview
-    ? await loadChannelKnobs(pool, tenantId, input.channelSessionId, runLog)
-    : null;
+  // O atraso de resposta "como uma pessoa" é do AGENTE (`ai_agents.config.atraso_*`, tela do agente), não do canal.
+  // Ausente (agente legado) = os defaults de `atraso-humano.ts`.
   const knobsDeAtrasoHumano = {
-    atrasoNotarMs: pacingDoTurno?.knobs.atrasoNotarMs,
-    msPorCaractere: pacingDoTurno?.knobs.msPorCaractere,
-    atrasoMinimoMs: pacingDoTurno?.knobs.atrasoMinimoMs,
-    atrasoMaximoMs: pacingDoTurno?.knobs.atrasoMaximoMs,
+    atrasoNotarMs: agentConfig?.atrasoDeResposta?.atrasoNotarMs,
+    msPorCaractere: agentConfig?.atrasoDeResposta?.msPorCaractere,
+    atrasoMinimoMs: agentConfig?.atrasoDeResposta?.atrasoMinimoMs,
+    atrasoMaximoMs: agentConfig?.atrasoDeResposta?.atrasoMaximoMs,
   };
-  // Cap de envio (warm-up/diário) vetado neste turno — capturado aqui porque o veto
-  // não empurra outcome nenhum a `outcomes` (ver comentário no ponto de captura, mais
-  // abaixo). Diferente da janela horária (checada ANTES do modelo rodar, linha ~1233):
-  // o cap depende de quanto já saiu HOJE, que muda com o turno concorrente — só dá pra
-  // saber com certeza no momento do envio, não antes.
-  let pacingCapVeto: { code: string; nextAllowedAt: Date } | null = null;
-  // Lido por função: atribuído numa closure, comparar a variável direto estreita o tipo
-  // para `null` e quebra o `if (pacingCapVeto !== null …)` do fim do turno.
-  const capDeEnvioAtingido = (): boolean => pacingCapVeto !== null;
   // Best-effort: move o lead pra etapa `crm_stages.slug='chamar-humano'` do pipeline
   // dele (se o tenant tiver criado essa etapa — opt-in, ver `lib/leads/handoff-stage-move.ts`)
   // sempre que um caso humano abre neste turno, deliberado (open_human_case) ou pelo
@@ -3168,9 +3040,6 @@ async function executarTurnoDoAgente(
           // Só ESTE gate muda; stop, LGPD e pacing continuam valendo integralmente.
           isTemplate: true,
           optedOutThisTurn,
-          // Resposta do turno, mesmo sendo template: lê a janela de resposta (0495).
-          resposta: eTurnoDeResposta(liveJob()),
-          crmDailyLimit: null,
           now: clock(),
           sleep: deps.sleep,
           lgpd,
@@ -3391,14 +3260,6 @@ async function executarTurnoDoAgente(
             channelSessionId: input.channelSessionId,
             body,
             optedOutThisTurn,
-            // `inbound_turn`/`case_reply_turn` respondem a quem escreveu e leem a
-            // janela de RESPOSTA (0495). `followup_turn` retoma conversa parada e
-            // continua na janela de DISPARO.
-            resposta: eTurnoDeResposta(liveJob()),
-            // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
-            // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
-            // aqui quando o drain expuser o limite da sessão.
-            crmDailyLimit: null,
             now: clock(),
             sleep: deps.sleep,
             lgpd,
@@ -3507,13 +3368,9 @@ async function executarTurnoDoAgente(
               corposEnviados.push(finalBody);
               const sleep =
                 deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+              // Entre bolhas vale o MESMO ritmo fixo do número (0,3–0,8 s), sorteado a cada intervalo.
               const jitter = () =>
-                // Piso no throttle anti-ban do número (1.2s default) — bolhas são
-                // mensagens físicas. Lê os knobs da CONEXÃO (throttle_ms + jitter_max_ms,
-                // 0499) e não o literal: desde a 0010 os dois já são configuração por
-                // número, e o call site estava cravando `1200 + rand*800` ignorando-a.
-                (pacingDoTurno?.knobs.throttleMs ?? 1200) +
-                Math.floor(Math.random() * (pacingDoTurno?.knobs.jitterMaxMs ?? 800));
+                RITMO_MINIMO_MS + Math.floor(Math.random() * (RITMO_MAXIMO_MS - RITMO_MINIMO_MS + 1));
               const enviar = (
                 corpo: string,
                 media?: FotoParaEnvio,
@@ -3682,17 +3539,6 @@ async function executarTurnoDoAgente(
             });
           }
           if (chain.status === 'vetoed') {
-            // Cap de warm-up/diário: reescrever o texto não resolve (é rate limit, não
-            // conteúdo) — ensinar o modelo a "tentar de novo" só gasta passo. Guardamos
-            // pra reagendar o JOB inteiro depois que o turno terminar (mesmo padrão de
-            // `rescheduleJob` já usado pra janela horária), em vez de deixar o lead sem
-            // resposta até a próxima mensagem dele chegar (ou nunca).
-            if (
-              (chain.code === 'warmup_cap' || chain.code === 'daily_cap') &&
-              chain.nextAllowedAt !== undefined
-            ) {
-              pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
-            }
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
             return { ok: false, error: { code: chain.code, message: chain.message } };
@@ -4698,7 +4544,6 @@ async function executarTurnoDoAgente(
         enviadas: outcomes.length,
         turnoDescartado,
         passouParaAEquipe,
-        capDeEnvio: capDeEnvioAtingido(),
       })
     ) {
       runLog.warn('turno terminou sem mensagem ao cliente — pedindo UMA correção', {
@@ -4764,14 +4609,6 @@ async function executarTurnoDoAgente(
               channelSessionId: input.channelSessionId,
               body: texto,
               optedOutThisTurn,
-              // Sai no MESMO turno da resposta: sem isto, às 3h com a janela de
-              // resposta aberta, o agente responde e a pergunta do roteiro é vetada.
-              resposta: eTurnoDeResposta(liveJob()),
-              crmDailyLimit: null,
-              // A pergunta repete por design (foi feita e não respondida); o
-              // anti-blast vetaria justamente o que esta trava garante. Mesmo
-              // motivo do aviso de escalação.
-              enforceSpinning: false,
               now: clock(),
               sleep: deps.sleep,
               lgpd,
@@ -5128,115 +4965,6 @@ async function executarTurnoDoAgente(
       );
       throw new JobSettledError(
         'turno encerrado com veto do sink (is_blocked) — job cancelado em definitivo, checkpoint gravado',
-      );
-    }
-
-    // Cap de warm-up/diário vetou toda tentativa de envio deste turno e nada saiu: sem
-    // isto, o job terminava 'ok' com `messages_sent: 0` e o lead ficava sem resposta até
-    // escrever de novo por conta própria (ou nunca) — medido em produção, 2026-08-29
-    // (número no dia 0 de warm-up, cap batido pelo volume da própria conversa de teste).
-    // Mesmo contrato da janela anti-ban (linha ~1233): adia sem gastar `attempts`, o job
-    // volta a 'pending' na hora certa e o mesmo turno roda de novo, com o mesmo contexto.
-    if (pacingCapVeto !== null && outcomes.length === 0) {
-      // Capturado num `const`: `pacingCapVeto` é reatribuído numa closure em outro ponto do
-      // turno, e o TS reabre a união (perde o `!== null`) depois de qualquer chamada — o
-      // valor JÁ CHECADO não muda, só a inferência precisa de um nome que não reatribui.
-      const veto = pacingCapVeto;
-      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
-        acquiredAt: claimOfJob(liveJob())?.acquired_at,
-        delayMs: Math.max(veto.nextAllowedAt.getTime() - clock().getTime(), 1_000),
-        reason: `cap de envio (${veto.code}) atingido — turno adiado para a próxima abertura`,
-      });
-      runLog.info('turno adiado — cap de envio atingido antes de qualquer mensagem sair', {
-        code: veto.code,
-        proxima_abertura: veto.nextAllowedAt.toISOString(),
-      });
-      // O reagendamento acima trata toda mensagem represada igual — um lead relatando
-      // risco de segurança (freio, fumaça, bateria esquentando) esperaria a mesma janela
-      // que um "bom dia" qualquer, às vezes horas (medido num tenant de produção:
-      // 20h+ represado num relato de bateria superaquecendo). Sem furar o cap de
-      // warm-up/diário em si (proteção anti-banimento — mexer nisso é decisão de
-      // produto, não deste guardrail), abre um alerta CRÍTICO na Central agora, pra um
-      // humano poder responder manualmente pelo próprio WhatsApp enquanto o número
-      // aquece. Dedupe por (kind, ref) — não reabre um já aberto pra esta conversa.
-      //
-      // A REGRA continua decidindo (#2232): ela decide; onde não, o Jev só OPINA (R3),
-      // nasce em observação e, com "Avisar a equipe", abre o MESMO alerta
-      // `kind='handoff'`, sem a frase do cliente (#1747).
-      if (inboundsPendentes.some((texto) => detectUrgencySignal(texto))) {
-        await insertInboxItem(
-          pool,
-          tenantId,
-          {
-            kind: 'handoff',
-            severity: 'critical',
-            title: 'Lead com sinal de urgência represado pelo cap de envio do número',
-            body:
-              `Mensagem do lead parece relatar risco/urgência, mas o número está em ` +
-              `warm-up/bateu o cap diário (${veto.code}) — a resposta automática só sai em ` +
-              `${veto.nextAllowedAt.toISOString()}. Considere responder manualmente pelo ` +
-              `WhatsApp enquanto o número aquece.`,
-            refKind: 'conversation',
-            refId: input.conversationId,
-          },
-          'kind_e_ref',
-        ).catch((err) => {
-          runLog.warn('alerta de urgência represada por warmup_cap falhou (best-effort)', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-      } else if (!preview) {
-        const mensagemRepresada = inboundsPendentes[inboundsPendentes.length - 1] ?? '';
-        const urgencia = await perguntarUrgenciaAoJev(
-          pool,
-          {
-            organizationId: tenantId,
-            conversationId: input.conversationId || null,
-            messageId: input.inboundMessageId ?? null,
-            contactId: leadId || null,
-            jobId: liveJob().id,
-            mensagem: mensagemRepresada,
-          },
-          deps.jev,
-        );
-        if (urgencia !== null) {
-          await registrarUrgenciaDoJev(pool, {
-            organizationId: tenantId,
-            contactId: leadId || null,
-            conversationId: input.conversationId || null,
-            messageId: input.inboundMessageId ?? null,
-            jobId: liveJob().id,
-            urgencia,
-          });
-          if (urgencia.percebeu && urgencia.estado === 'decidindo') {
-            await insertInboxItem(
-              pool,
-              tenantId,
-              {
-                kind: 'handoff',
-                severity: 'critical',
-                title: 'Lead com risco percebido pelo modelo de decisão represado pelo cap de envio',
-                body:
-                  `A regra de urgência de hoje não reconheceu o risco, mas o modelo de decisão ` +
-                  `percebeu, numa mensagem represada, risco à segurança ou à saúde ` +
-                  `(origem: percebido pelo modelo de decisão, visível só para a equipe). O ` +
-                  `número está em warm-up/bateu o cap diário (${veto.code}) — a resposta ` +
-                  `automática só sai em ${veto.nextAllowedAt.toISOString()}. Considere ` +
-                  `responder manualmente pelo WhatsApp enquanto o número aquece.`,
-                refKind: 'conversation',
-                refId: input.conversationId,
-              },
-              'kind_e_ref',
-            ).catch((err) => {
-              runLog.warn('alerta de urgência percebida pelo modelo represada falhou (best-effort)', {
-                error: err instanceof Error ? err.message : String(err),
-              });
-            });
-          }
-        }
-      }
-      throw new JobSettledError(
-        'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
       );
     }
 

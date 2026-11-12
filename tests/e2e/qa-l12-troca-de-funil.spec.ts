@@ -244,8 +244,8 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     await expect(card).toBeVisible({ timeout: 60_000 });
 
     await card.getByRole("button", { name: "Ações do lead" }).click();
-    await page.getByRole("menuitem", { name: "Levar para outro funil" }).click();
-    const janela = page.getByRole("dialog", { name: "Levar para outro funil" });
+    await page.getByRole("menuitem", { name: "Mover de funil" }).click();
+    const janela = page.getByRole("dialog", { name: "Mover de funil" });
     await expect(janela).toBeVisible();
 
     // A lista é a da organização SEM o funil atual — o atendente não é
@@ -254,31 +254,31 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     await expect(page.getByRole("option", { name: `Troca Origem ${S}` })).toHaveCount(0);
     await page.getByRole("option", { name: `Troca Destino ${S}` }).click();
     await captura(page, "1578-01-destino-escolhido");
-    await janela.getByRole("button", { name: "Confirmar" }).click();
+    await janela.getByRole("button", { name: "Mover", exact: true }).click();
     await expect(janela).toBeHidden({ timeout: 30_000 });
 
-    // Efeito no BANCO: a origem fechou como perdida e o clone nasceu no destino.
+    // Efeito no BANCO: no Estallo é o MESMO negócio que muda de funil (`/move-pipeline`), sem cópia e sem marcar a
+    // origem como perdida — o upstream clonava e fechava o original.
     await expect
       .poll(
         async () => {
           const { data } = await admin
             .from("crm_leads")
-            .select("status")
+            .select("pipeline_id, stage_id, status")
             .eq("id", pelaTela)
             .single();
-          return (data as { status: string } | null)?.status;
+          return data as { pipeline_id: string; stage_id: string; status: string } | null;
         },
         { timeout: 30_000 },
       )
-      .toBe("lost");
-    const { data: clones } = await admin
+      .toEqual({ pipeline_id: destinoId, stage_id: etapaDestino, status: "open" });
+    const { data: noDestino } = await admin
       .from("crm_leads")
-      .select("id, stage_id")
+      .select("id")
       .eq("pipeline_id", destinoId)
       .eq("title", titulo);
-    registra(`#1578 · clone pelo botão = ${JSON.stringify(clones)}`);
-    expect(clones, "exatamente UM negócio novo no destino").toHaveLength(1);
-    expect((clones as { stage_id: string }[])[0]!.stage_id).toBe(etapaDestino);
+    registra(`#1578 · negócios com o título no destino = ${JSON.stringify(noDestino)}`);
+    expect(noDestino, "exatamente UM negócio com o título no destino (o próprio, movido)").toHaveLength(1);
 
     // Efeito na TELA do destino: o card está lá.
     await page.goto(`/app/pipelines/${destinoId}`);

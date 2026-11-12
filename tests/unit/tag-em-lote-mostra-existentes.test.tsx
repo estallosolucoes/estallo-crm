@@ -23,6 +23,7 @@ vi.mock("@/hooks/kanban/useBulkAction", () => ({
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useUser: () => ({ id: "u-1" }),
   useActiveOrg: () => ({ orgId: "org-1", role: "agent" }),
+  useAuth: () => ({ activeOrg: { orgId: "org-1", role: "agent" } }),
 }));
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [] }),

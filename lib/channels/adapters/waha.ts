@@ -122,7 +122,8 @@ export const wahaAdapter: ChannelAdapter = {
     recipient: string;
   }): Promise<string | null> {
     const client = getWahaClient();
-    if (!client) return null;
+    // Canal não configurado é falha, não "contato sem foto".
+    if (!client) throw new Error("canal sem cliente configurado");
     return client.getProfilePictureUrl(input.sessionRef, input.recipient);
   },
 

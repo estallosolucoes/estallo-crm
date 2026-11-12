@@ -33,7 +33,7 @@
 set -euo pipefail
 
 API="https://api.supabase.com/v1"
-PROJECT_NAME="${1:-DeskcommCRM}"
+PROJECT_NAME="${1:-Estallo CRM}"
 REGION="${2:-${SUPABASE_REGION:-sa-east-1}}"
 
 c_red() { printf '\033[31m%s\033[0m\n' "$*" >&2; }
@@ -178,7 +178,7 @@ moldura() {
   printf '\033[36m╰%s╯\033[0m\n' "$(printf '─%.0s' $(seq 1 $((larg + 2))))" >&2
 }
 
-moldura "DeskcommCRM · criando seu banco no Supabase"
+moldura "Estallo CRM · criando seu banco no Supabase"
 
 if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
   c_red "✖ Falta o token de acesso do Supabase."

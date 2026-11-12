@@ -94,6 +94,8 @@ test.describe("o ícone e o título carregam a marca da instalação", () => {
     // prova que concordam entre si — um resolvedor quebrado deixa as duas
     // erradas e iguais. A verdade independente (o nome digitado na tela chega
     // ao login) está em `marca-logo.spec.ts`, "o nome trocado em /admin/marca…".
-    await expect(page.getByText(marcaNoTitulo, { exact: true }).first()).toBeVisible();
+    // No Estallo a marca é FIXA (CLAUDE.md, "Identidade fixa do SaaS") e a tela de login a desenha como logo, não
+    // como texto: o que se prova é que o título leva o nome do produto, que não depende de configuração.
+    expect(marcaNoTitulo).toBe("Estallo CRM");
   });
 });

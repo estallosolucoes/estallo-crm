@@ -7,7 +7,6 @@ import { OutrasOrganizacoes } from "./_components/OutrasOrganizacoes";
 import { SkipToEnd } from "./_components/SkipToEnd";
 import { SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import { marcaEhADoProduto } from "@/lib/branding";
-import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { ICONE_DESENHADO, iconeDaAba } from "@/lib/branding/icone";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { baseDoStorage } from "@/lib/branding/logo";
@@ -47,8 +46,7 @@ export default async function OnboardingLayout({ children }: { children: React.R
   // produto num PNG sempre claro. Aí vale o SVG inline, que acompanha o tema:
   // a marca padrão não muda de cara. A condição é a MESMA de `app/icon.tsx`
   // (`marcaDaSaida(null)`, banco acima do `.env`). Nenhuma das duas lança.
-  const linhaDaMarca = await marcaDaInstalacao();
-  const iconeUrl = iconeDaAba(linhaDaMarca?.favicon_path, baseDoStorage());
+  const iconeUrl = ICONE_DESENHADO;
   const marcaDoIcone = await marcaDaSaida(null);
   const simboloDoProduto =
     iconeUrl === ICONE_DESENHADO &&
@@ -77,7 +75,9 @@ export default async function OnboardingLayout({ children }: { children: React.R
                 />
               )}
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">{marcaDoIcone.nome}</p>
+                <p className="text-xs tracking-wider text-muted-foreground uppercase">
+                  {marcaDoIcone.nome}
+                </p>
                 <h1 className="text-lg font-semibold tracking-tight">{activeOrg.name}</h1>
               </div>
             </div>

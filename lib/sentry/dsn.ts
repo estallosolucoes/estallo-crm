@@ -1,13 +1,12 @@
 /**
  * DSN do Sentry com opt-out em runtime — modelo "telemetria de comunidade".
  *
- * Por padrão, erros vão pro Sentry do projeto (DEFAULT_SENTRY_DSN): num open source
- * self-host, é o que dá visibilidade pra corrigir bugs que afetam todo mundo. Quem
- * hospeda controla isso pelo `.env`, SEM rebuild da imagem:
+ * No Estallo CRM, a telemetria fica desligada por padrão. Quem hospeda pode
+ * configurar um DSN próprio pelo `.env`, SEM rebuild da imagem:
  *
  *   SENTRY_DSN=off           → desliga toda a telemetria (nada é enviado)
  *   SENTRY_DSN=<seu-dsn>     → manda os erros pro SEU Sentry
- *   SENTRY_DSN=  (vazio)     → usa o Sentry da comunidade (padrão)
+ *   SENTRY_DSN=  (vazio)     → desliga toda a telemetria
  *
  * Vale para servidor (process.env) e navegador (window.__PUBLIC_ENV__.SENTRY_DSN,
  * injetado em runtime pelo <PublicEnvScript/>). O DSN não é segredo — DSNs do Sentry
@@ -19,7 +18,7 @@ export const DEFAULT_SENTRY_DSN =
 export function resolveSentryDsn(value: string | undefined | null): string | undefined {
   const v = (value ?? "").trim().toLowerCase() === "off" ? "off" : (value ?? "").trim();
   if (v === "off" || v === "false" || v === "0") return undefined;
-  return v.length > 0 ? v : DEFAULT_SENTRY_DSN;
+  return v.length > 0 ? v : undefined;
 }
 
 /**

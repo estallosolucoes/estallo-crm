@@ -30,6 +30,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { prospectEnrichmentSchema } from "@/lib/prospecting/schema";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { camposDoFunil, settingsDoEmbed } from "@/lib/leads/campos-do-funil";
@@ -47,7 +48,7 @@ export const dynamic = "force-dynamic";
 // `stage_id` e as `etapas` do funil alimentam o seletor de etapa do painel: mover
 // o negócio (ex.: "Pedido confirmado") direto da conversa, sem ir ao quadro.
 const LEAD_COLS =
-  "id, title, status, value_cents, currency, updated_at, pipeline_id, stage_id, custom_fields, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
+  "id, title, status, value_cents, currency, updated_at, expected_close_date, pipeline_id, stage_id, custom_fields, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 /**
@@ -75,11 +76,14 @@ const DEMANDA_COLS =
   "id, revision, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: contactId } = await ctx.params;
+  // "Ver mais" do painel do inbox pede de 3 em 3. Teto de 60: é um resumo.
+  const limiteDeLeads = z.coerce.number().int().min(1).max(60).catch(3)
+    .parse(req.nextUrl.searchParams.get("leads_limit") ?? undefined);
 
   const supabase = await createClient();
   const {
@@ -116,12 +120,12 @@ export async function GET(
   const [leads, orders, activities, demandas, fatos, historico] = await Promise.all([
     supabase
       .from("crm_leads")
-      .select(LEAD_COLS)
+      .select(LEAD_COLS, { count: "exact" })
       .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
       // Arquivar o funil não fecha os leads; sem isto eles seguiam aqui como abertos.
       .eq("crm_pipelines.is_archived", false)
       .order("updated_at", { ascending: false })
-      .limit(3),
+      .limit(limiteDeLeads),
     supabase
       .from("orders")
       .select(ORDER_COLS)
@@ -174,6 +178,7 @@ export async function GET(
     {
       ...enrichment,
       leads: (leads.data ?? []).map((row) => comCamposDoFunil(row as Record<string, unknown>)),
+      leads_total: leads.count ?? (leads.data ?? []).length,
       orders: orders.data ?? [],
       activities: linhas.map((a) => ({
         ...a,

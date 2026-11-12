@@ -422,7 +422,7 @@ export function ProspectingAgentBuilder(props: Props) {
                     key={index}
                     className={
                       message.role === "user"
-                        ? "ml-5 rounded-xl rounded-tr-sm bg-primary p-3 text-sm text-primary-foreground"
+                        ? "ml-5 rounded-xl rounded-tr-sm bg-primary dark:bg-accent-700 p-3 text-sm text-primary-foreground"
                         : "mr-5 rounded-xl rounded-tl-sm bg-muted p-3 text-sm"
                     }
                   >
@@ -433,7 +433,7 @@ export function ProspectingAgentBuilder(props: Props) {
                   </div>
                 ))}
                 {pendingText && session.messages.at(-1)?.content !== pendingText && (
-                  <div className="ml-5 rounded-xl bg-primary p-3 text-sm text-primary-foreground">
+                  <div className="ml-5 rounded-xl bg-primary dark:bg-accent-700 p-3 text-sm text-primary-foreground">
                     <p className="break-words whitespace-pre-wrap">{pendingText}</p>
                   </div>
                 )}

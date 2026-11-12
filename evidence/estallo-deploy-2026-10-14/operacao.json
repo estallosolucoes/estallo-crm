@@ -1,0 +1,15 @@
+{
+  "other_containers_unchanged": true,
+  "changed_services": [],
+  "restarted_crm_dependencies": [
+    "estallo-crm_waha"
+  ],
+  "public_urls_checked": 20,
+  "http_regressions": [],
+  "whatsapp": {
+    "statuses": [
+      "WORKING"
+    ]
+  },
+  "available_mb": 1489
+}

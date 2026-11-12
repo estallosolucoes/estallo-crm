@@ -405,23 +405,32 @@ describe("preencher resposta pronta", () => {
 // ---------------------------------------------------------------------------
 
 describe("listar marcadores", () => {
-  it("junta o vocabulário oficial com o que está em uso, os mais usados primeiro", async () => {
+  it("junta o cadastro oficial com o que está em uso, por entidade, os mais usados primeiro", async () => {
     const db = makeDb();
     (db.tabelas as unknown as Record<string, unknown[]>).organizations = [
-      { id: ORG_ID, settings: { canonical_conversation_tags: ["urgente", "nunca-usado"] } },
+      {
+        id: ORG_ID,
+        settings: {
+          tags: [
+            { tag: "urgente", entidade: "contact" },
+            { tag: "nunca-usado", entidade: "lead" },
+          ],
+        },
+      },
     ];
-    (db.tabelas as unknown as Record<string, unknown[]>).conversations = [
+    (db.tabelas as unknown as Record<string, unknown[]>).contacts = [
       { id: "c1", organization_id: ORG_ID, tags: ["urgente", "vip"] },
       { id: "c2", organization_id: ORG_ID, tags: ["urgente"] },
       { id: "c3", organization_id: OUTRA_ORG, tags: ["de-outra-empresa"] },
     ];
+    (db.tabelas as unknown as Record<string, unknown[]>).crm_leads = [];
 
     const lista = await listarMarcadores(deps(db));
 
     expect(lista).toEqual([
-      { marcador: "urgente", conversas: 2, oficial: true },
-      { marcador: "vip", conversas: 1, oficial: false },
-      { marcador: "nunca-usado", conversas: 0, oficial: true },
+      { marcador: "urgente", entidade: "contact", uso: 2, oficial: true },
+      { marcador: "vip", entidade: "contact", uso: 1, oficial: false },
+      { marcador: "nunca-usado", entidade: "lead", uso: 0, oficial: true },
     ]);
     // Marcador de outro tenant não entra — o filtro de organização é o que separa.
     expect(lista.map((m) => m.marcador)).not.toContain("de-outra-empresa");

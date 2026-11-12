@@ -127,7 +127,7 @@ export function CalendarioDeTarefas({ tarefas, podeEditar, aoAbrirTarefa, aoClic
                 className={cn(
                   "flex h-6 w-6 items-center justify-center self-start rounded-full text-xs font-semibold",
                   chave === diaDeHoje
-                    ? "bg-primary font-bold text-primary-foreground"
+                    ? "bg-primary dark:bg-accent-700 font-bold text-primary-foreground"
                     : "text-muted-foreground",
                 )}
               >

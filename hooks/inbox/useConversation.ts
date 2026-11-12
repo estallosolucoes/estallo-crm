@@ -10,15 +10,18 @@ import type { ConversationWithContact } from "./useConversationsRealtime";
  * para renderizar um estado vazio claro em deep-link, sem stack trace. `retry:false`
  * evita re-tentar o 404.
  */
+export function buscarConversa(id: string): Promise<ConversationWithContact> {
+  return apiClient
+    .get<{ data: ConversationWithContact }>(`/api/v1/conversations/${id}`)
+    .then((r) => r.data);
+}
+
 export function useConversation(id: string | null, enabled: boolean) {
   return useQuery({
     queryKey: ["conversation", id],
     enabled: enabled && !!id,
     retry: false,
-    queryFn: () =>
-      apiClient
-        .get<{ data: ConversationWithContact }>(`/api/v1/conversations/${id}`)
-        .then((r) => r.data),
+    queryFn: () => buscarConversa(id!),
   });
 }
 

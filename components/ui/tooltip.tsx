@@ -32,7 +32,7 @@ const TooltipContent = React.forwardRef<
         // tooltip, inclusive os que nascem de dado — e `break-words` é o par
         // obrigatório disso: sem ele, um erro de provedor sem espaço (URL, hash) é
         // cortado pelo `overflow-hidden` em vez de quebrar a linha.
-        "ds-painel z-50 max-w-xs origin-(--radix-tooltip-content-transform-origin) overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs break-words text-primary-foreground",
+        "ds-painel z-50 max-w-xs origin-(--radix-tooltip-content-transform-origin) overflow-hidden rounded-md bg-primary dark:bg-accent-700 px-3 py-1.5 text-xs break-words text-primary-foreground",
         className,
       )}
       {...props}

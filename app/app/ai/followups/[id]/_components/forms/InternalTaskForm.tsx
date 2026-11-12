@@ -16,6 +16,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { internalTaskConfigSchema } from "@/lib/followup/graph-schema";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
+import { InserirVariavel } from "../VariaveisDoFluxo";
 import type { ConfigOf } from "./shared";
 
 const ROTULO_DA_PRIORIDADE: Record<(typeof PRIORIDADES_DA_TAREFA)[number], string> = {
@@ -72,7 +73,11 @@ export function InternalTaskForm({
         </p>
       </div>
       <div className="space-y-1 sm:col-span-2">
-        <Label htmlFor="internal-task-titulo">{t("Título da tarefa")}</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="internal-task-titulo">{t("Título da tarefa")}</Label>
+          {/* Saídas dos blocos anteriores (ex.: um campo do Mapear dados) — entram no fim do título. */}
+          <InserirVariavel soBlocos onInserir={(marca) => gravar({ ...config, titulo: `${config.titulo}${marca}` })} />
+        </div>
         <Input
           id="internal-task-titulo"
           value={config.titulo}

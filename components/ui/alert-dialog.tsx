@@ -40,7 +40,7 @@ const AlertDialogContent = React.forwardRef<
         // ⚠️ `translate-x-[-50%] translate-y-[-50%]` FICAM: é a centralização, e
         // ela não pode depender de a animação rodar. Os keyframes animam a
         // mesma propriedade `translate` e terminam no mesmo `-50% -50%`.
-        "ds-modal fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg",
+        "ds-modal fixed top-[50%] left-[50%] z-50 grid grid-cols-[minmax(0,1fr)] w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg",
         className,
       )}
       {...props}
@@ -68,7 +68,7 @@ const AlertDialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold", className)}
+    className={cn("text-lg font-semibold wrap-anywhere", className)}
     {...props}
   />
 ));
@@ -80,7 +80,7 @@ const AlertDialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Description
     ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
+    className={cn("text-sm text-muted-foreground wrap-anywhere", className)}
     {...props}
   />
 ));

@@ -46,7 +46,6 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/channels/usePacingKnobs", () => ({ usePacingKnobs: () => ({ data: { items: [] } }) }));
-vi.mock("@/components/connections/AntiBanSheet", () => ({ AntiBanSheet: () => null }));
 
 const listagem: {
   data: ChannelSession[] | undefined;
@@ -158,7 +157,7 @@ describe("Pausar todas / Retomar todas", () => {
     expect(toastError).not.toHaveBeenCalled();
     // Critério 8: um invalidate() só — a chave da lista foi tocada UMA vez.
     await waitFor(() => expect(invalidacoesDaLista()).toBe(1));
-    expect(invalidacoes).toHaveBeenCalledTimes(2); // channel-sessions + pacing-knobs
+    expect(invalidacoes).toHaveBeenCalledTimes(1); // channel-sessions
   });
 
   it("lista atrasada (servidor já pausou tudo): 'Nada mudou', nunca 'Feito'", async () => {

@@ -66,14 +66,13 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { id: leadId } = await ctx.params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // Uma ida ao GoTrue só: `loadAuthUser` já valida o JWT (`getUser()`), e o
+  // `getUser()` próprio que vinha antes dele repetia a chamada a cada abertura
+  // de lead. Sem usuário, o mesmo 401 de antes.
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-  const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
   // O lead vem pela RLS do caller — é ele que prova a org, nunca o body.

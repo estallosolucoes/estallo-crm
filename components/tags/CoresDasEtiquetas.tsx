@@ -31,7 +31,13 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/auth/AuthProvider";
-import { chaveDaEtiqueta, coresDoVocabulario, type CoresPorEtiqueta } from "@/lib/tags/cor-da-etiqueta";
+import {
+  chaveDaEtiqueta,
+  coresDoVocabulario,
+  type CoresPorEtiqueta,
+  type EntidadeDaEtiqueta,
+  type EtiquetaCadastrada,
+} from "@/lib/tags/cor-da-etiqueta";
 
 /**
  * A chave do cache, exportada para quem ESCREVE poder invalidar: a tela de Tags
@@ -49,24 +55,38 @@ const VAZIO: CoresPorEtiqueta = {};
 
 const Ctx = createContext<CoresPorEtiqueta>(VAZIO);
 
-export function ProvedorDeCoresDasEtiquetas({ children }: { children: ReactNode }) {
+/**
+ * O cadastro de etiquetas da organização (com a entidade de cada uma, 0659).
+ * Uma consulta só para o mapa de cores e para o seletor de etiquetas.
+ */
+export function useEtiquetasCadastradas() {
   const { activeOrg } = useAuth();
   const orgId = activeOrg?.orgId ?? null;
-  const { data } = useQuery({
+  return useQuery({
     queryKey: [CHAVE_DAS_CORES, orgId],
     enabled: !!orgId,
     staleTime: 5 * 60_000,
-    queryFn: async (): Promise<CoresPorEtiqueta> => {
-      // A rota devolve a lista crua do vocabulário (`{tag, cor}`); o mapa é
-      // montado AQUI pela mesma função pura que a rota usa para filtrar, para
-      // não existirem duas interpretações de "etiqueta com cor".
-      const res = await apiClient.get<{ data: { tag: string; cor: string }[] }>(
-        "/api/v1/tags/cores",
-      );
-      return coresDoVocabulario({ tags: res.data });
+    queryFn: async (): Promise<EtiquetaCadastrada[]> => {
+      const res = await apiClient.get<{ data: EtiquetaCadastrada[] }>("/api/v1/tags/cores");
+      return res.data;
     },
   });
-  const valor = useMemo(() => data ?? VAZIO, [data]);
+}
+
+/** As etiquetas cadastradas de UMA entidade (entrada sem entidade vale para as duas). */
+export function useEtiquetasDaEntidade(entidade: EntidadeDaEtiqueta): EtiquetaCadastrada[] {
+  const { data } = useEtiquetasCadastradas();
+  return useMemo(
+    () => (data ?? []).filter((e) => !e.entidade || e.entidade === entidade),
+    [data, entidade],
+  );
+}
+
+export function ProvedorDeCoresDasEtiquetas({ children }: { children: ReactNode }) {
+  const { data } = useEtiquetasCadastradas();
+  // O mapa é montado AQUI pela mesma função pura da lib, para não existirem
+  // duas interpretações de "etiqueta com cor".
+  const valor = useMemo(() => (data ? coresDoVocabulario({ tags: data }) : VAZIO), [data]);
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
 }
 
@@ -75,9 +95,16 @@ export function useCoresDasEtiquetas(): CoresPorEtiqueta {
   return useContext(Ctx);
 }
 
-/** A cor de UMA etiqueta, ou `null`. */
-export function useCorDaEtiqueta(tag: string | null | undefined): string | null {
+/**
+ * A cor de UMA etiqueta, ou `null`. Com a entidade (0659), a cor daquela
+ * entidade; sem ela, a primeira cor cadastrada para o nome.
+ */
+export function useCorDaEtiqueta(
+  tag: string | null | undefined,
+  entidade?: EntidadeDaEtiqueta,
+): string | null {
   const mapa = useCoresDasEtiquetas();
   if (!tag) return null;
-  return mapa[chaveDaEtiqueta(tag)] ?? null;
+  const chave = chaveDaEtiqueta(tag);
+  return (entidade ? mapa[`${entidade}:${chave}`] : undefined) ?? mapa[chave] ?? null;
 }

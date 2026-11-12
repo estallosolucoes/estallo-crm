@@ -73,6 +73,17 @@ const EXTENSOES = [".ts", ".tsx", ".sql", ".md", ".sh", ".yml", ".yaml", ".json"
  * O MANIFEST.md (histórico) MAIS as linhas `-- manifest:` das migrations que se
  * descrevem no próprio arquivo — as duas metades do mesmo registro.
  */
+/**
+ * Arquivos que uma migration JÁ APLICADA cita e que foram removidos DE PROPÓSITO (a «Proteção de envio», 05/11/2026).
+ * Migration aplicada não se edita — o deploy recusa ("Migration aplicada foi alterada") —, então a citação fica
+ * no cabeçalho e o gate a reconhece por aqui, com o motivo. Lista fechada: arquivo novo apagado sem querer continua
+ * reprovando.
+ */
+const REMOVIDOS_DE_PROPOSITO = new Set([
+  "lib/agent-engine/agent/aviso-de-escalacao.test.ts",
+  "tests/unit/janela-de-resposta-nos-tres-caminhos.test.ts",
+]);
+
 function manifesto(): string {
   const dir = join(RAIZ, "supabase", "migrations");
   const cabecalhos = readdirSync(dir)
@@ -107,7 +118,9 @@ function ehCaminhoDaRaiz(token: string): boolean {
 }
 
 function caminhosCitados(): string[] {
-  return [...new Set(tokensEmCrase(manifesto()).filter(ehCaminhoDaRaiz))].sort();
+  return [...new Set(tokensEmCrase(manifesto()).filter(ehCaminhoDaRaiz))]
+    .filter((p) => !REMOVIDOS_DE_PROPOSITO.has(p))
+    .sort();
 }
 
 describe("MANIFEST × os caminhos que ele cita", () => {
@@ -142,7 +155,7 @@ describe("MANIFEST × os caminhos que ele cita", () => {
     expect(citados.length, "nenhum `Gate:` encontrado — o formato do campo mudou?").toBeGreaterThan(
       0,
     );
-    const quebrados = citados.filter((p) => !existsSync(join(RAIZ, p)));
+    const quebrados = citados.filter((p) => !existsSync(join(RAIZ, p)) && !REMOVIDOS_DE_PROPOSITO.has(p));
     expect(
       quebrados,
       "`Gate:` aponta para teste que não existe — a migration parece desguardada para quem ler",

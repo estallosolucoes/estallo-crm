@@ -228,6 +228,8 @@ test.describe("IA 360 W3 — o agente para, a pessoa continua, o agente retoma s
       page.getByTestId("badge-atendimento-humano"),
       "conversa com o robô calado não pode ter a mesma cara de uma conversa normal",
     ).toBeVisible({ timeout: 30_000 });
+    // «Devolver ao automático» é item do menu «Mais ações da conversa» no Estallo: abre o menu como a pessoa faria.
+    await page.getByRole("button", { name: "Mais ações da conversa", exact: true }).click();
     const botaoDevolver = page.getByTestId("devolver-ao-automatico");
     await expect(
       botaoDevolver,

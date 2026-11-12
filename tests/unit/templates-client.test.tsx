@@ -11,14 +11,21 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(busca),
 }));
 
+const TEMPLATES = [
+  { id: "1", title: "Meu Pessoal", body: "Oi {{primeiro_nome}}", shortcut: "oi", owner_user_id: "u1" },
+  { id: "2", title: "Política da Equipe", body: "Política de troca", shortcut: null, owner_user_id: null },
+  { id: "3", title: "Pessoal do Outro", body: "Segredo do colega", shortcut: null, owner_user_id: "u2" },
+];
+
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
-  useMessageTemplates: () => ({
-    data: [
-      { id: "1", title: "Meu Pessoal", body: "Oi {{primeiro_nome}}", shortcut: "oi", owner_user_id: "u1" },
-      { id: "2", title: "Política da Equipe", body: "Política de troca", shortcut: null, owner_user_id: null },
-      { id: "3", title: "Pessoal do Outro", body: "Segredo do colega", shortcut: null, owner_user_id: "u2" },
-    ],
+  useMessageTemplates: () => ({ data: TEMPLATES, isLoading: false }),
+  // A tela pagina (30 por vez) e busca no servidor desde 17/10/2026.
+  useMessageTemplatesPaginados: () => ({
+    data: { pages: [{ data: TEMPLATES }] },
     isLoading: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: () => {},
   }),
 }));
 

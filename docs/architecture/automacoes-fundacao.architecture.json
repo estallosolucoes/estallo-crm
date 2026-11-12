@@ -1,0 +1,538 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Automações — catálogo e contrato de execução",
+    "subtitle": "Fundação validada localmente; integração do motor em andamento, com novo contrato ainda bloqueado",
+    "output": "automacoes-fundacao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "editor",
+      "label": "Editor"
+    },
+    {
+      "id": "contrato",
+      "label": "Contrato compartilhado"
+    },
+    {
+      "id": "borda",
+      "label": "Publicação e operação"
+    },
+    {
+      "id": "dados",
+      "label": "Persistência preparada"
+    }
+  ],
+  "mainPath": [
+    "catalogo",
+    "validacao",
+    "publicacao"
+  ],
+  "nodes": [
+    {
+      "id": "catalogo",
+      "lane": "contrato",
+      "col": 1,
+      "type": "service",
+      "label": "node-catalog",
+      "sublabel": "tipos por superfície, categorias, busca e contratos de saída declarados"
+    },
+    {
+      "id": "validacao",
+      "lane": "contrato",
+      "col": 2,
+      "type": "service",
+      "label": "validate-publish",
+      "sublabel": "a mesma lista de capacidades que a paleta"
+    },
+    {
+      "id": "publicacao",
+      "lane": "borda",
+      "col": 3,
+      "type": "api",
+      "label": "Publicar versão",
+      "sublabel": "contrato novo ainda indisponível; legado preservado"
+    },
+    {
+      "id": "paleta",
+      "lane": "editor",
+      "col": 2,
+      "type": "frontend",
+      "label": "NodePalette",
+      "sublabel": "consome NOS_DA_SUPERFICIE"
+    },
+    {
+      "id": "contrato",
+      "lane": "contrato",
+      "col": 1,
+      "type": "service",
+      "label": "execution-contract",
+      "sublabel": "resultados, estados e identidade de efeitos"
+    },
+    {
+      "id": "grafo",
+      "lane": "editor",
+      "col": 1,
+      "type": "frontend",
+      "label": "FlowCanvas e graph-mappers",
+      "sublabel": "preservam a versão do contrato durante a edição"
+    },
+    {
+      "id": "retention-ui",
+      "lane": "editor",
+      "col": 1,
+      "type": "frontend",
+      "label": "ExecutionRetentionButton",
+      "sublabel": "porta na lista de fluxos para manager+"
+    },
+    {
+      "id": "retention-api",
+      "lane": "borda",
+      "col": 2,
+      "type": "api",
+      "label": "GET/PATCH followup-flows/retention",
+      "sublabel": "RBAC, suporte somente leitura e organização confiável"
+    },
+    {
+      "id": "retention-policy",
+      "lane": "contrato",
+      "col": 3,
+      "type": "service",
+      "label": "Política de retenção por organização",
+      "sublabel": "Zod e RPC atômico preservam as demais configurações"
+    },
+    {
+      "id": "retention-clock",
+      "lane": "borda",
+      "col": 2,
+      "type": "service",
+      "label": "cron/data-retention",
+      "sublabel": "relógio existente, lotes e falhas parciais visíveis"
+    },
+    {
+      "id": "payloads",
+      "lane": "dados",
+      "col": 4,
+      "type": "database",
+      "label": "Passagens, tentativas e efeitos",
+      "sublabel": "expiração explícita; execuções vivas e checkpoints protegidos"
+    },
+    {
+      "id": "privacy",
+      "lane": "contrato",
+      "col": 3,
+      "type": "service",
+      "label": "Guarda de privacidade SQL",
+      "sublabel": "anonimização e proteção contra escrita tardia"
+    },
+    {
+      "id": "lgpd",
+      "lane": "borda",
+      "col": 1,
+      "type": "service",
+      "label": "Cascata de anonimização existente",
+      "sublabel": "declara is_anonymized no contato"
+    },
+    {
+      "id": "contacts",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "contacts.is_anonymized",
+      "sublabel": "a origem confiável da proteção dos snapshots"
+    },
+    {
+      "id": "audit",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "api_audit_log",
+      "sublabel": "mudança de política e resultado do expurgo; painel existente"
+    },
+    {
+      "id": "engine",
+      "lane": "borda",
+      "col": 2,
+      "type": "service",
+      "label": "Motor existente",
+      "sublabel": "confere contrato; integra tarefas, decisões, tags, movimentação e espera ao diário"
+    },
+    {
+      "id": "execution-lead",
+      "lane": "contrato",
+      "col": 3,
+      "type": "service",
+      "label": "execution-lead",
+      "sublabel": "alvo fixado para fatos, render e escritores"
+    },
+    {
+      "id": "leads",
+      "lane": "dados",
+      "col": 4,
+      "type": "database",
+      "label": "crm_leads",
+      "sublabel": "organização, contato e ID explícitos no contrato 1"
+    },
+    {
+      "id": "worker",
+      "lane": "borda",
+      "col": 3,
+      "type": "service",
+      "label": "Worker e envio inline",
+      "sublabel": "consultam contratos persistidos antes de enviar; callback confere antes de avançar"
+    },
+    {
+      "id": "execution-lead-pg",
+      "lane": "contrato",
+      "col": 4,
+      "type": "service",
+      "label": "execution-lead-pg",
+      "sublabel": "seleção explícita dos leitores do worker"
+    },
+    {
+      "id": "capability",
+      "lane": "contrato",
+      "col": 2,
+      "type": "service",
+      "label": "execution-capability",
+      "sublabel": "capacidade única compartilhada; contrato 1 ainda indisponível"
+    },
+    {
+      "id": "execution-journal",
+      "lane": "contrato",
+      "col": 4,
+      "type": "service",
+      "label": "ExecutionJournal / PgExecutionJournal",
+      "sublabel": "preparações canônicas e decisões; espera durável e transações curtas"
+    },
+    {
+      "id": "tasks",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "crm_tasks + crm_lead_activities",
+      "sublabel": "tarefa, atividade no Lead e recibo no mesmo commit"
+    },
+    {
+      "id": "central",
+      "lane": "borda",
+      "col": 5,
+      "type": "frontend",
+      "label": "Central",
+      "sublabel": "followup_dead: falhas e resultados incertos que exigem revisão"
+    },
+    {
+      "id": "job-queue",
+      "lane": "dados",
+      "col": 3,
+      "type": "database",
+      "label": "job_queue",
+      "sublabel": "turno de envio/IA; a tentativa guarda job_id (FK por organização, set null na retenção)"
+    },
+    {
+      "id": "send-ledger",
+      "lane": "dados",
+      "col": 4,
+      "type": "database",
+      "label": "send_ledger",
+      "sublabel": "recibo do canal por (job, seq); só mensagem aceita vira resultado do nó de envio"
+    },
+    {
+      "id": "attempt-jobs",
+      "lane": "dados",
+      "col": 4,
+      "type": "database",
+      "label": "followup_execution_attempt_jobs",
+      "sublabel": "N jobs por tentativa (0706): o reenfileiramento da classificação não fecha a tentativa em voo; o primeiro a concluir vence"
+    }
+  ],
+  "edges": [
+    {
+      "id": "a1",
+      "from": "catalogo",
+      "to": "validacao",
+      "label": "nodeTypesForSurface"
+    },
+    {
+      "id": "a2",
+      "from": "validacao",
+      "to": "publicacao",
+      "label": "erros legíveis antes de publicar"
+    },
+    {
+      "id": "a3",
+      "from": "validacao",
+      "to": "paleta",
+      "label": "NOS_DA_SUPERFICIE"
+    },
+    {
+      "id": "a4",
+      "from": "contrato",
+      "to": "validacao",
+      "label": "executor novo só é liberado após integração"
+    },
+    {
+      "id": "a5",
+      "from": "grafo",
+      "to": "validacao",
+      "label": "grafo com metadados preservados"
+    },
+    {
+      "id": "a6",
+      "from": "retention-ui",
+      "to": "retention-api",
+      "label": "ver e salvar os dois prazos"
+    },
+    {
+      "id": "a7",
+      "from": "retention-api",
+      "to": "retention-policy",
+      "label": "settings.automations.retention"
+    },
+    {
+      "id": "a8",
+      "from": "retention-api",
+      "to": "audit",
+      "label": "followup.retention_updated"
+    },
+    {
+      "id": "a9",
+      "from": "retention-policy",
+      "to": "retention-clock",
+      "label": "política resolvida no banco por organização"
+    },
+    {
+      "id": "a10",
+      "from": "retention-clock",
+      "to": "payloads",
+      "label": "expurgar payloads e metadados elegíveis"
+    },
+    {
+      "id": "a11",
+      "from": "payloads",
+      "to": "retention-clock",
+      "label": "contagens sem conteúdo pessoal"
+    },
+    {
+      "id": "a12",
+      "from": "retention-clock",
+      "to": "audit",
+      "label": "retention.sweep_run"
+    },
+    {
+      "id": "a13",
+      "from": "lgpd",
+      "to": "contacts",
+      "label": "anonimização declarada"
+    },
+    {
+      "id": "a14",
+      "from": "contacts",
+      "to": "privacy",
+      "label": "trigger no contato e trava durante escrita de snapshot"
+    },
+    {
+      "id": "a15",
+      "from": "privacy",
+      "to": "payloads",
+      "label": "remove snapshots e referências externas"
+    },
+    {
+      "id": "a16",
+      "from": "payloads",
+      "to": "privacy",
+      "label": "BEFORE INSERT/UPDATE impede escrita tardia"
+    },
+    {
+      "id": "a17",
+      "from": "engine",
+      "to": "execution-lead",
+      "label": "contexto da inscrição"
+    },
+    {
+      "id": "a18",
+      "from": "execution-lead",
+      "to": "leads",
+      "label": "seleção sem fallback no contrato 1"
+    },
+    {
+      "id": "a19",
+      "from": "leads",
+      "to": "execution-lead",
+      "label": "linha real ou erro de alvo indisponível"
+    },
+    {
+      "id": "a20",
+      "from": "execution-lead",
+      "to": "engine",
+      "label": "mesmo alvo para leitura e escrita"
+    },
+    {
+      "id": "a21",
+      "from": "contrato",
+      "to": "engine",
+      "label": "reexporta guarda compartilhada"
+    },
+    {
+      "id": "a22",
+      "from": "capability",
+      "to": "contrato",
+      "label": "capacidade e conferência de contrato"
+    },
+    {
+      "id": "a23",
+      "from": "capability",
+      "to": "worker",
+      "label": "recusa antes de efeito externo"
+    },
+    {
+      "id": "a24",
+      "from": "worker",
+      "to": "execution-lead-pg",
+      "label": "leitores recebem alvo da inscrição"
+    },
+    {
+      "id": "a25",
+      "from": "execution-lead-pg",
+      "to": "leads",
+      "label": "consulta por organização, contato e ID"
+    },
+    {
+      "id": "a26",
+      "from": "execution-lead-pg",
+      "to": "worker",
+      "label": "fatos e contexto de renderização do mesmo Lead"
+    },
+    {
+      "id": "a27",
+      "from": "worker",
+      "to": "engine",
+      "label": "interface compartilhada; conclusão via turn-bridge"
+    },
+    {
+      "id": "a28",
+      "from": "worker",
+      "to": "capability",
+      "label": "contratos lidos da inscrição e versão fixada"
+    },
+    {
+      "id": "a29",
+      "from": "engine",
+      "to": "capability",
+      "label": "contratos antes do processamento do nó"
+    },
+    {
+      "id": "a30",
+      "from": "engine",
+      "to": "execution-journal",
+      "label": "persiste antes do trabalho; confirma ou registra falha"
+    },
+    {
+      "id": "a31",
+      "from": "execution-journal",
+      "to": "engine",
+      "label": "recibo confirmado ou recusa explícita"
+    },
+    {
+      "id": "a32",
+      "from": "execution-journal",
+      "to": "tasks",
+      "label": "tarefa e atividade atômicas"
+    },
+    {
+      "id": "a33",
+      "from": "tasks",
+      "to": "execution-journal",
+      "label": "identificador real da tarefa"
+    },
+    {
+      "id": "a34",
+      "from": "execution-journal",
+      "to": "payloads",
+      "label": "snapshots, outputs, ramo e recibos reais"
+    },
+    {
+      "id": "a35",
+      "from": "execution-journal",
+      "to": "audit",
+      "label": "tarefa e alterações no Lead; best effort savepoint"
+    },
+    {
+      "id": "a36",
+      "from": "execution-journal",
+      "to": "central",
+      "label": "interrompe e pede revisão; não repete efeito incerto"
+    },
+    {
+      "id": "a37",
+      "from": "central",
+      "to": "engine",
+      "label": "superfície operacional de intervenção existente"
+    },
+    {
+      "id": "a38",
+      "from": "execution-journal",
+      "to": "leads",
+      "label": "tags e etapa com snapshot revalidado; mutação e recibo atômicos"
+    },
+    {
+      "id": "a39",
+      "from": "leads",
+      "to": "execution-journal",
+      "label": "resultado real e recusa de alterações humanas concorrentes"
+    },
+    {
+      "id": "a40",
+      "from": "engine",
+      "to": "job-queue",
+      "label": "enfileira o turno de envio depois de abrir a tentativa"
+    },
+    {
+      "id": "a41",
+      "from": "execution-journal",
+      "to": "job-queue",
+      "label": "attachJob liga a tentativa ao job da mesma inscrição, nó e passagem"
+    },
+    {
+      "id": "a42",
+      "from": "worker",
+      "to": "send-ledger",
+      "label": "o envio grava a intenção e o recibo aceito por job e sequência"
+    },
+    {
+      "id": "a43",
+      "from": "send-ledger",
+      "to": "execution-journal",
+      "label": "completeSend lê só recibos aceitos; sem recibo não há sucesso"
+    },
+    {
+      "id": "a44",
+      "from": "execution-journal",
+      "to": "attempt-jobs",
+      "label": "attachJob liga cada job à tentativa; begin reaproveita a tentativa aberta da classificação"
+    },
+    {
+      "id": "a45",
+      "from": "job-queue",
+      "to": "attempt-jobs",
+      "label": "FK por organização: o vínculo some com o job (cascade) e a tentativa guarda o histórico"
+    },
+    {
+      "id": "a46",
+      "from": "attempt-jobs",
+      "to": "execution-journal",
+      "label": "completeClassification/Send/Skipped/deferSend acham a tentativa pelo job; o primeiro concluir vence, os demais viram no-op"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Integração transacional sob capacidade desabilitada",
+      "items": [
+        "Tarefa, tags, movimentação, condição, acionamento simples, fim, espera, repetição, envio (com recibo do ledger), classificação por IA (inclusive o reenfileiramento e o no_reply), turno pulado e envio adiado registram resultados no diário. Pendentes: envio inline, captura de resposta (match_reply), coleta e skill, espera inteligente (smart) e a prova pela tela. O contrato 1 continua indisponível na operação normal."
+      ]
+    }
+  ]
+}

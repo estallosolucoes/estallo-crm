@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Inbox por situação de resposta", "subtitle": "Uma classificação para listas e contadores; o ciclo do atendimento segue separado", "output": "inbox-status-resposta.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "dados", "label": "Dados" }, { "id": "api", "label": "API com RLS" }, { "id": "ui", "label": "Atendimento" }],
+  "mainPath": ["carimbos", "categoria", "lista", "inbox"],
+  "nodes": [
+    { "id": "carimbos", "lane": "dados", "col": 1, "type": "database", "label": "conversations", "sublabel": "last_inbound_at, last_outbound_at, status, is_group" },
+    { "id": "categoria", "lane": "dados", "col": 2, "type": "backend", "label": "status_do_chat", "sublabel": "campo calculado, invoker; migration 0663" },
+    { "id": "lista", "lane": "api", "col": 3, "type": "backend", "label": "conversations/_handler.ts", "sublabel": "aplicarStatusDoChat antes de cursor/limit" },
+    { "id": "contagens", "lane": "api", "col": 3, "type": "backend", "label": "conversations/counts", "sublabel": "mesma régua e filtros auxiliares" },
+    { "id": "inbox", "lane": "ui", "col": 4, "type": "frontend", "label": "InboxFilters → ConversationList", "sublabel": "cinco categorias, ajuda, canal e ordem; Realtime recarrega" }
+  ],
+  "edges": [
+    { "from": "carimbos", "to": "categoria", "label": "entrada/saída reais" },
+    { "from": "categoria", "to": "lista", "label": "filtro no banco" },
+    { "from": "categoria", "to": "contagens", "label": "mesmo predicado" },
+    { "from": "lista", "to": "inbox", "label": "páginas e ordenação" },
+    { "from": "contagens", "to": "inbox", "label": "badges por categoria" },
+    { "from": "inbox", "to": "lista", "label": "categoria, canal e ordem escolhidos" }
+  ]
+}

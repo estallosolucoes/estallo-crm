@@ -3,7 +3,8 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
+import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,10 +95,23 @@ export function useCampoDoFunilDaCaptacao(webhookSourceId: string | null): Campo
         toast.error(mensagemDoMotivo(novo.motivo, t));
         return false;
       }
-      const r = await updatePipelineConfig(pipelineId, { fields: novo.fields });
-      if (!r.ok) {
+      // O campo nasce no cadastro central da empresa (CRM › Campos
+      // personalizados), visível neste funil; o banco projeta em
+      // `settings.fields`, que é o que a captação e o card leem.
+      try {
+        await apiClient.post("/api/v1/custom-fields", {
+          entity: "lead",
+          key: chave,
+          label: rotulo.trim().slice(0, 80),
+          type: tipo,
+          visivel_global: false,
+          funis_visiveis: [pipelineId],
+        });
+      } catch (erro) {
         toast.error(
-          t("Não foi possível cadastrar o campo. Só quem administra o funil pode fazer isso."),
+          erro instanceof ApiError && erro.status === 409
+            ? t("Esse campo já está cadastrado.")
+            : t("Não foi possível cadastrar o campo. Só quem administra a empresa pode fazer isso."),
         );
         return false;
       }

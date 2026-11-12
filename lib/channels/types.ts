@@ -230,6 +230,8 @@ export interface ChannelAdapter {
    *
    * A URL devolvida costuma ser ASSINADA E TEMPORÁRIA (no WhatsApp, ~9 dias
    * medidos). Quem chama deve BAIXAR e persistir, nunca guardar a URL.
+   *
+   * `null` = o canal respondeu que NÃO HÁ foto. Falha ao perguntar LANÇA.
    */
   fetchProfilePictureUrl?(input: ChannelTenantScope & {
     sessionRef: string;

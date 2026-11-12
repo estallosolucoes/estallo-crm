@@ -82,11 +82,11 @@ describe("Tailwind 4 — a ponte token → utilitário", () => {
 
     expect(consumidos.length).toBeGreaterThan(50);
 
-    // As duas fontes são injetadas pelo `next/font` como custom property no
+    // As fontes (Manrope, Sora e JetBrains Mono, as do Design System Estallo) são injetadas pelo `next/font` como custom property no
     // `<html>` (app/layout.tsx), não pelo `:root` do CSS — por isso não caem na
     // regra acima. A isenção não é um buraco: o teste confere logo abaixo que
     // elas continuam sendo declaradas lá.
-    const DE_FORA_DO_CSS = ["--font-atkinson", "--font-mono"];
+    const DE_FORA_DO_CSS = ["--font-manrope", "--font-sora", "--font-jetbrains"];
     const layout = fs.readFileSync(path.join(RAIZ, "app/layout.tsx"), "utf8");
     for (const v of DE_FORA_DO_CSS) {
       expect(layout, `${v} deixou de ser declarada pelo next/font`).toContain(`"${v}"`);

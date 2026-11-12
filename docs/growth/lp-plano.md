@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Plano da Landing Page — deskcomm.com.br
 
 > Plano de conteúdo, layout, narrativa e direção de arte. **Não é código.**
@@ -13,17 +15,17 @@ O `docs/design-system/07-motion-language.md` proíbe, com essas palavras:
 
 E você pediu exatamente camadas com motion no scroll. Não é contradição sua — é escopo: **aquele documento governa a aplicação**, onde o operador passa 8 horas e movimento gratuito vira cansaço. Uma página de venda é outro artefato, com outro trabalho.
 
-**A reconciliação que proponho** mantém o espírito do documento, que é o que importa. Ele define quatro testes, e o primeiro é: *"Posso explicar o que essa animação comunica em uma frase? Se a resposta é 'fica bonito', remove."*
+**A reconciliação que proponho** mantém o espírito do documento, que é o que importa. Ele define quatro testes, e o primeiro é: _"Posso explicar o que essa animação comunica em uma frase? Se a resposta é 'fica bonito', remove."_
 
 Então a regra da LP fica: **camada que se move precisa estar explicando o produto.** O lead atravessando a mesa se move porque **é isso que o lead faz**. A peça do agente acende quando o turno dele começa porque **é quando ele age**. Profundidade por profundidade — três planos deslizando em velocidades diferentes só para dar sensação de 3D — continua proibida, aqui também.
 
 Na prática isso separa duas coisas que parecem a mesma:
 
-| Permitido na LP | Continua proibido |
-|---|---|
-| Camada se move porque representa uma etapa real do sistema | Camada se move para dar sensação de profundidade |
-| Estado muda quando o scroll chega no ponto que o explica | Elemento entra com fade só porque entrou no viewport |
-| Movimento tem começo e fim ligados a um fato do produto | Movimento contínuo de fundo, decorativo |
+| Permitido na LP                                            | Continua proibido                                    |
+| ---------------------------------------------------------- | ---------------------------------------------------- |
+| Camada se move porque representa uma etapa real do sistema | Camada se move para dar sensação de profundidade     |
+| Estado muda quando o scroll chega no ponto que o explica   | Elemento entra com fade só porque entrou no viewport |
+| Movimento tem começo e fim ligados a um fato do produto    | Movimento contínuo de fundo, decorativo              |
 
 **✅ APROVADO por Rafael em 27/07/2026.** Vira um documento novo — `docs/design-system/10-landing-motion.md` — declarando o escopo. Assim não é violação silenciosa da doutrina; é extensão registrada dela. O próprio `09-anti-patterns.md` diz que anti-patterns são o memory bank do design system e devem ser atualizados por PR.
 
@@ -35,17 +37,17 @@ Na prática isso separa duas coisas que parecem a mesma:
 
 Os três objetivos não são um funil sequencial — são **três saídas** que a mesma página serve para pessoas diferentes:
 
-| Objetivo | Quem faz | Onde a página oferece |
-|---|---|---|
-| ⭐ Star no repo | dev / técnico avaliando | header, bloco de prova, footer |
-| 📦 Instalação na VPS | técnico ou revendedor | seções 9 e 10, CTA persistente |
-| 💳 Assinatura da VPS | dono do negócio | banner final + CTA do hero |
+| Objetivo             | Quem faz                | Onde a página oferece          |
+| -------------------- | ----------------------- | ------------------------------ |
+| ⭐ Star no repo      | dev / técnico avaliando | header, bloco de prova, footer |
+| 📦 Instalação na VPS | técnico ou revendedor   | seções 9 e 10, CTA persistente |
+| 💳 Assinatura da VPS | dono do negócio         | banner final + CTA do hero     |
 
 A narrativa principal fala com **o dono do negócio**. Ele é quem paga a VPS, e a página é em pt-BR. O dev não é ignorado — ele tem um bloco inteiro feito para o ceticismo dele (§7), mas esse bloco não sequestra a história.
 
 ### Regra de ouro do conteúdo
 
-Cada seção responde **uma** pergunta que o visitante realmente tem, nessa ordem: *o que é isso? · por que eu deveria me importar? · isso funciona mesmo? · serve pro meu caso? · como eu começo? · quanto custa?*
+Cada seção responde **uma** pergunta que o visitante realmente tem, nessa ordem: _o que é isso? · por que eu deveria me importar? · isso funciona mesmo? · serve pro meu caso? · como eu começo? · quanto custa?_
 
 Seção que não responde nenhuma delas sai do plano.
 
@@ -154,15 +156,15 @@ A segunda linha do H1 é a frase que ancora a categoria. Ela vem da doutrina (`s
 
 Cinco PNGs empilhados, ordem de baixo para cima:
 
-| # | Camada | Comportamento |
-|---|---|---|
-| 1 | Tampo da mesa (sombra + superfície) | estático |
-| 2 | Trilhas de conexão entre as peças | acendem em sequência ao entrar (uma vez) |
-| 3 | Peças: conversa, funil, agente, follow-up, log | estáticas |
-| 4 | Rótulos flutuantes das peças | fade + 8px rise, stagger 50ms |
-| 5 | O lead (um ponto sage) | percorre a trilha da conversa até o funil |
+| #   | Camada                                         | Comportamento                             |
+| --- | ---------------------------------------------- | ----------------------------------------- |
+| 1   | Tampo da mesa (sombra + superfície)            | estático                                  |
+| 2   | Trilhas de conexão entre as peças              | acendem em sequência ao entrar (uma vez)  |
+| 3   | Peças: conversa, funil, agente, follow-up, log | estáticas                                 |
+| 4   | Rótulos flutuantes das peças                   | fade + 8px rise, stagger 50ms             |
+| 5   | O lead (um ponto sage)                         | percorre a trilha da conversa até o funil |
 
-**Movimento no scroll:** a câmera **não** faz parallax de profundidade. Ela faz uma coisa só e explicável: conforme o scroll desce, a mesa **inclina levemente** (de ~18° para ~12° de isometria), como quem se aproxima para olhar de perto. Uma frase: *"você está chegando mais perto da mesa"*. É a transição para a §4, que acontece **em cima da mesma mesa**.
+**Movimento no scroll:** a câmera **não** faz parallax de profundidade. Ela faz uma coisa só e explicável: conforme o scroll desce, a mesa **inclina levemente** (de ~18° para ~12° de isometria), como quem se aproxima para olhar de perto. Uma frase: _"você está chegando mais perto da mesa"_. É a transição para a §4, que acontece **em cima da mesma mesa**.
 
 `prefers-reduced-motion`: mesa no ângulo final, trilhas acesas, lead posicionado no meio do caminho. História inteira, zero movimento.
 
@@ -196,13 +198,13 @@ Aqui a categoria é nomeada e — crucialmente — **definida por critérios que
 
 Cinco itens, cada um com um mini-diagrama e a formulação verificável:
 
-| # | Regra | Como se verifica |
-|---|---|---|
-| 1 | **Nada é ilha** | toda peça tem entrada e saída — o mapa de arquitetura é público |
-| 2 | **Nenhum lead morre sem diagnóstico** | demanda parada aparece no Radar classificada por risco |
-| 3 | **Toda ação da IA é auditável** | 7 verificações por envio, cada uma vira registro — inclusive as que barram |
-| 4 | **Log invisível é log morto** | toda mutação relevante vira atividade na linha do tempo, na tela |
-| 5 | **Follow-up é o anti-morte** | demanda aberta sem próximo passo é tratada como vazamento |
+| #   | Regra                                 | Como se verifica                                                           |
+| --- | ------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | **Nada é ilha**                       | toda peça tem entrada e saída — o mapa de arquitetura é público            |
+| 2   | **Nenhum lead morre sem diagnóstico** | demanda parada aparece no Radar classificada por risco                     |
+| 3   | **Toda ação da IA é auditável**       | 7 verificações por envio, cada uma vira registro — inclusive as que barram |
+| 4   | **Log invisível é log morto**         | toda mutação relevante vira atividade na linha do tempo, na tela           |
+| 5   | **Follow-up é o anti-morte**          | demanda aberta sem próximo passo é tratada como vazamento                  |
 
 > **Fecho:** Isso não é o que a gente promete. É o critério que uma mudança precisa passar para entrar no sistema — está em `docs/doctrine/sistema-vivo.md`, e o checklist de sete perguntas é respondido antes de cada merge.
 
@@ -210,7 +212,7 @@ Cinco itens, cada um com um mini-diagrama e a formulação verificável:
 
 ## 4. SCROLLYTELLING — A vida de um lead ◄ peça central
 
-**A seção mais importante da página.** É onde as promessas viram algo que o visitante *vê acontecer*.
+**A seção mais importante da página.** É onde as promessas viram algo que o visitante _vê acontecer_.
 
 Formato: **imagem fixa (sticky) à direita, texto rolando à esquerda.** O visitante desce, e a mesma cena da mesa muda de estado a cada bloco de texto. Uma cena, sete estados.
 
@@ -218,15 +220,15 @@ Por que sticky em vez de sequência de imagens soltas: mantém a continuidade es
 
 ### Os sete beats
 
-| # | Texto (esquerda) | O que muda na cena (direita) |
-|---|---|---|
-| 1 | **09:41 — chega uma mensagem.** "Vocês entregam em Salvador?" Antes de qualquer resposta, o sistema já sabe quem é: histórico, pedidos, o que ficou combinado da última vez. | Peça da conversa acende. Um cartão de contexto sobe ao lado com os dados do contato. |
-| 2 | **O agente lê antes de falar.** Ele busca na base de conhecimento **da sua empresa** — seu prazo, sua política, seu catálogo. Não inventa. | Linha ligando o agente à peça da base de conhecimento; documentos acendem em sequência. |
-| 3 | **Sete verificações antes de enviar.** Descadastro, LGPD, anti-banimento, variação de texto, promessa determinística, promessa semântica, aviso de automação. Nessa ordem, sempre. | Sete pequenos gates aparecem em fila. Seis passam em verde; **um barra em âmbar** e a mensagem volta. |
-| 4 | **Inclusive o que ele decidiu NÃO enviar.** O agente ia prometer entrega em 24h. A verificação de promessa barrou: esse prazo não existe no seu catálogo. Fica registrado o que ele ia dizer e por que não disse. | Zoom no gate âmbar; um registro se materializa com a razão da recusa. |
-| 5 | **O lead se move sozinho.** Qualificado, ele muda de etapa no funil. A etiqueta entra, o responsável é definido — e cada movimento tem motivo registrado. | O ponto do lead percorre a trilha até a peça do funil e assenta numa coluna nova. |
-| 6 | **Quando é hora do humano, ele recebe contexto — não a conversa crua.** Resumo do que aconteceu, o que foi combinado, quais objeções apareceram e qual é o próximo passo. | A peça do agente passa o bastão para a peça do atendente; um cartão de resumo transita entre elas. |
-| 7 | **E se ninguém responder, o sistema não deixa morrer.** Follow-up agendado. Se esfriar, o lead aparece no Radar classificado por risco — antes de virar prejuízo. | Peça do follow-up acende; um contador de tempo começa; o lead ganha um anel âmbar de "em risco". |
+| #   | Texto (esquerda)                                                                                                                                                                                                  | O que muda na cena (direita)                                                                          |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1   | **09:41 — chega uma mensagem.** "Vocês entregam em Salvador?" Antes de qualquer resposta, o sistema já sabe quem é: histórico, pedidos, o que ficou combinado da última vez.                                      | Peça da conversa acende. Um cartão de contexto sobe ao lado com os dados do contato.                  |
+| 2   | **O agente lê antes de falar.** Ele busca na base de conhecimento **da sua empresa** — seu prazo, sua política, seu catálogo. Não inventa.                                                                        | Linha ligando o agente à peça da base de conhecimento; documentos acendem em sequência.               |
+| 3   | **Sete verificações antes de enviar.** Descadastro, LGPD, anti-banimento, variação de texto, promessa determinística, promessa semântica, aviso de automação. Nessa ordem, sempre.                                | Sete pequenos gates aparecem em fila. Seis passam em verde; **um barra em âmbar** e a mensagem volta. |
+| 4   | **Inclusive o que ele decidiu NÃO enviar.** O agente ia prometer entrega em 24h. A verificação de promessa barrou: esse prazo não existe no seu catálogo. Fica registrado o que ele ia dizer e por que não disse. | Zoom no gate âmbar; um registro se materializa com a razão da recusa.                                 |
+| 5   | **O lead se move sozinho.** Qualificado, ele muda de etapa no funil. A etiqueta entra, o responsável é definido — e cada movimento tem motivo registrado.                                                         | O ponto do lead percorre a trilha até a peça do funil e assenta numa coluna nova.                     |
+| 6   | **Quando é hora do humano, ele recebe contexto — não a conversa crua.** Resumo do que aconteceu, o que foi combinado, quais objeções apareceram e qual é o próximo passo.                                         | A peça do agente passa o bastão para a peça do atendente; um cartão de resumo transita entre elas.    |
+| 7   | **E se ninguém responder, o sistema não deixa morrer.** Follow-up agendado. Se esfriar, o lead aparece no Radar classificado por risco — antes de virar prejuízo.                                                 | Peça do follow-up acende; um contador de tempo começa; o lead ganha um anel âmbar de "em risco".      |
 
 **Motion:** cada mudança de estado é `opacity` + `transform` de uma camada, disparada quando o bloco de texto correspondente entra na área central da viewport. Nada se move continuamente. Nada se move sem que o texto ao lado explique o que aquilo é.
 
@@ -295,14 +297,14 @@ Deliberadamente técnico e denso. O dono do negócio pula; o dev cético para aq
 >
 > Quatro cartões, cada um com o caminho no repositório:
 
-| Afirmação | Onde conferir |
-|---|---|
-| **Isolamento entre clientes é testado a cada alteração.** O CI sobe um Postgres limpo e roda 364 testes de invariante. Um deles cria duas organizações e prova que uma não vê nenhuma linha da outra — e um caso de controle prova antes que as linhas existem, senão o teste passaria com a tabela vazia. | `tests/invariants/rls-isolation.test.ts` |
-| **Sete verificações antes de cada envio, em ordem fixa e versionada.** Cada avaliação vira registro durável, exportável — inclusive as que barraram. | `lib/agent-engine/guardrails/before-send.ts` |
-| **Atualizar não quebra.** O caminho de atualização é testado: o schema é aplicado em banco novo e reaplicado em banco existente, provando idempotência. | `scripts/test-db.sh` |
-| **MIT, sem versão paga, sem funcionalidade travada.** O que você instala é o produto completo. | `LICENSE` |
+| Afirmação                                                                                                                                                                                                                                                                                                  | Onde conferir                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Isolamento entre clientes é testado a cada alteração.** O CI sobe um Postgres limpo e roda 364 testes de invariante. Um deles cria duas organizações e prova que uma não vê nenhuma linha da outra — e um caso de controle prova antes que as linhas existem, senão o teste passaria com a tabela vazia. | `tests/invariants/rls-isolation.test.ts`     |
+| **Sete verificações antes de cada envio, em ordem fixa e versionada.** Cada avaliação vira registro durável, exportável — inclusive as que barraram.                                                                                                                                                       | `lib/agent-engine/guardrails/before-send.ts` |
+| **Atualizar não quebra.** O caminho de atualização é testado: o schema é aplicado em banco novo e reaplicado em banco existente, provando idempotência.                                                                                                                                                    | `scripts/test-db.sh`                         |
+| **MIT, sem versão paga, sem funcionalidade travada.** O que você instala é o produto completo.                                                                                                                                                                                                             | `LICENSE`                                    |
 
-> **CTA do bloco:** ⭐ Dar uma estrela no GitHub — *é o que ajuda outras pessoas a encontrarem o projeto.* `[116 estrelas]`
+> **CTA do bloco:** ⭐ Dar uma estrela no GitHub — _é o que ajuda outras pessoas a encontrarem o projeto._ `[116 estrelas]`
 
 Pedido de star limpo, sem recompensa. Incentivar star com brinde viola a política do GitHub — e **90,42% dos repositórios com campanha de estrela falsa foram deletados**.
 
@@ -312,7 +314,7 @@ Pedido de star limpo, sem recompensa. Incentivar star com brinde viola a políti
 
 > **Título:** O mesmo sistema atende quem vende consulta e quem vende tênis.
 >
-> **Corpo:** O vocabulário do funil é configurável: *lead* vira **Cliente**, **Paciente** ou **Comprador**; *ganho* vira **Pago**, **Agendado** ou **Fechado**. Não é tema, não é fork, não é "versão para clínicas" — é o mesmo núcleo, configurado.
+> **Corpo:** O vocabulário do funil é configurável: _lead_ vira **Cliente**, **Paciente** ou **Comprador**; _ganho_ vira **Pago**, **Agendado** ou **Fechado**. Não é tema, não é fork, não é "versão para clínicas" — é o mesmo núcleo, configurado.
 
 Interativo leve: quatro abas (E-commerce · Clínica · Imobiliária · Serviços). Trocar a aba troca os rótulos no mesmo diagrama de funil. Uma imagem, quatro estados — **não** quatro imagens.
 
@@ -387,7 +389,7 @@ Formato deliberado (é o que a pesquisa de GEO mediu como eficaz): **pergunta li
 9. O que acontece se a IA errar?
 10. Preciso de cartão de crédito para testar?
 
-A 9 é a mais importante e quase ninguém responde: *"Cada mensagem passa por sete verificações antes de sair, e todas ficam registradas — inclusive as que barraram um envio. Quando o agente não deve seguir sozinho, ele passa para um humano com resumo do que aconteceu."*
+A 9 é a mais importante e quase ninguém responde: _"Cada mensagem passa por sete verificações antes de sair, e todas ficam registradas — inclusive as que barraram um envio. Quando o agente não deve seguir sozinho, ele passa para um humano com resumo do que aconteceu."_
 
 ---
 
@@ -411,12 +413,12 @@ Removidos: **OpenClaw** e **Hermes** — não têm relação com o Deskcomm e di
 
 Quatro colunas + barra inferior.
 
-| Produto | Documentação | Comunidade | Projeto |
-|---|---|---|---|
-| Como funciona | Guia de instalação | GitHub Discussions | Licença MIT |
-| Para agências | Guia para agências | Issues | Changelog |
-| Preço | Arquitetura | YouTube | Segurança |
-| FAQ | Doutrina do sistema vivo | Instagram | Contribuir |
+| Produto       | Documentação             | Comunidade         | Projeto     |
+| ------------- | ------------------------ | ------------------ | ----------- |
+| Como funciona | Guia de instalação       | GitHub Discussions | Licença MIT |
+| Para agências | Guia para agências       | Issues             | Changelog   |
+| Preço         | Arquitetura              | YouTube            | Segurança   |
+| FAQ           | Doutrina do sistema vivo | Instagram          | Contribuir  |
 
 Barra inferior: `DeskcommCRM · MIT · Feito no Brasil` · **`Página atualizada em [data]`** — visível, não só no schema: a pesquisa mediu que **75% das páginas citadas por IA foram atualizadas nos últimos 12 meses**, e a data de atualização discrimina melhor que a de publicação.
 
@@ -426,16 +428,16 @@ Barra inferior: `DeskcommCRM · MIT · Feito no Brasil` · **`Página atualizada
 
 **11 imagens.** Todas 3D, geradas depois no ChatGPT a partir dos prompts da próxima seção.
 
-| ID | Onde | O que mostra | Camadas |
-|---|---|---|---|
-| `mesa-01` | Hero | A mesa isométrica completa | 5 (tampo · trilhas · peças · rótulos · lead) |
-| `viloes-01` | §2 | Mesa com peças desconectadas, um lead caindo pelo vão | 1 |
-| `viloes-02` | §2 | Peça de robô falando sozinha, sem trilha de saída | 1 |
-| `cena-01..07` | §4 | Sete estados da mesma cena em close | 4 cada, compartilhadas |
-| `turno-01` | §5 | Vista explodida do turno do agente, 6 camadas | 7 (6 camadas + pulso) |
-| `radar-01` | §6 | Radar com três anéis de risco | 3 |
-| `nichos-01` | §8 | Funil neutro, rótulos como camada separada | 2 (base + 4 variantes de rótulo) |
-| `marca-01` | §9 | Mesma tela em duas marcas | 1 |
+| ID            | Onde | O que mostra                                          | Camadas                                      |
+| ------------- | ---- | ----------------------------------------------------- | -------------------------------------------- |
+| `mesa-01`     | Hero | A mesa isométrica completa                            | 5 (tampo · trilhas · peças · rótulos · lead) |
+| `viloes-01`   | §2   | Mesa com peças desconectadas, um lead caindo pelo vão | 1                                            |
+| `viloes-02`   | §2   | Peça de robô falando sozinha, sem trilha de saída     | 1                                            |
+| `cena-01..07` | §4   | Sete estados da mesma cena em close                   | 4 cada, compartilhadas                       |
+| `turno-01`    | §5   | Vista explodida do turno do agente, 6 camadas         | 7 (6 camadas + pulso)                        |
+| `radar-01`    | §6   | Radar com três anéis de risco                         | 3                                            |
+| `nichos-01`   | §8   | Funil neutro, rótulos como camada separada            | 2 (base + 4 variantes de rótulo)             |
+| `marca-01`    | §9   | Mesma tela em duas marcas                             | 1                                            |
 
 **Total de arquivos:** ~28 PNGs (contando camadas). Em AVIF isso fica sob 1,2 MB no total, com só o hero em carregamento prioritário.
 
@@ -462,7 +464,7 @@ Style reference: architectural maquette, not videogame asset.
 
 ### Regras de camada
 
-Cada camada é gerada como PNG separado **com alfa**, no mesmo enquadramento e escala. O jeito de conseguir isso: gerar a cena completa primeiro, depois pedir cada elemento isolado *"same scene, same camera, same lighting, only the [X], everything else fully transparent"*.
+Cada camada é gerada como PNG separado **com alfa**, no mesmo enquadramento e escala. O jeito de conseguir isso: gerar a cena completa primeiro, depois pedir cada elemento isolado _"same scene, same camera, same lighting, only the [X], everything else fully transparent"_.
 
 Rótulos **nunca** entram na imagem — são HTML por cima. Três motivos: texto em imagem não é lido por buscador nem por crawler de IA, não dá para traduzir, e fica serrilhado no retina.
 
@@ -490,29 +492,29 @@ Depois, uma passada por camada: `tampo`, `trilhas`, `peças`, `lead`.
 
 ## O que eu preciso de você para executar
 
-| # | Item | Por quê |
-|---|---|---|
-| 1 | **Aprovar a extensão de motion** (§0) | senão a LP viola a doutrina que o repo declara |
-| 2 | **`deskcomm.com.br` apontado** | eu aviso quando a LP estiver pronta para deploy |
-| 3 | **Gerar as 11 imagens** com os prompts | você faz no ChatGPT; eu entrego os prompts prontos, um por arquivo |
-| 4 | **Confirmar o repo do site** | `deskcomm-site` público, separado do CRM (para clone não receber a LP) |
+| #   | Item                                   | Por quê                                                                |
+| --- | -------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | **Aprovar a extensão de motion** (§0)  | senão a LP viola a doutrina que o repo declara                         |
+| 2   | **`deskcomm.com.br` apontado**         | eu aviso quando a LP estiver pronta para deploy                        |
+| 3   | **Gerar as 11 imagens** com os prompts | você faz no ChatGPT; eu entrego os prompts prontos, um por arquivo     |
+| 4   | **Confirmar o repo do site**           | `deskcomm-site` público, separado do CRM (para clone não receber a LP) |
 
 ---
 
-*Plano escrito em 27 de julho de 2026.*
+_Plano escrito em 27 de julho de 2026._
 
 ---
 
 ## Apêndice — padrões de referência aprovados
 
-Referências enviadas pelo Rafael em 27/07: **Google CodeWiki** e **Twenty CRM**. Aproveitamos o *mecanismo*; a paleta continua sendo a nossa.
+Referências enviadas pelo Rafael em 27/07: **Google CodeWiki** e **Twenty CRM**. Aproveitamos o _mecanismo_; a paleta continua sendo a nossa.
 
 ### Do CodeWiki — o sólido que se abre nas próprias faces
 
 Um cubo wireframe que, ao rolar, se desdobra nas faces que o compõem, cada uma carregando um ícone. É a melhor referência de motion que existe para a **§5 (turno do agente)**: um bloco fechado virando suas camadas.
 
 **Adotamos:** a mecânica fechado → aberto, disparada uma vez, com as peças mantendo alinhamento no mesmo eixo.
-**Rejeitamos:** fundo preto e o *glow* azul radial. Violam o anti-pattern nº 3 (`gradiente roxo/azul/rosa`) e nº 4 (`bg cool-gray`). Nosso equivalente de destaque é **ausência de sombra**, não luz emitida — coerente com material clay fosco.
+**Rejeitamos:** fundo preto e o _glow_ azul radial. Violam o anti-pattern nº 3 (`gradiente roxo/azul/rosa`) e nº 4 (`bg cool-gray`). Nosso equivalente de destaque é **ausência de sombra**, não luz emitida — coerente com material clay fosco.
 
 ### Do Twenty — trilho numerado + visual sticky
 

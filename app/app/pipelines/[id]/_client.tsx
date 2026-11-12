@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
@@ -23,6 +23,8 @@ function formatError(err: unknown, t: (texto: string) => string): string {
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
 import { CalendarioDoFunil } from "@/components/kanban/CalendarioDoFunil";
 import { FilterBar } from "@/components/kanban/FilterBar";
+import { BotaoFixarFunil } from "@/components/kanban/BotaoFixarFunil";
+import { useFunisFixados } from "@/hooks/kanban/useFunisFixados";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { Button } from "@/components/ui/button";
@@ -65,11 +67,15 @@ export function PipelinePageClient({
   const setFilters = useCallback(
     (next: LeadFilters) => {
       const qs = filtersToParams(next);
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      // History API nativa, e não `router.replace`: esta página é dinâmica, e o
+      // router relia o servidor (sessão, organização, funis) a cada filtro. O
+      // Next sincroniza `useSearchParams` com o `replaceState` sem ida à rede.
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
     },
-    [router, pathname],
+    [pathname],
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [newStage, setNewStage] = useState<string | undefined>();
   const [newOpen, setNewOpen] = useState(false);
   /**
    * A visão do funil (#2770). Quadro é o padrão — é o que todo mundo já
@@ -90,7 +96,10 @@ export function PipelinePageClient({
     const settings = data?.pipeline.settings;
     return (motivo: string) => categoriaDoMotivo(motivo, settings);
   }, [data?.pipeline.settings]);
-  const filteredLeads = data ? applyFilters(data.leads, filters, { categoriaDo }) : [];
+  const filteredLeads = useMemo(
+    () => (data ? applyFilters(data.leads, filters, { categoriaDo }) : []),
+    [data, filters, categoriaDo],
+  );
   // NÃO é a conta do FilterBar: o seletor de filtro lista as três caixas
   // (`marcadoresDoCard`: negócio, contato e conversa), e esta lista, a da tag em
   // lote, só `lead.tags` — é lá que a ação em lote grava (#852). O `useMemo` é o
@@ -103,6 +112,11 @@ export function PipelinePageClient({
     [data?.leads],
   );
   const nomeAtual = data?.pipeline.name ?? initialName;
+  // Funil fixado no menu leva o nome de quando foi fixado; abrir o quadro o atualiza.
+  const { renomear: renomearFixado } = useFunisFixados();
+  useEffect(() => {
+    if (data?.pipeline.name) renomearFixado({ id: pipelineId, nome: data.pipeline.name });
+  }, [data?.pipeline.name, pipelineId, renomearFixado]);
   // Um funil só = nada para trocar: o seletor seria ruído permanente.
   const podeTrocar = funis.length > 1;
 
@@ -130,7 +144,8 @@ export function PipelinePageClient({
       // `components/inbox/InboxLayout.tsx`, e é o que o gate
       // `tests/unit/altura-fixa-le-a-reserva-do-rodape.test.ts` cobra: altura
       // fixa não desconta número próprio, lê a reserva.
-      className="flex h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] min-h-[28rem] flex-col gap-4"
+      // `funil-compacto`: letras um degrau menores só nesta tela (app/globals.css).
+      className="funil-compacto flex h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] min-h-[28rem] flex-col gap-3"
       // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
       // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
       // tela, e sem este valor nem o produto nem o teste conseguem separar as
@@ -164,9 +179,7 @@ export function PipelinePageClient({
         */}
         <h1
           className={
-            podeTrocar
-              ? "sr-only"
-              : "min-w-0 truncate text-2xl font-semibold tracking-tight"
+            podeTrocar ? "sr-only" : "min-w-0 truncate text-2xl font-semibold tracking-tight"
           }
         >
           {nomeAtual}
@@ -181,17 +194,13 @@ export function PipelinePageClient({
             <SelectTrigger
               aria-label={`${t("Trocar de funil")}: ${nomeAtual}`}
               data-testid="trocar-funil"
-              className="h-auto w-auto min-w-0 max-w-full gap-1.5 border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight shadow-none focus:ring-1 focus:ring-ring sm:max-w-[60%] [&>span]:truncate"
+              className="h-auto w-auto max-w-full min-w-0 gap-1.5 border-0 bg-transparent p-0 text-2xl font-semibold tracking-tight shadow-none focus:ring-1 focus:ring-ring sm:max-w-[60%] [&>span]:truncate"
             >
               <SelectValue placeholder={nomeAtual} />
             </SelectTrigger>
             <SelectContent>
               {funis.map((f) => (
-                <SelectItem
-                  key={f.id}
-                  value={f.id}
-                  data-testid={`trocar-funil-opcao-${f.id}`}
-                >
+                <SelectItem key={f.id} value={f.id} data-testid={`trocar-funil-opcao-${f.id}`}>
                   {f.name}
                 </SelectItem>
               ))}
@@ -205,6 +214,7 @@ export function PipelinePageClient({
           é a mesma lógica do interruptor Lista/Calendário da tela de Tarefas.
         */}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <BotaoFixarFunil id={pipelineId} nome={nomeAtual} />
           <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
             <button
               type="button"
@@ -235,13 +245,22 @@ export function PipelinePageClient({
               {t("Calendário")}
             </button>
           </div>
-          <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
+          <Button
+            onClick={() => {
+              setNewStage(undefined);
+              setNewOpen(true);
+            }}
+            disabled={!data}
+            className="shrink-0"
+          >
             <Plus size={16} className="mr-2" /> {t("Novo Lead")}
           </Button>
         </div>
       </header>
       {data && (
         <NewLeadDialog
+          key={`${newStage ?? "padrao"}-${newOpen}`}
+          initialStageId={newStage}
           open={newOpen}
           onOpenChange={setNewOpen}
           pipelineId={pipelineId}
@@ -284,6 +303,10 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          onAddLead={(stageId) => {
+            setNewStage(stageId);
+            setNewOpen(true);
+          }}
           podeRenomearEtapa={ROLE_RANK[role] >= ROLE_RANK.manager}
         />
       )}

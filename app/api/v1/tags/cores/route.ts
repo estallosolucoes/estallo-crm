@@ -35,7 +35,7 @@ import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
-import { etiquetasComCor } from "@/lib/tags/cor-da-etiqueta";
+import { etiquetasCadastradas } from "@/lib/tags/cor-da-etiqueta";
 
 export const dynamic = "force-dynamic";
 
@@ -52,8 +52,10 @@ export async function GET(): Promise<Response> {
     .maybeSingle();
   if (error) return fail("internal_error", "Não foi possível carregar as cores.", 500, { requestId });
 
-  // A MESMA função que o mapa do chip usa (`etiquetasComCor`): uma
+  // O cadastro inteiro (com e sem cor, com a entidade — 0659): o chip monta o
+  // mapa de cores daqui, e o seletor de etiquetas oferece a lista. A MESMA
+  // leitura (`etiquetasCadastradas`): uma
   // interpretação só de "etiqueta com cor", testável sem servidor.
-  const tags = etiquetasComCor(data?.settings ?? null);
+  const tags = etiquetasCadastradas(data?.settings ?? null);
   return ok(tags, { requestId, meta: { total: tags.length } });
 }

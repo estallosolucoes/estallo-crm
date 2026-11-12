@@ -92,7 +92,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
     });
   }
-  const { acao, tag, destino, cor } = parsed.data;
+  const { acao, entidade, tag, destino, cor } = parsed.data;
 
   const db = await createClient();
   // Uma chamada só. Renomear a etiqueta e trocar o nome nas regras `add_tag` dos
@@ -107,10 +107,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     p_tag: tag,
     p_destino: destino ?? null,
     p_cor: cor ?? null,
+    p_entidade: entidade,
   });
   if (error) {
     if (error.code === "42501")
       return fail("forbidden", "Esta sessão não pode mudar as etiquetas da organização.", 403, { requestId });
+    if (error.code === "23505")
+      return fail("conflict", "Já existe uma etiqueta com esse nome.", 409, { requestId });
     if (error.code === "22023")
       return fail("validation_failed", "Confira a etiqueta, o novo nome e a cor.", 422, { requestId });
     return fail("internal_error", "Não foi possível concluir a operação.", 500, { requestId });
@@ -124,7 +127,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "organization",
     resourceId: auth.org.orgId,
     requestId,
-    metadata: { acao, tag, destino: destino ?? null, cor: cor ?? null, ...resultado },
+    metadata: { acao, entidade, tag, destino: destino ?? null, cor: cor ?? null, ...resultado },
   });
   return ok(resultado, { requestId });
 }

@@ -182,7 +182,8 @@ function supabaseFake(
     return q;
   };
 
-  return { cliente: { from } as never, escritas };
+  // `rpc`: encerrar a origem avisa a entrada na etapa (emit_event); aqui só interessa que não quebre.
+  return { cliente: { from, rpc: async () => ({ error: null }) } as never, escritas };
 }
 
 function responde(

@@ -128,7 +128,8 @@ function propsLigadasNoProduto(): Set<string> {
  *     corretos.
  */
 export function ehMudo(tagDoBotao: string, anterior: string): boolean {
-  if (/\bonClick\b|\basChild\b|type="submit"/.test(tagDoBotao)) return false;
+  // `onPointerDown` também é comportamento: o botão do card abre o menu no pointerdown (o mesmo gesto do Radix).
+  if (/\bonClick\b|\bonPointerDown\b|\basChild\b|type="submit"/.test(tagDoBotao)) return false;
   if (/\bdisabled\b/.test(tagDoBotao) && /\btitle=/.test(tagDoBotao)) return false;
   if (/<[A-Za-z]*Trigger\b[^>]*\basChild\b[^>]*>\s*$/.test(anterior.trimEnd())) return false;
   return true;
@@ -197,6 +198,7 @@ describe("nenhum botão fica cinza por falta de fiação", () => {
     // gate que grita demais é gate que se desliga.
     expect(ehMudo('<Button size="sm">Ver</Button>', "")).toBe(true);
     expect(ehMudo('<Button onClick={x}>Ver</Button>', "")).toBe(false);
+    expect(ehMudo('<Button onPointerDown={x}>Ver</Button>', "")).toBe(false);
     expect(ehMudo('<Button asChild><Link href="/x">Ver</Link></Button>', "")).toBe(false);
     expect(ehMudo('<Button type="submit">Salvar</Button>', "")).toBe(false);
     // `disabled` com o motivo à vista é o padrão CORRETO — o controle diz por

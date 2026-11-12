@@ -97,9 +97,27 @@ export async function GET(
     requestId,
   });
 
-  const destinos = pipelines
-    .filter((p) => p.id !== (origem as { pipeline_id: string }).pipeline_id)
-    .map((p) => ({ id: p.id, name: p.name }));
+  const outros = pipelines.filter((p) => p.id !== (origem as { pipeline_id: string }).pipeline_id);
+  // As etapas ABERTAS de cada destino: o "Mover de funil" do dossiê escolhe
+  // funil e etapa (ganho e perda fecham pelos botões próprios do negócio).
+  // Uma leitura da organização inteira e o filtro por funil aqui: são poucas linhas.
+  const { data: etapas, error: etapasErr } = await supabase
+    .from("crm_stages")
+    .select("id, pipeline_id, name, color")
+    .eq("organization_id", authz.org.orgId)
+    .eq("is_archived", false)
+    .eq("is_won", false)
+    .eq("is_lost", false)
+    .order("position", { ascending: true });
+  if (etapasErr) return fail("internal_error", etapasErr.message, 500, { requestId });
+
+  const destinos = outros.map((p) => ({
+    id: p.id,
+    name: p.name,
+    etapas: (etapas ?? [])
+      .filter((e) => e.pipeline_id === p.id)
+      .map((e) => ({ id: e.id, name: e.name, color: e.color ?? null })),
+  }));
 
   return ok({ pipelines: destinos }, { requestId });
 }

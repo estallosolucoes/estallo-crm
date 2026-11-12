@@ -109,8 +109,7 @@ test.describe("webhooks & automações — fluxo completo", () => {
   // asserção de "Sucesso" mais abaixo estoura as 12 tentativas.
   //
   // Foi exatamente o que aconteceu a partir das 22h BRT, em toda branch, por um
-  // dia inteiro. O seed declara a janela do rig (0h-24h, `garantirJanelaSempreAberta`),
-  // e é ele que tira a hora do CI de dentro da conta deste teste.
+  // dia inteiro. A janela de envio por canal não existe mais; a hora do CI não entra na conta.
   test.beforeAll(() => {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-numero-conectado.ts"], { stdio: "inherit" });
   });
@@ -127,6 +126,9 @@ test.describe("webhooks & automações — fluxo completo", () => {
     try {
       // --- Step 1: login como manager; sidebar mostra "Webhooks" ---
       await login(page, creds.users.manager!.email);
+      // No Estallo os grupos Agente de IA, Canais e Análise começam FECHADOS (padrão do menu): abre o de Canais.
+      const grupoCanais = page.getByRole("button", { name: "Canais", exact: true });
+      if ((await grupoCanais.getAttribute("aria-expanded")) === "false") await grupoCanais.click();
       await expect(page.getByRole("link", { name: "Webhooks" })).toBeVisible();
       await page.getByRole("link", { name: "Webhooks" }).click();
       await page.waitForURL(/\/app\/webhooks/);

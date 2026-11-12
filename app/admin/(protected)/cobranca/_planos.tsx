@@ -13,6 +13,8 @@ import { apiClient } from "@/lib/api/client";
 import type { Intervalo } from "@/lib/cobranca/vocabulario";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { novoPlanoSchema } from "@/lib/schemas/cobranca-plano";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
+import { parseReaisToCents, centavosParaCampo } from "@/lib/money";
 
 /** Um plano de `cobranca_planos` como a tela o recebe (COLUNAS_DO_PLANO). */
 export interface PlanoDaTela {
@@ -44,9 +46,10 @@ const VAZIO: Campos = { nome: "", preco: "", intervalo: "mes", trial_dias: "14",
 const AVISO_DE_CAMPOS =
   "Confira os campos do plano: preço a partir de R$ 5,00, teste grátis de 0 a 90 dias e limites a partir de 1.";
 
-const centavos = (v: string) => Math.round(Number(v.replace(",", ".")) * 100);
+// Mesma leitura de todo campo de dinheiro: "1.500" é mil e quinhentos, não 1,50.
+const centavos = (v: string) => parseReaisToCents(v) ?? 0;
 const inteiroOuNulo = (v: string) => (v.trim() === "" ? null : Number(v));
-const decimal = (cents: number) => (cents / 100).toFixed(2).replace(".", ",");
+const decimal = (cents: number) => centavosParaCampo(cents);
 
 /** O corpo que as rotas de plano recebem. Campo de limite vazio = sem limite (null). */
 function corpoDoPlano(c: Campos) {
@@ -135,7 +138,7 @@ export function PlanosDaInstalacao({ planos }: { planos: readonly PlanoDaTela[] 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label htmlFor="plano-preco">{t("Preço (R$)")}</Label>
-            <Input id="plano-preco" inputMode="decimal" {...campo("preco")} />
+            <CampoDeDinheiro id="plano-preco" moeda="BRL" {...campo("preco")} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="plano-intervalo">{t("Intervalo de cobrança")}</Label>
@@ -166,7 +169,7 @@ export function PlanosDaInstalacao({ planos }: { planos: readonly PlanoDaTela[] 
         </div>
         <div className="space-y-1">
           <Label htmlFor="plano-ia">{t("Teto de uso de IA por mês (US$)")}</Label>
-          <Input id="plano-ia" inputMode="decimal" {...campo("teto_ia")} />
+          <CampoDeDinheiro id="plano-ia" moeda="USD" {...campo("teto_ia")} />
         </div>
         <p className="text-xs text-muted-foreground">{t("Deixe um limite vazio para não limitar.")}</p>
         <div className="flex flex-wrap gap-2">

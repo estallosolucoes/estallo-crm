@@ -76,6 +76,20 @@ interface Creds {
   duas_orgs?: unknown;
 }
 
+/** A Agenda é capacidade que a empresa liga (`settings.agenda_habilitada`, desligada por padrão no Estallo). A spec que
+ * usa este seed abre /app/agenda nas duas organizações: liga na B (a A é a org do seed principal) e preserva o resto. */
+async function ligarAgenda(orgId: string): Promise<void> {
+  const { data, error } = await admin.from("organizations").select("settings").eq("id", orgId).maybeSingle();
+  if (error) throw new Error(`ler settings da org B: ${error.message}`);
+  const atual = ((data as { settings?: Record<string, unknown> | null } | null)?.settings ?? {}) as Record<string, unknown>;
+  if (atual.agenda_habilitada === true) return;
+  const { error: erroLigar } = await admin
+    .from("organizations")
+    .update({ settings: { ...atual, agenda_habilitada: true } } as never)
+    .eq("id", orgId);
+  if (erroLigar) throw new Error(`ligar a agenda da org B: ${erroLigar.message}`);
+}
+
 async function orgB(): Promise<string> {
   const { data: existente, error } = await admin
     .from("organizations")
@@ -100,6 +114,7 @@ async function orgB(): Promise<string> {
       .eq("id", id)
       .is("onboarded_at", null);
     if (fixErr) throw new Error(`garantir onboarding da org B: ${fixErr.message}`);
+    await ligarAgenda(id);
     return id;
   }
 
@@ -116,7 +131,9 @@ async function orgB(): Promise<string> {
     .select("id")
     .single();
   if (insErr || !data) throw new Error(`criar org B: ${insErr?.message}`);
-  return (data as { id: string }).id;
+  const idNovo = (data as { id: string }).id;
+  await ligarAgenda(idNovo);
+  return idNovo;
 }
 
 async function membroDe(userId: string, orgId: string): Promise<void> {

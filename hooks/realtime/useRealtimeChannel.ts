@@ -21,6 +21,13 @@ export interface UseRealtimeChannelOpts {
   broadcast?: { event: string };
   onChange: (payload: unknown) => void;
   enabled?: boolean;
+  /**
+   * Entregar `{tipo:"reassinado"}` também na PRIMEIRA assinatura, não só ao
+   * voltar de uma queda. Fecha o buraco entre a busca inicial e o SUBSCRIBED:
+   * o que chegou nesse intervalo não vem pelo canal. Custa uma releitura por
+   * abertura — por isso é opt-in, para quem mostra dado que não pode faltar.
+   */
+  recuperarNaPrimeira?: boolean;
 }
 
 /**
@@ -68,7 +75,8 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
    */
   ultimaEntrega: RefObject<number | null>;
 } {
-  const { name, postgresChanges, broadcast, onChange, enabled = true } = opts;
+  const { name, postgresChanges, broadcast, onChange, enabled = true, recuperarNaPrimeira = false } =
+    opts;
 
   // ref makes onChange identity-stable so changing handler doesn't re-subscribe
   const onChangeRef = useRef(onChange);
@@ -123,6 +131,7 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
     let active: RealtimeChannel | null = null;
     let cancelado = false;
     let tentativas = 0;
+    let jaAssinou = false;
     let retomada: ReturnType<typeof setTimeout> | null = null;
     setStatus("connecting");
 
@@ -205,7 +214,10 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
           if (tentativas > 0) {
             tentativas = 0;
             handler({ tipo: "reassinado" });
+          } else if (recuperarNaPrimeira && !jaAssinou) {
+            handler({ tipo: "reassinado" });
           }
+          jaAssinou = true;
           return;
         }
 
@@ -234,7 +246,7 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
     };
     // intentionally omit onChange (ref); only re-subscribe when channel topology changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, enabled, instanceId, postgresChanges?.event, postgresChanges?.table, postgresChanges?.filter, postgresChanges?.schema, broadcast?.event]);
+  }, [name, enabled, recuperarNaPrimeira, instanceId, postgresChanges?.event, postgresChanges?.table, postgresChanges?.filter, postgresChanges?.schema, broadcast?.event]);
 
   return { status, ultimaEntrega };
 }

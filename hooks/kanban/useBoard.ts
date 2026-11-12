@@ -1,6 +1,6 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ehEcoLocal } from "@/lib/kanban/local-echo";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
@@ -15,9 +15,12 @@ import type { BoardData } from "@/lib/kanban/types";
  * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
  * uses the server-side cookie reader, identical to every other authed query.
  */
-async function fetchBoard(pipelineId: string): Promise<BoardData> {
+async function fetchBoard(pipelineId: string, signal?: AbortSignal, leadId?: string): Promise<BoardData> {
+  // 30s, não os 10s padrão: o quadro devolve o funil inteiro (ganhos e perdidos
+  // inclusos), e funil de mais de mil negócios é real.
   const res = await apiClient.get<{ data: BoardData }>(
-    `/api/v1/pipelines/${pipelineId}/board`,
+    `/api/v1/pipelines/${pipelineId}/board${leadId ? `?lead_id=${encodeURIComponent(leadId)}` : ""}`,
+    { timeoutMs: 30_000, signal },
   );
   // apiClient unwraps { data, meta } envelope already in some helpers;
   // ours returns the parsed JSON literally. Handle both shapes safely.
@@ -38,6 +41,9 @@ async function fetchBoard(pipelineId: string): Promise<BoardData> {
  * divergência" apaga a pista de acessibilidade.
  */
 const PULSE_MS = 1_200;
+
+/** Eventos do canal dentro desta janela viram uma releitura só. */
+const JANELA_DE_RELEITURA_MS = 800;
 
 /** O id do lead dentro do payload do postgres_changes (new, ou old no delete). */
 function idDoEvento(payload: unknown): string | null {
@@ -60,9 +66,37 @@ export function chaveDoQuadro(pipelineId: string | null) {
   return ["board", pipelineId] as const;
 }
 
+/**
+ * O QUADRO DE UM NEGÓCIO SÓ — o dossiê aberto fora do quadro (Inbox).
+ *
+ * Mesma rota e mesmo formato (`BoardData`) do quadro, com `?lead_id=`: o lead
+ * chega com o mesmo enriquecimento do card sem baixar o funil inteiro. A chave
+ * fica DEBAIXO de `chaveDoQuadro`, então toda mutação que já invalida o quadro
+ * (editar, mover, ganhar, produtos) relê este também — sem lista paralela de
+ * invalidações para esquecer.
+ *
+ * Se o quadro inteiro já está na cache (a pessoa passou pelo funil), ele serve
+ * de partida — a gaveta abre preenchida e a releitura corre por trás.
+ */
+export function useQuadroDoLead(pipelineId: string, leadId: string) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: [...chaveDoQuadro(pipelineId), "lead", leadId] as const,
+    queryFn: ({ signal }) => fetchBoard(pipelineId, signal, leadId),
+    initialData: () => {
+      const inteiro = qc.getQueryData<BoardData>(chaveDoQuadro(pipelineId));
+      const lead = inteiro?.leads.find((l) => l.id === leadId);
+      return inteiro && lead ? { ...inteiro, leads: [lead] } : undefined;
+    },
+    initialDataUpdatedAt: () => qc.getQueryState(chaveDoQuadro(pipelineId))?.dataUpdatedAt,
+  });
+}
+
 export function useBoard(pipelineId: string | null) {
   const qc = useQueryClient();
-  const queryKey = chaveDoQuadro(pipelineId);
+  // Estável: a chave entra em `useCallback`/efeitos (releitura, refetch de
+  // segurança) e um array novo por render os recriava a cada render.
+  const queryKey = useMemo(() => chaveDoQuadro(pipelineId), [pipelineId]);
 
   /**
    * Cards que acabaram de mudar POR EVENTO REMOTO — o pulso da Wave 3.
@@ -81,12 +115,35 @@ export function useBoard(pipelineId: string | null) {
     enabled: !!pipelineId,
   });
 
+  /**
+   * RELEITURA AGRUPADA, e nunca abandonando a que está em voo.
+   *
+   * Antes, cada evento do canal invalidava o quadro na hora — e o padrão do
+   * TanStack é CANCELAR a leitura em curso e começar outra. O navegador
+   * abandona, o servidor não: num funil de 1.135 negócios com conversa ativa
+   * (Prática, 15/10/2026) as leituras se empilhavam no app, o quadro nunca
+   * chegava ("não respondeu em 10000ms") e o Inbox ficava lento junto.
+   *
+   * Agora os eventos de uma janela curta viram UMA releitura; se já houver uma
+   * em voo, espera-se ela e lê-se de novo (a que estava em voo pode ter saído
+   * antes da mudança).
+   */
+  const releitura = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agendarReleitura = useCallback(() => {
+    if (releitura.current) clearTimeout(releitura.current);
+    releitura.current = setTimeout(async () => {
+      releitura.current = null;
+      const emVoo = qc.isFetching({ queryKey }) > 0;
+      await qc.invalidateQueries({ queryKey }, { cancelRefetch: false });
+      if (emVoo) await qc.invalidateQueries({ queryKey }, { cancelRefetch: false });
+    }, JANELA_DE_RELEITURA_MS);
+  }, [qc, queryKey]);
+
   const onChange = useCallback(
     (payload: unknown) => {
-      // Conservative: invalidate the board on any change. Optimistic patches
-      // arrive faster via useMoveCard's onMutate; this just reconciles
-      // cross-user changes within ~250ms.
-      qc.invalidateQueries({ queryKey });
+      // Optimistic patches arrive faster via useMoveCard's onMutate; this just
+      // reconciles cross-user changes.
+      agendarReleitura();
 
       const leadId = idDoEvento(payload);
       // Janela, não marca gasta por evento: uma ação minha chega aqui em DUAS
@@ -121,7 +178,7 @@ export function useBoard(pipelineId: string | null) {
         }, PULSE_MS),
       );
     },
-    [qc, queryKey],
+    [agendarReleitura],
   );
 
   // O STATUS DO CANAL NÃO PODE SER DESCARTADO. `useRealtimeChannel` calcula
@@ -154,6 +211,7 @@ export function useBoard(pipelineId: string | null) {
     return () => {
       for (const t of pendentes.values()) clearTimeout(t);
       pendentes.clear();
+      if (releitura.current) clearTimeout(releitura.current);
     };
   }, []);
 

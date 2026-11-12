@@ -3,7 +3,9 @@
 import type { NodeProps } from "@xyflow/react";
 
 import type { RFNode } from "@/lib/followup/graph-mappers";
+import { nodeBranches } from "@/lib/followup/graph-schema";
 import { useT } from "@/hooks/i18n/useT";
+import type { ConfigOf } from "../forms/shared";
 import { NODE_VISUALS, describeNodeConfig } from "./nodeVisuals";
 import { NodeCard } from "./NodeCard";
 
@@ -17,6 +19,7 @@ export function ActionNode({ id, data, selected }: NodeProps<RFNode>) {
       subtitle={describeNodeConfig("action", data.config, t)}
       selected={selected}
       errors={data.errors}
+      branches={nodeBranches({ type: "action", config: data.config as ConfigOf<"action"> })}
     />
   );
 }

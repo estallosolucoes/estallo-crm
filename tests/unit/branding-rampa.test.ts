@@ -102,18 +102,44 @@ describe("conversões de cor", () => {
   });
 });
 
+/**
+ * A rampa SAGE histórica do design system (verde #506d48), gravada aqui como fixture.
+ *
+ * Ela saiu do `globals.css` quando a identidade Estallo trocou a paleta do produto para o azul
+ * (commit b0dfce8d3), mas a CALIBRAÇÃO do algoritmo (`ESCADA_L`, `CURVA_C`) foi feita contra ela e
+ * é isso que a catraca abaixo vigia: se alguém mexer nas curvas, a derivação a partir de #506d48
+ * deixa de reproduzir esta rampa. A rampa Estallo (azul) é desenhada à mão e não é derivada pelo
+ * algoritmo, então não serve de régua de calibração — a guarda de vacuidade abaixo só confere que o
+ * CSS atual continua com 11 stops distintos.
+ */
+const STOPS_SAGE_HISTORICOS = [
+  "#f3f6f1",
+  "#e4ebe0",
+  "#c8d6c1",
+  "#a4ba9a",
+  "#82a077",
+  "#67885d",
+  "#506d48",
+  "#41573b",
+  "#374731",
+  "#2f3c2b",
+  "#171f15",
+];
+
 describe("rampaDeSemente — catraca de calibração contra o design system", () => {
-  const esperados = stopsSageDoCss();
+  const esperados = STOPS_SAGE_HISTORICOS;
 
   it("lê 11 stops distintos do globals.css (guarda de vacuidade)", () => {
     // Sem isto, um regex quebrado devolveria lista vazia e a comparação abaixo passaria
     // por não ter o que comparar — instrumento morto tem cara de teste verde.
-    expect(esperados).toHaveLength(11);
-    expect(new Set(esperados).size).toBe(11);
-    expect(esperados[K]).toBe("#506d48");
+    const doCss = stopsSageDoCss();
+    expect(doCss).toHaveLength(11);
+    expect(new Set(doCss).size).toBe(11);
+    // O stop 600 é o accent do produto: hoje o Estallo Blue.
+    expect(doCss[K]).toBe("#0b6e9a");
   });
 
-  it("reproduz os 11 stops Sage a partir de #506d48 com Δ ≤ 2/255 por canal", () => {
+  it("reproduz os 11 stops Sage históricos a partir de #506d48 com Δ ≤ 2/255 por canal", () => {
     const derivada = rampaDeSemente("#506d48");
     const distancias = esperados.map((esperado, i) => distanciaPorCanal(esperado, derivada[i]!));
     expect(

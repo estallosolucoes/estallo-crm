@@ -62,3 +62,36 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
     bruto: ad,
   };
 }
+
+/**
+ * O cartão do anúncio que a BOLHA mostra (`messages.metadata.anuncio`), como o
+ * WhatsApp mostra no topo da primeira mensagem vinda de um "Clique para o
+ * WhatsApp". Chaves (lidas por `components/inbox/media/CartaoDeAnuncio.tsx`):
+ *   titulo, corpo, url (o post/anúncio), app ("instagram" | "facebook" | …),
+ *   thumb_url (CDN do Facebook — EXPIRA, parâmetro `oe=`), thumb_b64 (miniatura
+ *   PNG 50×50 que vem embutida — não expira; é o fallback da tela).
+ */
+export interface CartaoDeAnuncio {
+  titulo: string | null;
+  corpo: string | null;
+  url: string | null;
+  app: string | null;
+  thumb_url: string | null;
+  thumb_b64: string | null;
+}
+
+// ponytail: miniatura embutida acima de ~48 KB fica de fora (não é a de 50×50 esperada).
+const TETO_DA_MINIATURA = 48_000;
+
+export function cartaoDoAnuncio(a: AtribuicaoDeAnuncio): CartaoDeAnuncio {
+  const b = a.bruto ?? {};
+  const b64 = str(b.thumbnail);
+  return {
+    titulo: a.titulo,
+    corpo: a.corpo,
+    url: a.sourceUrl,
+    app: str(b.sourceApp),
+    thumb_url: str(b.thumbnailUrl) ?? str(b.originalImageUrl),
+    thumb_b64: b64 && b64.length <= TETO_DA_MINIATURA ? b64 : null,
+  };
+}

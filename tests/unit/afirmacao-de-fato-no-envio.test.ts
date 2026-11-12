@@ -508,7 +508,7 @@ describe("a forma da cadeia", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("factual_claim")).toBe(nomes.indexOf("semantic_promise") + 1);
     expect(nomes.indexOf("factual_claim")).toBeGreaterThan(nomes.indexOf("promise"));
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(9);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(10);
   });
 });
 
@@ -619,7 +619,6 @@ describe("a conferência roda FORA da transação do envio (#2121)", () => {
       channelSessionId: "00000000-0000-4000-8000-000000000004",
       body: "O check-in é a partir das 12h.",
       optedOutThisTurn: false,
-      crmDailyLimit: null,
       now: new Date("2026-09-17T12:00:00.000Z"),
       rng: () => 0,
       sleep: async () => {},

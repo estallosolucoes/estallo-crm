@@ -162,8 +162,12 @@ describe("os elos que somem sem barulho", () => {
   it("e o bloqueio VENCE sozinho com a aba aberta", () => {
     // Sem relógio, quem deixa o inbox aberto a tarde inteira seguiria com o
     // composer liberado numa conversa que já venceu.
-    const fonte = readFileSync("components/inbox/InboxLayout.tsx", "utf8");
-    expect(fonte).toMatch(/setAgoraJanela/);
+    // O relógio mora no hook que o Inbox e o chat suspenso compartilham.
+    expect(readFileSync("components/inbox/InboxLayout.tsx", "utf8")).toMatch(
+      /useEstadoDoEnvio\(selectedConversation\)/,
+    );
+    const fonte = readFileSync("hooks/inbox/useEstadoDoEnvio.ts", "utf8");
+    expect(fonte).toMatch(/setAgora\(/);
     expect(fonte).toMatch(/setInterval/);
   });
 

@@ -128,9 +128,9 @@ describe("total da coluna do funil", () => {
     );
 
     const ponderado = screen.getByText((texto) => semNbsp(texto).includes("ponderado"));
-    expect(semNbsp(ponderado.textContent ?? "")).toBe("· ponderado Gs. 125.000");
+    expect(semNbsp(ponderado.textContent ?? "")).toBe("ponderado Gs. 125.000");
     expect(semNbsp(ponderado.parentElement?.textContent ?? "")).toBe(
-      "Gs. 250.000· ponderado Gs. 125.000",
+      "Gs. 250.000(2)ponderado Gs. 125.000",
     );
   });
 
@@ -225,9 +225,9 @@ describe("total da coluna do funil", () => {
     );
 
     const ponderado = screen.getByText((texto) => semNbsp(texto).includes("ponderado"));
-    expect(semNbsp(ponderado.textContent ?? "")).toBe("· ponderado 150,00 € + R$ 4.500,00");
+    expect(semNbsp(ponderado.textContent ?? "")).toBe("ponderado 150,00 € + R$ 4.500,00");
     expect(semNbsp(ponderado.parentElement?.textContent ?? "")).toBe(
-      "300,00 € + R$ 9.000,00· ponderado 150,00 € + R$ 4.500,00",
+      "300,00 € + R$ 9.000,00(4)ponderado 150,00 € + R$ 4.500,00",
     );
   });
 

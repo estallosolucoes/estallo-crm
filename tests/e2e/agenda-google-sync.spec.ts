@@ -32,6 +32,8 @@ async function fixture() {
     slug: `sync-${randomUUID()}`,
     display_name: "Agendas locais",
     legal_name: "Agendas locais",
+    // A Agenda nasce desligada no Estallo (settings.agenda_habilitada): a org desta spec a liga.
+    settings: { agenda_habilitada: true },
     onboarded_at: new Date().toISOString(),
   });
   orgs.push(org);

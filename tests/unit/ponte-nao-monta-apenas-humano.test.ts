@@ -68,6 +68,8 @@ describe("a ponte do turno respeita `apenasHumano`", () => {
       auth,
       // Pede TODAS: simula o dono tendo ligado tudo o que a tela oferece.
       toolIds: allTools.map((t) => t.name),
+      // Simula o dono com a Agenda ligada (capacidade da empresa, padrão desligada).
+      capacidadesLigadas: ["agenda"],
       handoffToolEnabled: false,
       handoffSignal: { triggered: false },
     });
@@ -83,6 +85,8 @@ describe("a ponte do turno respeita `apenasHumano`", () => {
       ctx,
       auth,
       toolIds: allTools.map((t) => t.name),
+      // Simula o dono com a Agenda ligada (capacidade da empresa, padrão desligada).
+      capacidadesLigadas: ["agenda"],
       handoffToolEnabled: false,
       handoffSignal: { triggered: false },
     });

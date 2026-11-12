@@ -8,10 +8,11 @@ import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import type { ApiSuccess } from "@/lib/api/wrappers";
-import { formatCents } from "@/lib/money";
+import { formatCents, centavosParaCampo, parseReaisToCents } from "@/lib/money";
 import type { ProposalStatus } from "@/lib/propostas/tipos";
 import { AssistantPanel } from "./_components/AssistantPanel";
 import { DocumentoCanvas } from "./_components/DocumentoCanvas";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 interface ProposalItem {
   id?: string;
@@ -590,33 +591,29 @@ export function ProposalEditorClient({ id, podeEditar, podeRevisar = false }: { 
                     />
                   </td>
                   <td className="p-3">
-                    <input
-                      type="number"
-                      className="w-full border rounded-md px-2 py-1 text-sm text-right disabled:bg-muted"
-                      value={it.preco_unitario_cents === null ? "" : it.preco_unitario_cents / 100}
+                    <CampoDeDinheiro
+                      moeda={proposta.moeda}
+                      className="min-h-0 h-8 w-full border rounded-md px-2 py-1 text-sm text-right disabled:bg-muted"
+                      value={centavosParaCampo(it.preco_unitario_cents)}
                       placeholder={t("A definir")}
                       disabled={!editavel || it.product_id !== null}
                       onChange={(e) => {
                         const texto = e.target.value;
                         atualizarItem(idx, {
-                          preco_unitario_cents: texto === "" ? null : Math.round(Number(texto) * 100) || 0,
+                          preco_unitario_cents: texto === "" ? null : (parseReaisToCents(texto) ?? 0),
                         });
                       }}
-                      min="0"
-                      step="0.01"
                     />
                   </td>
                   <td className="p-3">
-                    <input
-                      type="number"
-                      className="w-full border rounded-md px-2 py-1 text-sm text-right disabled:bg-muted"
-                      value={it.desconto_cents / 100}
+                    <CampoDeDinheiro
+                      moeda={proposta.moeda}
+                      className="min-h-0 h-8 w-full border rounded-md px-2 py-1 text-sm text-right disabled:bg-muted"
+                      value={centavosParaCampo(it.desconto_cents)}
                       disabled={!editavel}
                       onChange={(e) =>
-                        atualizarItem(idx, { desconto_cents: Math.round(Number(e.target.value) * 100) || 0 })
+                        atualizarItem(idx, { desconto_cents: parseReaisToCents(e.target.value) ?? 0 })
                       }
-                      min="0"
-                      step="0.01"
                     />
                   </td>
                   <td className="p-3 text-right font-medium tabular-nums">
@@ -668,7 +665,7 @@ export function ProposalEditorClient({ id, podeEditar, podeRevisar = false }: { 
                 {resultadosProdutos.map((produto) => (
                   <button
                     key={produto.id}
-                    className="block w-full border-b px-3 py-2 text-left text-sm hover:bg-accent last:border-b-0"
+                    className="block w-full border-b px-3 py-2 text-left text-sm hover:bg-accent dark:hover:bg-accent-800 hover:text-accent-foreground last:border-b-0"
                     onClick={() => adicionarItemDoCatalogo(produto)}
                   >
                     <div className="font-medium">{produto.nome}</div>

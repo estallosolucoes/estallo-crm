@@ -38,6 +38,7 @@ import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { estadoDaJanela } from '@/lib/channels/janela';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/texto-do-followup';
+import { executionContractProblem } from '@/lib/automation/execution-capability';
 import { isStatusSendable } from '@/lib/channels/meta/template-binding';
 import { deriveTemplateContract } from '@/lib/channels/meta/template-contract';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
@@ -53,6 +54,7 @@ import {
 import { isLeadInHandoff } from './human-handoff';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import { copiarAnexoParaConversa, itemDoFluxoSchema, type ItemDoFluxo } from './anexos-do-fluxo';
 import {
   followupPublicadoDoEnrollment,
   proximaAberturaDoFollowup,
@@ -96,6 +98,8 @@ export const followupTurnPayloadSchema = z
     prompt_hint: z.string().optional(),
     /** action mode `text` — enviado pela cadeia de guardrails, sem LLM. */
     fixed_body: z.string().min(1).max(4000).optional(),
+    /** action mode `messages` — vários envios em ordem (texto e anexos), sem LLM. */
+    fixed_items: z.array(itemDoFluxoSchema).min(1).max(10).optional(),
     /** action mode `template` — `message_templates` (texto) ou `meta_templates` (modelo aprovado do canal). */
     template_id: z.string().uuid().optional(),
     /** action mode `ai_message` — modelo aprovado que sai no lugar da IA com a janela de 24 h fechada. */
@@ -437,11 +441,21 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           return;
         }
       }
-      const { rows: inscricaoRows } = await pool.query<{ current_node_id: string; status: string }>(
-        `select current_node_id, status from followup_enrollments where organization_id = $1 and id = $2 limit 1`,
+      const { rows: inscricaoRows } = await pool.query<{
+        current_node_id: string; status: string; execution_contract: number;
+        graph_execution_contract: number | null;
+      }>(
+        `select e.current_node_id, e.status, e.execution_contract, v.graph->'execution_contract' as graph_execution_contract
+         from followup_enrollments e
+         join followup_flow_versions v on v.organization_id=e.organization_id and v.id=e.version_id
+         where e.organization_id = $1 and e.id = $2 limit 1`,
         [tenantId, payload.followup_enrollment_id],
       );
       const inscricao = inscricaoRows[0];
+      if (inscricao) {
+        const contractProblem = executionContractProblem(inscricao, { execution_contract: inscricao.graph_execution_contract });
+        if (contractProblem) throw new Error(contractProblem);
+      }
       const viva =
         inscricao !== undefined &&
         inscricao.current_node_id === payload.node_id &&
@@ -577,6 +591,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           purpose: payload.purpose,
           promptHint: payload.prompt_hint,
           fixedBody: payload.fixed_body,
+          fixedItems: payload.fixed_items,
           templateId: payload.template_id,
           fallbackTemplateId: payload.fallback_template_id,
           voltaIndex: payload.volta_index,
@@ -666,6 +681,7 @@ async function runFlowDrivenTurn(
     purpose: 'send_message' | 'classify' | 'plan_timing' | undefined;
     promptHint: string | undefined;
     fixedBody: string | undefined;
+    fixedItems: ItemDoFluxo[] | undefined;
     templateId: string | undefined;
     fallbackTemplateId: string | undefined;
     voltaIndex: number | undefined;
@@ -686,6 +702,21 @@ async function runFlowDrivenTurn(
   }
   const { enrollmentId, nodeId } = input;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
+
+  const pessoaNoComandoPermitida =
+    input.purpose === 'send_message' && (await politicaDoFluxoPermitePessoaNoComando(pool, target.tenantId, enrollmentId));
+
+  if (input.purpose === 'send_message' && input.fixedItems !== undefined) {
+    const desfecho = await sendFlowItems(deps, job, pool, ctx, clock, target, input.fixedItems, runLog, pessoaNoComandoPermitida);
+    if (desfecho.kind === 'sent') {
+      await complete(pool, { jobId: job.id, jobClaim: claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
+    } else if (desfecho.kind === 'skipped') {
+      await complete(pool, { jobId: job.id, jobClaim: claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'skipped', reason: desfecho.reason } });
+    } else {
+      await complete(pool, { jobId: job.id, jobClaim: claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'deferred', until: desfecho.until, reason: desfecho.reason } });
+    }
+    return;
+  }
 
   if (input.purpose === 'send_message') {
     let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, target.leadId, input);
@@ -712,6 +743,7 @@ async function runFlowDrivenTurn(
       const desfecho = await sendFixedOutbound(
         deps, job, pool, ctx, clock, target, passo.body, false,
         passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
+        { pessoaNoComandoPermitida },
       );
       // TODO OS TRÊS DESFECHOS VOLTAM PARA O ENROLLMENT. O adiado era o que não
       // voltava, e o silêncio dele custava o enrollment inteiro: o motor ficava
@@ -1095,11 +1127,22 @@ async function sendFixedOutbound(
    * passar, que é o que um modelo aprovado é — como no `send_template` do agente.
    */
   modelo?: { name: string; language: string; values: Record<string, string> },
+  /**
+   * Envio de um item do bloco de mensagens: a posição dele no job e, se for anexo, a mídia já na pasta da conversa.
+   * `pessoaNoComandoPermitida`: o fluxo tem `handoff_policy='allow'` — roda mesmo com a conversa assumida por uma pessoa.
+   */
+  item?: {
+    seq?: number;
+    media?: { storagePath: string; mime: string; kind: 'image' | 'video' | 'audio' | 'document' };
+    pessoaNoComandoPermitida?: boolean;
+  },
 ): Promise<EnvioFixoDesfecho> {
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
-  if (await isLeadInHandoff(pool, tenantId, leadId)) {
+  // `handoff_policy='allow'` é a escolha de quem montou o fluxo de rodar com pessoa no comando (a equipe move o
+  // card e o fluxo avisa o aluno). Só dispensa o silêncio da IA: o STOP/opt-out do contato segue na cadeia abaixo.
+  if (item?.pessoaNoComandoPermitida !== true && (await isLeadInHandoff(pool, tenantId, leadId))) {
     runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
     return { kind: "skipped" };
   }
@@ -1135,7 +1178,6 @@ async function sendFixedOutbound(
     channelSessionId,
     body,
     optedOutThisTurn,
-    crmDailyLimit: null,
     now: clock(),
     sleep: deps.sleep,
     lgpd: context.lgpd,
@@ -1155,8 +1197,11 @@ async function sendFixedOutbound(
       : {}),
     send: (finalBody) =>
       channel.send({
-        tenantId, leadId, jobId: job.id, jobClaim: claimOfJob(job), seq: 1, conversationId, body: finalBody,
+        tenantId, leadId, jobId: job.id, jobClaim: claimOfJob(job), seq: item?.seq ?? 1, conversationId, body: finalBody,
         ...(modelo !== undefined ? { template: modelo } : {}),
+        ...(item?.media !== undefined ? { media: item.media } : {}),
+        // Texto fixo do fluxo: a autoria é da automação, não da IA (rótulo "Robô" e contagem de envios).
+        autoria: 'automacao',
       }),
   });
 
@@ -1192,11 +1237,89 @@ async function sendFixedOutbound(
         queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
       });
       throw new JobSettledError('envio fixo vetado pelo sink (is_blocked) — job cancelado em definitivo');
-    case 'failed':
-      throw new Error('envio fixo: CRM marcou o envio como failed — run re-tentado pela fila');
+    case 'failed': {
+      // O motivo mora na mensagem (ex.: canal em modo de teste). Sem ele o operador só via "failed" e a fila
+      // tentava de novo até esgotar — a causa aparecia só no banco.
+      const motivo = outcome.messageId
+        ? await pool
+            .query<{ error_code: string | null; error_message: string | null }>(
+              'select error_code, error_message from messages where organization_id = $1 and id = $2',
+              [tenantId, outcome.messageId],
+            )
+            .then((r) => r.rows[0])
+            .catch(() => undefined)
+        : undefined;
+      const detalhe = motivo?.error_message ?? motivo?.error_code;
+      throw new Error(
+        detalhe
+          ? `envio fixo: o CRM recusou o envio — ${detalhe}`
+          : 'envio fixo: CRM marcou o envio como failed — run re-tentado pela fila',
+      );
+    }
     case 'unavailable':
       throw new Error(`envio fixo: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
   }
+}
+
+/** O fluxo desta inscrição roda com pessoa no comando? (`followup_flow_pointers.handoff_policy = 'allow'`) */
+async function politicaDoFluxoPermitePessoaNoComando(pool: pg.Pool, tenantId: string, enrollmentId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ handoff_policy: string | null }>(
+    `select p.handoff_policy from followup_enrollments e
+       join followup_flow_pointers p on p.id = e.pointer_id and p.organization_id = e.organization_id
+      where e.organization_id = $1 and e.id = $2`,
+    [tenantId, enrollmentId],
+  );
+  return rows[0]?.handoff_policy === 'allow';
+}
+
+/**
+ * Envia os itens do bloco de mensagens EM ORDEM, cada um pela mesma cadeia de guardrails do texto fixo.
+ * A posição do item (1..n) é o `seq` do ledger: o retry de um job que caiu no meio reenvia só o que falta,
+ * porque os itens já aceitos voltam como `already_sent`. Para no primeiro item que não seja de sucesso —
+ * adiado, vetado ou recusado —, como o envio em bolhas: mandar o 3º com o 2º pendente embaralharia a conversa.
+ */
+type FlowItemsDesfecho =
+  | { kind: 'sent' }
+  | { kind: 'skipped'; reason: string }
+  | { kind: 'deferred'; until: Date; reason: string };
+
+async function sendFlowItems(
+  deps: InboundTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  ctx: { workerId: string },
+  clock: () => Date,
+  target: ReentrySendTarget,
+  items: ItemDoFluxo[],
+  runLog: { warn(msg: string, fields?: Record<string, unknown>): void },
+  pessoaNoComandoPermitida: boolean,
+): Promise<FlowItemsDesfecho> {
+  for (const [i, item] of items.entries()) {
+    const seq = i + 1;
+    let desfecho: EnvioFixoDesfecho;
+    if (item.kind === 'text') {
+      desfecho = await sendFixedOutbound(deps, job, pool, ctx, clock, target, item.body, false, undefined, { seq, pessoaNoComandoPermitida });
+    } else {
+      const copia = await copiarAnexoParaConversa(runLog, {
+        orgId: target.tenantId,
+        conversationId: target.conversationId,
+        path: item.path,
+      });
+      if (!copia.ok) return { kind: 'skipped', reason: copia.motivo };
+      // Áudio não tem legenda no WhatsApp; os demais levam a legenda como corpo.
+      const legenda = item.kind === 'audio' ? '' : (item.caption ?? '');
+      desfecho = await sendFixedOutbound(deps, job, pool, ctx, clock, target, legenda, false, undefined, {
+        seq,
+        pessoaNoComandoPermitida,
+        media: { storagePath: copia.storagePath, mime: item.mime, kind: item.kind },
+      });
+    }
+    if (desfecho.kind === 'deferred') return desfecho;
+    if (desfecho.kind === 'skipped') {
+      return { kind: 'skipped', reason: 'O envio foi recusado pelas regras do atendimento.' };
+    }
+  }
+  return { kind: 'sent' };
 }
 
 /**

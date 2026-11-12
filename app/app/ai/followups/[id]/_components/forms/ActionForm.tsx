@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Label } from "@/components/ui/label";
 import {
@@ -19,6 +19,8 @@ import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
 import { useT } from "@/hooks/i18n/useT";
 
+import { MensagensForm } from "./MensagensForm";
+import { InserirVariavel, inserirNoCursor, PreviaDoTexto } from "../VariaveisDoFluxo";
 import type { ConfigOf } from "./shared";
 
 /**
@@ -133,6 +135,7 @@ export function ActionForm({
   );
   const [templateId, setTemplateId] = useState(config.mode === "template" ? config.template_id : "");
   const [error, setError] = useState<string | null>(null);
+  const corpoRef = useRef<HTMLTextAreaElement | null>(null);
 
   const commit = (next: {
     mode: ModoDaAcao;
@@ -141,6 +144,8 @@ export function ActionForm({
     fallbackTemplateId: string;
     templateId: string;
   }) => {
+    // O bloco de mensagens guarda a própria lista e confirma pelo `MensagensForm`.
+    if (next.mode === "messages") return;
     const candidate =
       next.mode === "text"
         ? { mode: "text" as const, body: next.body }
@@ -187,11 +192,14 @@ export function ActionForm({
         </Select>
       </div>
 
-      {mode === "text" ? (
+      {mode === "messages" ? (
+        <MensagensForm items={config.mode === "messages" ? config.items : []} onChange={onChange} />
+      ) : mode === "text" ? (
         <div className="space-y-2">
           <Label htmlFor="action-body">{t("Texto enviado ao contato")}</Label>
           <Textarea
             id="action-body"
+            ref={corpoRef}
             maxLength={4000}
             value={body}
             onChange={(e) => {
@@ -199,6 +207,14 @@ export function ActionForm({
               commit({ mode, ...fields, body: e.target.value });
             }}
           />
+          <InserirVariavel
+            onInserir={(marca) => {
+              const novo = inserirNoCursor(corpoRef.current, body, marca);
+              setBody(novo);
+              commit({ mode, ...fields, body: novo });
+            }}
+          />
+          <PreviaDoTexto texto={body} />
           <p className="text-xs text-text-muted">
             {t("Sai exatamente assim, sem IA. No laço,")} {t("{{volta}}")} {t("e")} {t("{{voltas}}")} {t("viram o número da volta.")}
           </p>

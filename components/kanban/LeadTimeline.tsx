@@ -2,6 +2,8 @@
 
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -20,6 +22,7 @@ interface Props {
   chegouAoVivo: Set<string>;
   isLoading: boolean;
   isError: boolean;
+  onRetry?: () => void;
 }
 
 function quando(iso: string, idioma: string): string {
@@ -93,22 +96,35 @@ function Linha({ item, aoVivo }: { item: TimelineItemView; aoVivo?: boolean }) {
  * Reimplementar a regra aqui dentro seria a mesma falha que o card já pagou —
  * precedência reescrita em componente é rejeição de review.
  */
-export function LeadTimeline({ itens, chegouAoVivo, isLoading, isError }: Props) {
+export function LeadTimeline({ itens, chegouAoVivo, isLoading, isError, onRetry }: Props) {
   const t = useT();
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
   const blocos = agrupaTimeline(itens, chegouAoVivo);
 
   if (isLoading) {
-    return <p className="py-4 text-xs text-text-muted">{t("Carregando a linha do tempo…")}</p>;
+    return (
+      <div aria-busy="true" aria-label={t("Carregando a linha do tempo…")} className="space-y-2 py-2">
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+    );
   }
   // TRÊS estados, não dois: "não consegui ler" é diferente de "não há nada".
   // Transformar erro em lista vazia diria ao usuário que o lead não tem
   // história, quando o que houve foi uma falha de leitura.
   if (isError) {
     return (
-      <p className="py-4 text-xs text-warning-fg">
-        {t("Não consegui carregar a linha do tempo. Tente de novo em instantes.")}
-      </p>
+      <div className="flex items-center justify-between gap-2 py-4">
+        <p className="text-xs text-warning-fg">
+          {t("Não consegui carregar a linha do tempo. Tente de novo em instantes.")}
+        </p>
+        {onRetry && (
+          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+            {t("Tentar de novo")}
+          </Button>
+        )}
+      </div>
     );
   }
   if (itens.length === 0) {

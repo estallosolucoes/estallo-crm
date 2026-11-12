@@ -161,8 +161,9 @@ describe("conversationTagsSchema (G3-05 — normalização)", () => {
 });
 
 describe("patchConversationSchema (G3-05)", () => {
-  it("aceita só tags", () => {
-    expect(patchConversationSchema.safeParse({ tags: ["vip"] }).success).toBe(true);
+  it("recusa tags (0659: conversa não tem etiqueta)", () => {
+    expect(patchConversationSchema.safeParse({ tags: ["vip"] }).success).toBe(false);
+    expect(patchConversationSchema.safeParse({ status: "closed", tags: ["vip"] }).success).toBe(false);
   });
   it("aceita só status", () => {
     expect(patchConversationSchema.safeParse({ status: "closed" }).success).toBe(true);

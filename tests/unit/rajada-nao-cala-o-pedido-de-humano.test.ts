@@ -103,13 +103,12 @@ const FONTE = readFileSync(
 );
 
 describe("fiação — as duas perguntas leem de fontes diferentes", () => {
-  it("handoff, opt-out e urgência leem os inbounds pendentes, POR MENSAGEM", () => {
+  it("handoff e opt-out leem os inbounds pendentes, POR MENSAGEM", () => {
     // Presença antes de qualquer coisa: uma asserção que some junto com o código
     // que ela vigia não vigia nada.
     expect(FONTE).toMatch(/const inboundsPendentes = inboundsNaoRespondidos\(/);
     expect(FONTE).toMatch(/inboundsPendentes\.some\([\s\S]{0,200}?detectHumanHandoffRequest\(/);
     expect(FONTE).toMatch(/inboundsPendentes\.some\(\(texto\) => detectAmbiguousOptOut\(texto\)\)/);
-    expect(FONTE).toMatch(/inboundsPendentes\.some\(\(texto\) => detectUrgencySignal\(texto\)\)/);
     // E nenhum deles voltou a olhar só a última linha do histórico.
     expect(FONTE).not.toMatch(/detectAmbiguousOptOut\(latestInboundSignal\(/);
   });

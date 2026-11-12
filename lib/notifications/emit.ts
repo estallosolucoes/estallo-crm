@@ -41,10 +41,28 @@ export function emitNotification(input: EmitNotificationInput): void {
   const perm = getPermission();
   const enabled = areAlertsEnabled();
   if (!input.force && !enabled) return;
-  if (perm !== "granted") return;
 
   const spec = NOTIFY_KINDS[input.kind];
   const sound = input.sound ?? spec.sound;
+
+  /**
+   * O SOM NÃO DEPENDE DA PERMISSÃO DO SISTEMA.
+   *
+   * A permissão governa a notificação do SO (a bandeja), não o bipe da aba:
+   * antes, quem nunca concedeu a permissão (ou a negou) não ouvia NADA — a
+   * verificação vinha antes do som, e o aviso "chegou mensagem" ficava mudo
+   * com a aba aberta na frente da pessoa (relatado em 17/10/2026). Com a aba
+   * oculta o som é o do SO, que vai junto da notificação (`silent: false`).
+   */
+  if (typeof document !== "undefined" && document.visibilityState === "visible") {
+    try {
+      playSound(sound, 1.0);
+    } catch {
+      // AudioContext recusa
+    }
+  }
+
+  if (perm !== "granted") return;
   const body = truncateNotifyBody(input.body);
   const tag = input.tag ? `${spec.tagPrefix}:${input.tag}` : `${spec.tagPrefix}:${Date.now()}`;
   const marca = absUrl("/icon");
@@ -59,14 +77,6 @@ export function emitNotification(input: EmitNotificationInput): void {
     badge: marca,
     data: { href },
   };
-
-  if (typeof document !== "undefined" && document.visibilityState === "visible") {
-    try {
-      playSound(sound, 1.0);
-    } catch {
-      // AudioContext recusa
-    }
-  }
 
   try {
     const n = new Notification(input.title, opts);

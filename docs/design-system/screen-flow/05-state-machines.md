@@ -6,6 +6,8 @@ version: 0.1
 date: 2026-04-28
 ---
 
+> **Padrão visual vigente:** [Design System Estallo](../README.md). Esta pasta registra jornadas e estados operacionais; referências visuais herdadas não substituem os tokens atuais. O catálogo executável de navegação é `lib/navigation/registry.ts`.
+
 # 05 — State Machines
 
 > Diagramas Mermaid `stateDiagram-v2` das máquinas de estado críticas do produto. Cada uma vira contrato visual entre PRDs e UI.
@@ -45,12 +47,12 @@ stateDiagram-v2
     lost --> open: reaberto (manager+, audit)
     won --> [*]: arquivado
     lost --> [*]: arquivado
-    
+
     note right of won
       closed_at preenchido
       automaticamente
     end note
-    
+
     note right of lost
       lost_reason em:
       requested_by_customer
@@ -80,7 +82,7 @@ stateDiagram-v2
     FAILED --> STARTING: retry manual
     STOPPED --> [*]: deletado pelo admin
     FAILED --> [*]: deletado pelo admin
-    
+
     note right of WORKING
       cron sync-sessions
       checa a cada 1min
@@ -106,7 +108,7 @@ stateDiagram-v2
     bot_active --> bot_throttled: orçamento 100% (modo throttle = Haiku only)
     bot_disabled --> bot_active: admin aumenta budget OU vira mês
     bot_throttled --> bot_active: idem
-    
+
     note right of human_handoff
       conversation.status=pending
       activity handoff_triggered
@@ -137,7 +139,7 @@ stateDiagram-v2
     completed --> [*]: email entregue ao titular + audit
     received --> expired: D+7/D+15 sem ação (escala)
     expired --> escalated
-    
+
     note right of completed
       audit log denso:
       who/which/mode/
@@ -162,12 +164,12 @@ stateDiagram-v2
     online --> offline: fecha última aba
     busy --> offline: fecha última aba
     online --> offline: usuário toggle manual
-    
+
     note right of online
       recebe roteamento
       round-robin
     end note
-    
+
     note right of busy
       mantém conversas
       abertas; não recebe
@@ -211,7 +213,7 @@ stateDiagram-v2
     mature --> banned
     seasoned --> banned
     banned --> [*]: número morto, runbook troca
-    
+
     note right of warming_d1_7
       campanhas BLOQUEADAS
       apenas conversas reais

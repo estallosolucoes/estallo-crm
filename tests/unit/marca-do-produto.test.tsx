@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
-import { CLASSES_DE_COR, LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
+import {
+  CLASSES_DE_COR,
+  LogotipoDoProduto,
+  SimboloDoProduto,
+} from "@/components/branding/MarcaDoProduto";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 import { DEFAULT_APP_NAME, marcaEhADoProduto, type Branding } from "@/lib/branding";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
@@ -45,7 +49,7 @@ const org = {
 let contexto: { user: AuthUser; activeOrg: ActiveOrg | null } = { user: usuario, activeOrg: org };
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => contexto }));
 
-const PADRAO: Branding = { name: DEFAULT_APP_NAME, logoUrl: null, initial: "D" };
+const PADRAO: Branding = { name: DEFAULT_APP_NAME, logoUrl: null, initial: "E" };
 
 function renderSidebar(marca: Branding, collapsed: boolean) {
   return render(
@@ -85,7 +89,7 @@ describe("o desenho na barra lateral", () => {
     // revendedor"; um <img> do produto aqui faria a spec medir a coisa errada.
     expect(document.querySelector("img")).toBeNull();
     // Nem o nome em texto: o logotipo já o escreve.
-    expect(screen.queryByText(DEFAULT_APP_NAME)).toBeNull();
+    expect(screen.getByText(DEFAULT_APP_NAME)).toBeTruthy();
   });
 
   it("recolhida, mostra só o símbolo — e não a inicial em texto", () => {
@@ -100,11 +104,11 @@ describe("o desenho na barra lateral", () => {
     expect(document.querySelector("svg[role=img]")).toBeNull();
   });
 
-  it("com nome da ORGANIZAÇÃO sobre a instalação padrão, o nome dela vence o desenho", () => {
+  it("com marca legada da organização, a identidade do produto permanece", () => {
     contexto = { user: usuario, activeOrg: { ...org, marca: { nome: "Loja da Ana" } } };
     renderSidebar(PADRAO, false);
-    expect(screen.getByText("Loja da Ana")).toBeTruthy();
-    expect(document.querySelector("svg[role=img]")).toBeNull();
+    expect(screen.queryByText("Loja da Ana")).toBeNull();
+    expect(screen.getByRole("img", { name: DEFAULT_APP_NAME })).toBeTruthy();
   });
 
   it("com logo da instalação, a imagem vence o desenho", () => {
@@ -117,8 +121,14 @@ describe("as cores do desenho", () => {
   it("as classes do componente cobrem exatamente a paleta declarada, nos dois temas", () => {
     // O Tailwind só gera utilitário para hex LITERAL no fonte, então o
     // componente repete os valores. Isto é o que impede os dois de divergirem.
-    const nasClasses = Object.values(CLASSES_DE_COR).join(" ").match(/#[0-9a-f]{6}/g) ?? [];
-    const naPaleta = [...Object.values(CORES_DA_MARCA.claro), ...Object.values(CORES_DA_MARCA.escuro)];
+    const nasClasses =
+      Object.values(CLASSES_DE_COR)
+        .join(" ")
+        .match(/#[0-9a-f]{6}/g) ?? [];
+    const naPaleta = [
+      ...Object.values(CORES_DA_MARCA.claro),
+      ...Object.values(CORES_DA_MARCA.escuro),
+    ];
     expect([...nasClasses].sort()).toEqual([...naPaleta].sort());
   });
 
@@ -144,7 +154,7 @@ describe("o favicon segue a mesma regra", () => {
 
   it("desenha o símbolo quando a marca é a do produto, e a inicial quando não é", () => {
     expect(icone).toMatch(/marcaEhADoProduto\(\{ name: marca\.nome, logoUrl: marca\.logoUrl \}\)/);
-    expect(icone).toMatch(/<path d=\{SIMBOLO\.d\}/);
+    expect(icone).toMatch(/SIMBOLO\.paths\.map/);
     expect(icone).toMatch(/letraDoIcone\(marca\.nome\)/);
   });
 });

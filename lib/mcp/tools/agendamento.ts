@@ -686,7 +686,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
   description:
     "Marca um compromisso com HORA COMBINADA entre o cliente e um atendente — consulta, sessão, " +
     "visita, reunião. Use quando o cliente ESCOLHEU um horário e vai comparecer: isto reserva o " +
-    "tempo de uma pessoa da equipe, e o cliente conta com ele. No atendimento atual, marcar Google Meet também agenda a entrega do link nesta conversa quando ficar pronto. " +
+    "tempo de uma pessoa da equipe, e o cliente conta com ele. " +
     "NÃO use para 'voltar a falar com o cliente depois' — isso é retorno, e a ferramenta é " +
     "`crm_schedule_followup`. A diferença: aqui as DUAS partes combinaram e alguém vai esperar; " +
     "lá é decisão interna nossa e o cliente não sabe de nada. " +

@@ -4,6 +4,8 @@
  */
 
 export interface Conversation {
+  /** Fixada no topo do Inbox por QUEM pediu a lista (0662) — só vem na lista. */
+  fixada?: boolean;
   id: string;
   organization_id: string;
   contact_id: string;
@@ -41,7 +43,6 @@ export interface Conversation {
   unread_count_for_assignee: number;
   is_group: boolean;
   group_chat_id: string | null;
-  tags: string[];
   metadata: Record<string, unknown>;
   snooze_until: string | null;
   /**
@@ -57,6 +58,11 @@ export interface Conversation {
    * resposta de uma versão anterior, ainda em cache do react-query, não o tem.
    */
   comando_da_conversa?: string | null;
+  /**
+   * Status da última mensagem de SAÍDA (campo calculado, migration 0711): o
+   * tique da prévia na lista. Opcional pelo mesmo motivo de `comando_da_conversa`.
+   */
+  ultimo_status_de_saida?: string | null;
   last_handoff_at: string | null;
   /**
    * Por que o automático está parado. Diferencia o handoff formal de uma pausa
@@ -154,9 +160,11 @@ export interface Note {
 /**
  * Mapeia ack do WAHA (0..3) para o status canônico em messages.status.
  * 0=pending/sent server-side, 1=server-confirmed, 2=delivered (device), 3=read.
+ * -1 = ERROR no WAHA: o envio falhou depois de aceito.
  */
 export function ackToStatus(ack: number | null | undefined): Message["status"] {
   if (ack == null) return "sent";
+  if (ack < 0) return "failed";
   if (ack >= 3) return "read";
   if (ack >= 2) return "delivered";
   if (ack >= 1) return "sent";

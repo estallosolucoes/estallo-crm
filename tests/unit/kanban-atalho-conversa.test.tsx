@@ -120,25 +120,19 @@ describe("o elo que some sem barulho", () => {
     const fonte = readFileSync("app/api/v1/pipelines/[id]/board/route.ts", "utf8");
     expect(fonte, "falta withConversas").toContain("withConversas");
     expect(fonte, "withConversas não foi chamada").toMatch(
-      /leadsComConversa\s*=\s*await withConversas/,
+      /etapas\s*=\s*await Promise\.all\(\[[\s\S]*?withConversas\(supabase, organizationId, leadsVisiveis\)/,
     );
     // Chamar e não USAR o resultado é o defeito de verdade: a função roda, o
     // custo se paga, e a resposta sai sem a conversa. A primeira versão deste
     // caso só olhava a chamada e o sabote passou.
     //
-    // A resposta não sai mais direto de `withConversas`: a cadeia é
-    // withConversas → withMarcadoresDoContato → resposta. Exigir o texto
-    // `leads: leadsComConversa.leads` reprovava quem acrescentava uma etapa
-    // CERTA depois dela; o que importa é o resultado dela alimentar a próxima,
-    // e a resposta sair da última.
+    // Desde 15/10/2026 as etapas correm em paralelo sobre a mesma lista, e a
+    // resposta é a soma dos campos de todas, posição a posição. O que importa
+    // segue o mesmo: o resultado de withConversas chegar à resposta.
     expect(
       fonte,
-      "o resultado de withConversas não alimenta withMarcadoresDoContato (cadeia: withConversas → withMarcadoresDoContato → resposta)",
-    ).toMatch(/withMarcadoresDoContato\(\s*supabase,[\s\S]*?leadsComConversa\.leads/);
-    expect(
-      fonte,
-      "a resposta não sai da última etapa (cadeia: withConversas → withMarcadoresDoContato → resposta)",
-    ).toMatch(/leads:\s*leadsComMarcadores\.leads/);
+      "o resultado das etapas (withConversas inclusa) não chega à resposta",
+    ).toMatch(/etapas\.map\(\(e\) => e\.leads\[i\]\)[\s\S]*?leads:\s*leadsEnriquecidos/);
   });
 
   it("contato SEM conversa sai como `null`, não ausente — senão \"Abrir conversa\" nunca aparece (#1993)", () => {

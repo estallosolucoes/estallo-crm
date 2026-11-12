@@ -95,7 +95,9 @@ export function horizonteDoModeloMs(grafo: FlowGraph): number {
       no?.type === "wait"
         ? no.config.mode === "fixed"
           ? no.config.duration_ms
-          : no.config.max_ms
+          : no.config.mode === "until"
+            ? 86_400_000 // «aguardar até» a hora: no máximo um dia; com data, desconhecido — conta o dia.
+            : no.config.max_ms
         : no?.type === "match_reply"
           ? no.config.grace_timeout_ms
           : no?.type === "ai_classify"

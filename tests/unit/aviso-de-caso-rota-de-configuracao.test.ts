@@ -36,9 +36,6 @@ vi.mock("@/lib/escalacao/aviso-de-teste", () => ({ enviarAvisoDeTeste: vi.fn() }
 vi.mock("@/lib/escalacao/aviso-ao-suporte.handler", () => ({
   criarTransporteDoAviso: vi.fn(async () => ({})),
 }));
-vi.mock("@/lib/agent-engine/pacing/ledger-supabase", () => ({
-  criarPacingDoCanal: vi.fn(async () => ({})),
-}));
 
 const { GET, PUT } = await import("@/app/api/v1/ai/cases/alerta/route");
 const { POST: TESTE } = await import("@/app/api/v1/ai/cases/alerta/teste/route");

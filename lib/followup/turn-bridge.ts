@@ -1,6 +1,13 @@
-import type {JobClaim} from "@/lib/agent-engine/queue/claim";
+import type { JobClaim } from "@/lib/agent-engine/queue/claim";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
+import { SQL_SAIDAS_DA_EXECUCAO } from "./sql-saidas-da-execucao";
+import { pausaDepoisDoBloco } from "./passo-a-passo";
 import { assertAgendaEffectPg } from "@/lib/agenda/efeito";
-import { isFollowupCasRecusado, parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import {
+  isFollowupCasRecusado,
+  parseServiceBoundary,
+  StaleServiceBoundaryError,
+} from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
 /**
  * Ponte engine ⇄ job_queue (Task 5.1, onda 5). Traduz o RESULTADO de um turno
@@ -20,10 +27,21 @@ import type pg from "pg";
 
 import type { AdminClient, EnrollmentPatch } from "./engine";
 import { flowGraphSchema } from "./graph-schema";
-import { EVENTO_ACAO_ADIADA, EVENTO_CLASSIFICACAO_ESPERANDO, classEdgeMatch, selectEdge, type EnrollmentRow } from "./node-handlers";
+import {
+  EVENTO_ACAO_ADIADA,
+  EVENTO_CLASSIFICACAO_ESPERANDO,
+  classEdgeMatch,
+  selectEdge,
+  type EnrollmentRow,
+  escolherResposta,
+  ULTIMAS_RESPOSTAS_LIDAS,
+} from "./node-handlers";
 import { coletarEsperasAdaptativas, montarTimingPlan, type PropostaDeEspera } from "./timing-plan";
 import { persistirRespostaFollowupPg } from "./persistir-resposta";
 import { contextoDoContato } from "@/lib/automation/texto-do-followup";
+import { executionContractProblem } from "./execution-contract";
+import { loadExecutionLeadPg } from "./execution-lead-pg";
+import { SQL_AVISO_RECUPERACAO_ESGOTADA } from "./no-show-recuperacao-esgotada";
 
 /** Superset de AdminClient: a ponte precisa do snapshot COMPLETO do enrollment
  *  (current_node_id/version_id/steps_taken) pra montar o passo de conclusão —
@@ -33,7 +51,13 @@ import { contextoDoContato } from "@/lib/automation/texto-do-followup";
  *  que ele não usa (HANDOFF Decisões — AdminClient é interface própria e
  *  estreita por consumidor). */
 export interface TurnBridgeAdminClient extends AdminClient {
-  assertFollowupJob?(orgId:string,jobId:string,enrollmentId:string,nodeId:string,claim?:JobClaim):Promise<void>;
+  assertFollowupJob?(
+    orgId: string,
+    jobId: string,
+    enrollmentId: string,
+    nodeId: string,
+    claim?: JobClaim,
+  ): Promise<void>;
   loadEnrollmentById(orgId: string, id: string): Promise<EnrollmentRow | null>;
 }
 
@@ -81,7 +105,7 @@ export async function completeTurnForEnrollment(
   result: TurnResult,
   clock: () => Date = () => new Date(),
   jobId?: string,
-  jobClaim?:JobClaim,
+  jobClaim?: JobClaim,
 ): Promise<void> {
   const enrollment = await db.loadEnrollmentById(orgId, enrollmentId);
   if (!enrollment) return; // enrollment sumiu (nunca deveria, mas nada a completar)
@@ -100,27 +124,73 @@ export async function completeTurnForEnrollment(
   // Descartar o resultado é o comportamento CERTO, não perda de dado.
   if (enrollment.status !== "active" && enrollment.status !== "waiting_reply") return;
 
-  if(jobId) await db.assertFollowupJob?.(orgId,jobId,enrollmentId,nodeId,jobClaim);
+  if (jobId) await db.assertFollowupJob?.(orgId, jobId, enrollmentId, nodeId, jobClaim);
   await db.assertServiceBoundary?.(enrollment);
-  if(result.kind === "planned" || result.kind === "classified") await db.assertAgenda?.(enrollment);
+  if (result.kind === "planned" || result.kind === "classified")
+    await db.assertAgenda?.(enrollment);
   const graph = await db.loadFlowGraph(orgId, enrollment.version_id);
   if (!graph) throw new Error("flow_version_not_found");
+  const contractProblem = executionContractProblem(enrollment, graph);
+  if (contractProblem) throw new Error(contractProblem);
   const node = graph.nodes.find((n) => n.id === nodeId);
   if (!node) throw new Error("node_not_found");
-
   const now = clock();
   const idemKey = `${node.id}:${enrollment.steps_taken}`;
+
+  /**
+   * Conclui no diário (contrato 1). Um `Stale` depois de o efeito já ter acontecido (a mensagem
+   * saiu, a classificação foi feita) costuma ser corrida de revisão com um recheck entre a leitura
+   * da inscrição e a transação, e descartar o resultado deixaria o fluxo esperando o dead-man
+   * (~11 h). Relê UMA vez; se a inscrição já saiu do nó ou parou, não há o que concluir (mesmo
+   * critério do início da função).
+   */
+  const concluirNoDiario = async (
+    concluir: (e: EnrollmentRow) => Promise<unknown>,
+  ): Promise<void> => {
+    try {
+      await concluir(enrollment);
+    } catch (error) {
+      if (!(error instanceof StaleServiceBoundaryError)) throw error;
+      const fresh = await db.loadEnrollmentById(orgId, enrollmentId);
+      if (
+        !fresh ||
+        fresh.current_node_id !== nodeId ||
+        (fresh.status !== "active" && fresh.status !== "waiting_reply")
+      )
+        return;
+      if (jobId) await db.assertFollowupJob?.(orgId, jobId, enrollmentId, nodeId, jobClaim);
+      await concluir(fresh);
+    }
+  };
 
   const applyStep = async (
     eventType: string,
     payload: Record<string, unknown>,
-    patch: EnrollmentPatch,
+    patchBruto: EnrollmentPatch,
   ): Promise<void> => {
+    // Passo a passo: concluir o bloco (patch que muda de bloco) deixa a execução pausada no seguinte.
+    const patch = pausaDepoisDoBloco(enrollment, patchBruto);
     await db.assertServiceBoundary?.(enrollment);
-    if(result.kind === "planned" || result.kind === "classified") await db.assertAgenda?.(enrollment);
-    if(db.applyEnrollmentStep){
-      await db.applyEnrollmentStep(enrollmentId,orgId,{...patch,steps_taken:enrollment.steps_taken+1,claimed_until:null,updated_at:now.toISOString()},
-        {...(jobId?{job_id:jobId,job_claim:jobClaim}:{}),node_id:node.id,event_type:eventType,payload,idempotency_key:idemKey});
+    if (result.kind === "planned" || result.kind === "classified")
+      await db.assertAgenda?.(enrollment);
+    if (db.applyEnrollmentStep) {
+      await db.applyEnrollmentStep(
+        enrollmentId,
+        orgId,
+        {
+          ...patch,
+          steps_taken: enrollment.steps_taken + 1,
+          claimed_until: null,
+          updated_at: now.toISOString(),
+        },
+        {
+          ...(jobId ? { job_id: jobId, job_claim: jobClaim } : {}),
+          node_id: node.id,
+          event_type: eventType,
+          payload,
+          idempotency_key: idemKey,
+        },
+      );
       return;
     }
     const { inserted } = await db.insertEnrollmentEvent({
@@ -141,8 +211,26 @@ export async function completeTurnForEnrollment(
     });
   };
 
-  if(result.kind === "skipped"){
-    await applyStep("turn_skipped",{reason:result.reason},{status:"cancelled",cancel_reason:result.reason,completed_at:now.toISOString(),next_eval_at:null});
+  if (result.kind === "skipped") {
+    // Contrato 1: a tentativa e a passagem fecham como `skipped` na mesma transação que cancela.
+    if (enrollment.execution_contract === 1) {
+      if (!jobId || !db.executionJournal) throw new Error("execution_journal_unavailable");
+      const journal = await db.executionJournal();
+      await concluirNoDiario((fresh) =>
+        journal.completeSkipped(fresh, jobId, result.reason, jobClaim),
+      );
+      return;
+    }
+    await applyStep(
+      "turn_skipped",
+      { reason: result.reason },
+      {
+        status: "cancelled",
+        cancel_reason: result.reason,
+        completed_at: now.toISOString(),
+        next_eval_at: null,
+      },
+    );
     return;
   }
 
@@ -173,10 +261,23 @@ export async function completeTurnForEnrollment(
       claimed_until: null,
       updated_at: now.toISOString(),
     };
+    // Contrato 1: o adiamento é registrado numa transação do diário; a tentativa segue aberta.
+    if (enrollment.execution_contract === 1) {
+      if (!jobId || !db.executionJournal) throw new Error("execution_journal_unavailable");
+      const journal = await db.executionJournal();
+      await concluirNoDiario((fresh) =>
+        journal.deferSend(fresh, jobId, result.until, voltaEm, result.reason, jobClaim),
+      );
+      return;
+    }
     const evento = {
       node_id: node.id,
       event_type: EVENTO_ACAO_ADIADA,
-      payload: { until: result.until.toISOString(), next_eval_at: voltaEm.toISOString(), reason: result.reason },
+      payload: {
+        until: result.until.toISOString(),
+        next_eval_at: voltaEm.toISOString(),
+        reason: result.reason,
+      },
       idempotency_key: `${node.id}:${enrollment.steps_taken}:adiado:${jobId ?? result.until.toISOString()}`,
     };
     await db.assertServiceBoundary?.(enrollment);
@@ -203,7 +304,9 @@ export async function completeTurnForEnrollment(
     // passo — `${nó}:${passo}` ocupada aqui faria o motor ler a espera como
     // "o turno já concluiu". Uma linha por job: o retry do mesmo job é no-op.
     if (node.type !== "ai_classify") {
-      throw new Error(`completeTurnForEnrollment: resultado 'awaiting_reply' mas o nó "${node.id}" não é 'ai_classify'`);
+      throw new Error(
+        `completeTurnForEnrollment: resultado 'awaiting_reply' mas o nó "${node.id}" não é 'ai_classify'`,
+      );
     }
     await db.insertEnrollmentEvent({
       organization_id: orgId,
@@ -220,9 +323,27 @@ export async function completeTurnForEnrollment(
     // match_reply (if_exists: confirm) enfileira a pergunta e permanece no nó.
     // Completar o envio não avança — a resposta do lead é que avança.
     // Lançar aqui devolvia o job pra pending e o pipeline mandava a pergunta de novo.
-    if (node.type === "match_reply") return;
+    if (node.type === "match_reply") {
+      if (enrollment.execution_contract === 1) {
+        if (!jobId || !db.executionJournal) throw new Error("execution_journal_unavailable");
+        const journal = await db.executionJournal();
+        await concluirNoDiario((fresh) => journal.completeConfirmationSend(fresh, jobId, jobClaim));
+      }
+      return;
+    }
     if (node.type !== "action") {
-      throw new Error(`completeTurnForEnrollment: resultado 'sent' mas o nó "${node.id}" não é 'action'`);
+      throw new Error(
+        `completeTurnForEnrollment: resultado 'sent' mas o nó "${node.id}" não é 'action'`,
+      );
+    }
+    // Contrato 1: o recibo vem do ledger de envio e a conclusão é uma transação do diário
+    // (efeito + output + avanço). Sem job não há como achar a tentativa: recusa em vez de
+    // avançar por fora do diário.
+    if (enrollment.execution_contract === 1) {
+      if (!jobId || !db.executionJournal) throw new Error("execution_journal_unavailable");
+      const journal = await db.executionJournal();
+      await concluirNoDiario((fresh) => journal.completeSend(fresh, jobId, jobClaim));
+      return;
     }
     const edge = selectEdge(graph.edges, node.id, { type: "always" });
     if (!edge) throw new Error(`action node "${node.id}" sem aresta 'always' de saída`);
@@ -236,11 +357,25 @@ export async function completeTurnForEnrollment(
 
   if (result.kind === "classified") {
     if (node.type !== "ai_classify") {
-      throw new Error(`completeTurnForEnrollment: resultado 'classified' mas o nó "${node.id}" não é 'ai_classify'`);
+      throw new Error(
+        `completeTurnForEnrollment: resultado 'classified' mas o nó "${node.id}" não é 'ai_classify'`,
+      );
+    }
+    // Contrato 1: a aresta, o output e o avanço são uma transação do diário. O primeiro job a
+    // concluir vence; os reenfileirados voltam `reused`.
+    if (enrollment.execution_contract === 1) {
+      if (!jobId || !db.executionJournal) throw new Error("execution_journal_unavailable");
+      const journal = await db.executionJournal();
+      await concluirNoDiario((fresh) =>
+        journal.completeClassification(fresh, jobId, result.class, jobClaim),
+      );
+      return;
     }
     const edge = selectEdge(graph.edges, node.id, classEdgeMatch(node, result.class));
     if (!edge) {
-      throw new Error(`ai_classify node "${node.id}" sem aresta pra classe "${result.class}" (fallback 'always' também ausente)`);
+      throw new Error(
+        `ai_classify node "${node.id}" sem aresta pra classe "${result.class}" (fallback 'always' também ausente)`,
+      );
     }
     await applyStep(
       "ai_classified",
@@ -252,7 +387,9 @@ export async function completeTurnForEnrollment(
 
   // 'planned' — o acionamento decidiu os instantes de TODAS as esperas adaptativas.
   if (node.type !== "trigger") {
-    throw new Error(`completeTurnForEnrollment: resultado 'planned' mas o nó "${node.id}" não é 'trigger'`);
+    throw new Error(
+      `completeTurnForEnrollment: resultado 'planned' mas o nó "${node.id}" não é 'trigger'`,
+    );
   }
   // Clampa contra o GRAFO PINADO, nunca contra o que o payload do modelo afirma
   // que o intervalo era: quem propõe é a IA, quem decide o intervalo é o nó.
@@ -262,6 +399,13 @@ export async function completeTurnForEnrollment(
     modelo: result.modelo,
     agora: now,
   });
+  // Contrato 1: plano, saída do gatilho e avanço numa transação do diário.
+  if (enrollment.execution_contract === 1) {
+    if (!jobId || !db.executionJournal) throw new Error("execution_journal_unavailable");
+    const journal = await db.executionJournal();
+    await concluirNoDiario((fresh) => journal.completePlan(fresh, jobId, plano, jobClaim));
+    return;
+  }
   const edge = selectEdge(graph.edges, node.id, { type: "always" });
   if (!edge) throw new Error(`trigger node "${node.id}" sem aresta 'always' de saída`);
   await applyStep(
@@ -298,11 +442,13 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
     pointer_id: row.pointer_id as string,
     version_id: row.version_id as string,
     contact_id: row.contact_id as string,
+    execution_contract: (row.execution_contract as 0 | 1 | undefined) ?? 0,
+    lead_id: (row.lead_id as string | null | undefined) ?? null,
     conversation_id: (row.conversation_id as string | null) ?? null,
     service_boundary: parseServiceBoundary(row.service_boundary),
-    revision:Number(row.revision),
-    appointment_id:row.appointment_id as string|null,
-    appointment_revision:row.appointment_revision as number|null,
+    revision: Number(row.revision),
+    appointment_id: row.appointment_id as string | null,
+    appointment_revision: row.appointment_revision as number | null,
     current_node_id: row.current_node_id as string,
     status: row.status as EnrollmentRow["status"],
     next_eval_at: toIso(row.next_eval_at),
@@ -319,28 +465,55 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
     // `?? null` e não `as TimingPlan`: num clone sem a migration 0144 a chave
     // simplesmente não vem, e "sem plano" é exatamente o que null significa.
     timing_plan: row.timing_plan ?? null,
+    // Clone sem a migration 0714: a chave não vem, e "não é passo a passo" é exatamente o que falso significa.
+    passo_a_passo: row.passo_a_passo === true,
   };
 }
 
 /** `TurnBridgeAdminClient` sobre `pg.Pool` — produção do worker 24/7. */
 export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
-  const revisions=new Map<string,number>();
+  const revisions = new Map<string, number>();
   return {
-    async assertFollowupJob(orgId,jobId,enrollmentId,nodeId,claim){
-      if(!claim)throw new StaleServiceBoundaryError();
-      const held=await pool.query("select fn_followup_claim_current($1,$2,$3,$4) current",[orgId,jobId,claim.worker_id,claim.acquired_at]);
-      if(!held.rows[0]?.current)throw new StaleServiceBoundaryError();
-      const {rows}=await pool.query("select fn_followup_job_current($1,$2,$3,$4) current",[orgId,jobId,enrollmentId,nodeId]);
-      if(!rows[0]?.current) throw new StaleServiceBoundaryError();
+    async executionJournal() {
+      const { PgExecutionJournal } = await import("./execution-journal-pg");
+      return new PgExecutionJournal(pool);
     },
-    async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id)&&enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await requireCurrentServiceBoundary(pool, enrollment.service_boundary ?? null); },
-    async assertAgenda(enrollment){await assertAgendaEffectPg(pool,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
+    async assertFollowupJob(orgId, jobId, enrollmentId, nodeId, claim) {
+      if (!claim) throw new StaleServiceBoundaryError();
+      const held = await pool.query("select fn_followup_claim_current($1,$2,$3,$4) current", [
+        orgId,
+        jobId,
+        claim.worker_id,
+        claim.acquired_at,
+      ]);
+      if (!held.rows[0]?.current) throw new StaleServiceBoundaryError();
+      const { rows } = await pool.query("select fn_followup_job_current($1,$2,$3,$4) current", [
+        orgId,
+        jobId,
+        enrollmentId,
+        nodeId,
+      ]);
+      if (!rows[0]?.current) throw new StaleServiceBoundaryError();
+    },
+    async assertServiceBoundary(enrollment) {
+      if (!revisions.has(enrollment.id) && enrollment.revision !== undefined)
+        revisions.set(enrollment.id, enrollment.revision);
+      await requireCurrentServiceBoundary(pool, enrollment.service_boundary ?? null);
+    },
+    async assertAgenda(enrollment) {
+      await assertAgendaEffectPg(pool, {
+        organizationId: enrollment.organization_id,
+        contactId: enrollment.contact_id,
+        enrollmentId: enrollment.id,
+        nodeId: enrollment.current_node_id,
+      });
+    },
     async claimDueEnrollments(limit, leaseSeconds) {
       const { rows } = await pool.query(`select * from fn_claim_due_followup_enrollments($1, $2)`, [
         limit,
         leaseSeconds,
       ]);
-      for(const row of rows) revisions.set(row.id,Number(row.revision));
+      for (const row of rows) revisions.set(row.id, Number(row.revision));
       return rows.map(mapEnrollmentRow);
     },
     async loadEnrollmentById(orgId, id) {
@@ -348,7 +521,7 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
         `select * from followup_enrollments where id = $1 and organization_id = $2`,
         [id, orgId],
       );
-      if(rows[0]) revisions.set(id,Number(rows[0].revision));
+      if (rows[0]) revisions.set(id, Number(rows[0].revision));
       return rows[0] ? mapEnrollmentRow(rows[0] as Record<string, unknown>) : null;
     },
     async loadFlowGraph(orgId, versionId) {
@@ -359,30 +532,44 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       if (rows.length === 0) return null;
       return flowGraphSchema.parse(rows[0]!.graph);
     },
-    async loadLeadFacts(orgId, contactId) {
-      const { rows: leads } = await pool.query<{
-        stage_id: string | null;
-        tags: string[];
-        custom_fields: Record<string, unknown> | null;
-      }>(
-        `select stage_id, tags, custom_fields from crm_leads where organization_id = $1 and contact_id = $2
-         order by updated_at desc limit 1`,
-        [orgId, contactId],
-      );
+    async loadLeadFacts(orgId, contactId, target) {
+      const lead = await loadExecutionLeadPg(pool, orgId, contactId, target);
       const { rows: contacts } = await pool.query<{ name: string | null }>(
         `select name from contacts where organization_id = $1 and id = $2`,
         [orgId, contactId],
       );
-      const lead = leads[0];
+      const { rows: itens } = lead?.id
+        ? await pool.query<{ nome: string }>(
+            `select nome from crm_lead_products where organization_id = $1 and lead_id = $2`,
+            [orgId, lead.id],
+          )
+        : { rows: [] as { nome: string }[] };
       return {
-        lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        lead_stage: (lead?.stage_id as string | null | undefined) ?? null,
+        tags: (lead?.tags as string[] | undefined) ?? [],
+        products: itens.map((i) => i.nome),
         contact_name: contacts[0]?.name ?? null,
-        custom_fields: lead?.custom_fields ?? {},
+        custom_fields: (lead?.custom_fields as Record<string, unknown> | null | undefined) ?? {},
       };
     },
     /** #2528 — contexto do render das mensagens de follow-up (o MESMO par de leituras de `loadLeadFacts`, com as linhas inteiras). */
-    loadRenderContext: (orgId, contactId) => contextoDoContato(pool, orgId, contactId),
+    loadRenderContext: (orgId, contactId, target) =>
+      contextoDoContato(pool, orgId, contactId, target),
+    // A mesma régua do adaptador Supabase (`engine.ts`): passos concluídos, última tentativa de cada um, e numa volta
+    // a última visita do bloco vale.
+    async loadOrgTimezone(orgId) {
+      const { rows } = await pool.query<{ timezone: string | null }>("select timezone from organizations where id=$1", [orgId]);
+      return fusoUtilizavel(rows[0]?.timezone);
+    },
+    async loadStepOutputs(orgId, enrollmentId) {
+      const { rows } = await pool.query<{ node_id: string; output_snapshot: unknown }>(SQL_SAIDAS_DA_EXECUCAO, [
+        orgId,
+        enrollmentId,
+      ]);
+      const saidas: Record<string, unknown> = {};
+      for (const r of rows) if (r.output_snapshot !== null && r.output_snapshot !== undefined) saidas[r.node_id] = r.output_snapshot;
+      return saidas;
+    },
     async loadLastInboundBody(orgId, contactId, conversationId, naoAntesDe) {
       const params: unknown[] = [orgId, contactId, conversationId ?? null];
       const desde = naoAntesDe ? "and sent_at >= $4" : "";
@@ -390,11 +577,30 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       const { rows } = await pool.query<{ body: string | null }>(
         `select body from messages
          where organization_id = $1 and contact_id = $2 and ($3::uuid is null or conversation_id=$3) and direction = 'inbound' ${desde}
-         order by sent_at desc limit 1`,
+         order by sent_at desc, id desc limit 1`,
         params,
       );
       const body = rows[0]?.body;
       return typeof body === "string" ? body : null;
+    },
+    async loadLastInboundMessage(orgId, contactId, naoAntesDe, texto) {
+      const params: unknown[] = [orgId, contactId];
+      let filtros = "";
+      if (naoAntesDe) {
+        params.push(naoAntesDe);
+        filtros += ` and sent_at >= $${params.length}`;
+      }
+      params.push(texto === undefined ? 1 : ULTIMAS_RESPOSTAS_LIDAS);
+      const { rows } = await pool.query<{ id: string; body: string | null }>(
+        `select id, body from messages
+         where organization_id = $1 and contact_id = $2 and direction = 'inbound'${filtros}
+         order by sent_at desc, id desc limit $${params.length}`,
+        params,
+      );
+      return escolherResposta(
+        rows.map((r) => ({ id: r.id, body: r.body ?? "" })),
+        texto,
+      );
     },
     async loadEnrollmentEvents(enrollmentId) {
       const { rows } = await pool.query(
@@ -408,7 +614,14 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
         await pool.query(
           `insert into followup_enrollment_events (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
            values ($1, $2, $3, $4, $5, $6)`,
-          [event.organization_id, event.enrollment_id, event.node_id, event.event_type, event.payload, event.idempotency_key],
+          [
+            event.organization_id,
+            event.enrollment_id,
+            event.node_id,
+            event.event_type,
+            event.payload,
+            event.idempotency_key,
+          ],
         );
         return { inserted: true };
       } catch (err) {
@@ -416,19 +629,36 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
         throw err;
       }
     },
-    async applyEnrollmentStep(id,orgId,patch,event){
-      const revision=revisions.get(id);if(revision===undefined) throw new StaleServiceBoundaryError();
-      try{const {rows}=await pool.query("select fn_followup_apply_step($1,$2,$3,$4,$5) revision",[orgId,id,revision,patch,event]);revisions.set(id,Number(rows[0].revision));}
-      catch(error){if((error as {code?:string}).code==="23505") return;if(isFollowupCasRecusado(error as {code?:string;message?:string})) throw new StaleServiceBoundaryError();throw error;}
+    async applyEnrollmentStep(id, orgId, patch, event) {
+      const revision = revisions.get(id);
+      if (revision === undefined) throw new StaleServiceBoundaryError();
+      try {
+        const { rows } = await pool.query(
+          "select fn_followup_apply_step($1,$2,$3,$4,$5) revision",
+          [orgId, id, revision, patch, event],
+        );
+        revisions.set(id, Number(rows[0].revision));
+      } catch (error) {
+        if ((error as { code?: string }).code === "23505") return;
+        if (isFollowupCasRecusado(error as { code?: string; message?: string }))
+          throw new StaleServiceBoundaryError();
+        throw error;
+      }
     },
     async updateEnrollment(id, orgId, patch) {
-      const revision=revisions.get(id);
-      if(revision===undefined) throw new StaleServiceBoundaryError();
+      const revision = revisions.get(id);
+      if (revision === undefined) throw new StaleServiceBoundaryError();
       try {
-        const {rows}=await pool.query<{revision:number}>("select fn_followup_patch($1,$2,$3,$4) as revision",[orgId,id,revision,patch]);
-        revisions.set(id,Number(rows[0]!.revision));
-      } catch(error){if(isFollowupCasRecusado(error as {code?:string;message?:string})) throw new StaleServiceBoundaryError();throw error;}
-
+        const { rows } = await pool.query<{ revision: number }>(
+          "select fn_followup_patch($1,$2,$3,$4) as revision",
+          [orgId, id, revision, patch],
+        );
+        revisions.set(id, Number(rows[0]!.revision));
+      } catch (error) {
+        if (isFollowupCasRecusado(error as { code?: string; message?: string }))
+          throw new StaleServiceBoundaryError();
+        throw error;
+      }
     },
     async loadFlowPointerName(orgId, pointerId) {
       const { rows } = await pool.query<{ name: string }>(
@@ -470,25 +700,11 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       //
       // `on conflict do nothing` casa o índice parcial da 0224
       // (inbox_appointment_revision_unique): repetir num reprocesso é no-op.
-      await pool.query(
-        `insert into agent_inbox_items
-           (organization_id, kind, severity, title, body, ref_kind, ref_id, appointment_revision)
-         select $1, 'appointment_recovery_review', 'warn',
-                'Cliente faltou e não respondeu à recuperação',
-                'As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.',
-                'appointment', a.id, $3
-           from calendar_appointments a
-           join contacts c
-             on c.organization_id = a.organization_id
-            and c.id = a.contact_id
-          where a.organization_id = $1
-            and a.id = $2
-            and not c.is_anonymized
-         on conflict (organization_id, ref_id, appointment_revision, kind)
-           where ref_kind = 'appointment' and appointment_revision is not null
-           do nothing`,
-        [item.organization_id, item.appointment_id, item.appointment_revision],
-      );
+      await pool.query(SQL_AVISO_RECUPERACAO_ESGOTADA, [
+        item.organization_id,
+        item.appointment_id,
+        item.appointment_revision,
+      ]);
     },
     async persistirRespostaFollowup(input) {
       await persistirRespostaFollowupPg((sql, params) => pool.query(sql, params), input);

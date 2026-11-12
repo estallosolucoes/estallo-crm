@@ -20,7 +20,9 @@
  * abertos, então isto é aviso, não bloqueio.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import * as React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render as renderSemQuery, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { Contact } from "@/lib/types/contacts";
@@ -37,14 +39,35 @@ vi.mock("@/hooks/contacts/useContactList", () => ({
   useContactList: (filtros: { search?: string }) => busca(filtros),
 }));
 
+vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
+  useAssignableMembers: () => ({
+    data: [
+      { user_id: "0b000000-0000-4000-8000-0000000000aa", role: "agent", full_name: "Quem cria" },
+    ],
+  }),
+}));
+vi.mock("@/hooks/leads/useProdutosDoNegocio", () => ({
+  useCatalogoDeProdutos: () => ({ data: [] }),
+}));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useActiveOrg: () => ({ currency: "BRL", country: null }),
+  useAuth: () => ({ activeOrg: { orgId: "org-1" } }),
+  useUser: () => ({ id: "0b000000-0000-4000-8000-0000000000aa", full_name: "Quem cria" }),
 }));
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
+
+// O diálogo lê a cache do react-query (seletor de tags, quadro a reler).
+function ComQuery({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+const render = (ui: React.ReactElement) => renderSemQuery(ui, { wrapper: ComQuery });
 
 const FUNIL = "33333333-3333-4333-8333-333333333333";
 const FUNIL_OUTRO = "44444444-4444-4444-8444-444444444444";

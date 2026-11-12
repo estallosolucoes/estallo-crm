@@ -17,6 +17,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * usuário, então a RLS vale; o filtro explícito é a convenção do repo e a rede
  * que sobra se a policy mudar.
  */
+import { COR_DE_ETAPA } from "@/lib/kanban/cor-da-etapa";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
@@ -45,6 +46,8 @@ const bodySchema = z
   .object({
     name: z.string().min(1).max(80),
     expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+    /** Cor da coluna no quadro, #rrggbb (o CHECK do banco é o mesmo). */
+    color: z.string().regex(COR_DE_ETAPA).nullable().optional(),
   })
   .strict();
 
@@ -126,6 +129,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         ...(parsed.data.expected_duration_hours !== undefined
           ? { expected_duration_hours: parsed.data.expected_duration_hours }
           : {}),
+        ...(parsed.data.color !== undefined ? { color: parsed.data.color } : {}),
       },
     );
     return ok(funil, { status: 201, requestId });

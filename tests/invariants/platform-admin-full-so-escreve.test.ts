@@ -245,8 +245,8 @@ describe("0529 — support_readonly não escreve na fatia 1 do #2115", () => {
   });
 
   it("conversations: UPDATE 0 como support_readonly; 1 como full", () => {
-    expect(writeCountAs(READONLY_0529, `update public.conversations set tags = array['hackeado'] where id = '${CONV_0529}'`)).toBe(0);
-    expect(writeCountAs(FULL_0529, `update public.conversations set tags = array['escrito'] where id = '${CONV_0529}'`)).toBe(1);
+    expect(writeCountAs(READONLY_0529, `update public.conversations set last_message_preview = 'hackeado' where id = '${CONV_0529}'`)).toBe(0);
+    expect(writeCountAs(FULL_0529, `update public.conversations set last_message_preview = 'escrito' where id = '${CONV_0529}'`)).toBe(1);
   });
 
   it("conversations: INSERT 0 como support_readonly; 1 como full", () => {

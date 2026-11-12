@@ -1,11 +1,22 @@
 import type { FlowGraph, FlowEdge, FlowNode, NodeType } from './graph-schema';
 import type { FollowupFlowSurface } from './api-schemas';
-import { branchIdForCondition, nodeBranches } from './graph-schema';
+import {
+  branchIdForCondition,
+  nodeBranches,
+  GRACE_TIMEOUT_MAX_MS,
+  NODES_WITH_ERROR_BRANCH,
+  ON_ERROR_BRANCH_ID,
+} from './graph-schema';
 import { rotuloDoRamo } from './rotulo-do-ramo';
 import type { NomesDeValor } from './vocabulario';
 import type { EtapaCitada } from './etapas-citadas';
 import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
+import { nodeTypesForSurface } from './node-catalog';
+import { EXECUTION_CONTRACT_AVAILABLE } from './execution-contract';
+import { declaredNodeOutputSchema } from './node-output-contracts';
+import { ancestrais, extrairReferencias, textosDoBloco } from './variaveis-de-blocos';
+import { NODES_INTEGRATED_IN_EXECUTION_CONTRACT } from '@/lib/automation/execution-capability';
 
 /**
  * Structural publish validator for follow-up flow graphs.
@@ -15,6 +26,11 @@ import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../cha
  */
 
 export const PUBLISH_ERROR_CODES = [
+  'execution_contract_unavailable',
+  'execution_node_not_integrated',
+  'error_edge_requires_new_engine',
+  'error_edge_not_supported',
+  'multiple_error_edges',
   'no_trigger',
   'multiple_triggers',
   'unreachable_node',
@@ -28,6 +44,7 @@ export const PUBLISH_ERROR_CODES = [
   'check_stage_not_found',
   'check_stage_archived',
   'grace_too_short',
+  'grace_too_long',
   'long_wait_needs_template',
   'immune_wait_too_short',
   'cycle_without_wait',
@@ -43,6 +60,23 @@ export const PUBLISH_ERROR_CODES = [
   'motivo_da_perda_ausente',
   'motivo_da_perda_invalido',
   'tag_ausente',
+  // Variáveis de blocos anteriores (`{{nodes.<bloco>.<campo>}}`) que não podem ser resolvidas.
+  'variavel_de_bloco_inexistente',
+  'variavel_de_bloco_nao_anterior',
+  'variavel_de_bloco_campo_inexistente',
+  'mapa_sem_campos',
+  'responsavel_ausente',
+  'nota_sem_texto',
+  'campo_do_negocio_incompleto',
+  'produto_ausente',
+  'conexao_http_ausente',
+  'busca_de_contato_sem_valor',
+  'negocio_sem_funil',
+  'negocio_sem_etapa',
+  'aplicar_em_invalido',
+  'corpo_http_invalido',
+  'mapa_campo_repetido',
+  'mapa_campo_sem_valor',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -155,9 +189,9 @@ function cicloDoEncadeamento(
  * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
  */
 export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
-  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
-  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
-  atendimento: ['trigger', 'collect', 'skill', 'end'],
+  followup: nodeTypesForSurface('followup'),
+  crm_automation: nodeTypesForSurface('crm_automation'),
+  atendimento: nodeTypesForSurface('atendimento'),
 };
 
 /**
@@ -267,6 +301,8 @@ const MIN_CYCLE_WAIT_MS = 300_000; // 5min
 const MAX_PATH_STEPS = 30;
 
 function waitMs(config: Extract<FlowNode, { type: 'wait' }>['config']): number {
+  // «Aguardar até» a hora espera no máximo um dia; com data, o prazo é a data (contado como um dia aqui).
+  if (config.mode === 'until') return 86_400_000;
   return config.mode === 'fixed' ? config.duration_ms : config.max_ms;
 }
 
@@ -274,6 +310,9 @@ function waitMs(config: Extract<FlowNode, { type: 'wait' }>['config']): number {
 function isSufficientWaitNode(node: FlowNode): boolean {
   if (node.type === 'match_reply') return node.config.grace_timeout_ms >= MIN_CYCLE_WAIT_MS;
   if (node.type !== 'wait') return false;
+  // «Até» só a hora: a próxima ocorrência fica no dia seguinte — trava o ciclo. Com data, data passada segue na hora:
+  // num laço isso giraria sem parar, então NÃO conta como espera que quebra ciclo.
+  if (node.config.mode === 'until') return node.config.data === undefined;
   return node.config.mode === 'fixed'
     ? node.config.duration_ms >= MIN_CYCLE_WAIT_MS
     : node.config.min_ms >= MIN_CYCLE_WAIT_MS;
@@ -478,6 +517,8 @@ function cobrirRamos(
 ): void {
   for (const branch of nodeBranches(node)) {
     if (outgoing.some((e) => branchIdForCondition(node, e.condition) === branch.id)) continue;
+    // "Fallback erro" é opcional: sem aresta, a falha para a inscrição e avisa a Central.
+    if (branch.kind === 'error') continue;
     if (branch.kind === 'fallback') {
       errors.push({
         node_id: node.id,
@@ -564,6 +605,39 @@ function conferirEtapaDestino(
 }
 
 /**
+ * Fase 4 — Mapear dados sem campo, com nome repetido ou com valor vazio não monta nada que se possa citar.
+ */
+function conferirMapa(
+  node: Extract<FlowNode, { type: 'map_data' }>,
+  errors: PublishValidationError[],
+): void {
+  if (node.config.fields.length === 0) {
+    errors.push({
+      node_id: node.id,
+      code: 'mapa_sem_campos',
+      message: `A caixa "${node.label}" não monta nenhum campo. Acrescente ao menos um.`,
+    });
+    return;
+  }
+  const vistos = new Set<string>();
+  for (const f of node.config.fields) {
+    if (vistos.has(f.name))
+      errors.push({
+        node_id: node.id,
+        code: 'mapa_campo_repetido',
+        message: `A caixa "${node.label}" monta o campo "${f.name}" mais de uma vez.`,
+      });
+    vistos.add(f.name);
+    if (f.value.trim() === '')
+      errors.push({
+        node_id: node.id,
+        code: 'mapa_campo_sem_valor',
+        message: `A caixa "${node.label}": o campo "${f.name}" está sem valor.`,
+      });
+  }
+}
+
+/**
  * #2065 — nó `edit_lead_tag` sem tag (lista vazia ou com tag em branco). O
  * schema aceita, porque o rascunho tem de salvar trabalho pela metade; publicado,
  * um nó que não grava nada é mentira de interface.
@@ -607,6 +681,12 @@ function conferirRegras(
     };
     const valor = String(check.value).trim();
 
+    if (check.field === 'variavel' && !(check.source && /^\s*\{\{\s*nodes\.[A-Za-z0-9_-]+\.[A-Za-z0-9_.]+\s*\}\}\s*$/.test(check.source))) {
+      errors.push({ ...ancora, code: 'empty_check_value', message: `${regra}: escolha o dado de um bloco anterior.` });
+      return;
+    }
+    // «Tem valor»/«não tem valor» não comparam com nada.
+    if (check.op === 'exists' || check.op === 'not_exists') return;
     if (valor === '') {
       errors.push({ ...ancora, code: 'empty_check_value', message: `${regra} sem valor: preencha ou remova a regra.` });
       return;
@@ -649,6 +729,108 @@ function conferirRegras(
   });
 }
 
+/**
+ * "Fallback erro" (aresta `branch: on_error`). Só existe onde há o que falhar de vez e só vale no
+ * motor novo: no antigo a falha é registrada em log e o fluxo segue pela saída normal, então uma
+ * aresta de erro ali prometeria um desvio que nunca acontece.
+ */
+function conferirSaidaDeErro(graph: FlowGraph, errors: PublishValidationError[]): void {
+  const porOrigem = new Map<string, number>();
+  const tipoDe = new Map(graph.nodes.map((n) => [n.id, n.type]));
+  for (const edge of graph.edges) {
+    if (edge.condition.type !== 'branch' || edge.condition.branch_id !== ON_ERROR_BRANCH_ID) continue;
+    const tipo = tipoDe.get(edge.source);
+    if (tipo === undefined) continue;
+    if (!NODES_WITH_ERROR_BRANCH.has(tipo)) {
+      errors.push({
+        node_id: edge.source,
+        code: 'error_edge_not_supported',
+        branch_id: ON_ERROR_BRANCH_ID,
+        message: `Nó "${edge.source}": este tipo de bloco não tem a saída "Fallback erro".`,
+      });
+      continue;
+    }
+    if (graph.execution_contract !== 1) {
+      errors.push({
+        node_id: edge.source,
+        code: 'error_edge_requires_new_engine',
+        branch_id: ON_ERROR_BRANCH_ID,
+        message: `Nó "${edge.source}": a saída "Fallback erro" só funciona no motor novo de execução.`,
+      });
+      continue;
+    }
+    porOrigem.set(edge.source, (porOrigem.get(edge.source) ?? 0) + 1);
+  }
+  for (const [origem, quantas] of porOrigem) {
+    if (quantas > 1)
+      errors.push({
+        node_id: origem,
+        code: 'multiple_error_edges',
+        branch_id: ON_ERROR_BRANCH_ID,
+        message: `Nó "${origem}": só pode haver uma saída "Fallback erro".`,
+      });
+  }
+}
+
+/**
+ * Toda `{{nodes.<bloco>.<campo>}}` de um texto tem de citar um bloco que EXISTE e que vem ANTES do que a usa. Citar
+ * um bloco futuro, ou de outro ramo, daria um texto sem valor na hora de enviar — a publicação recusa antes.
+ */
+function validarVariaveisDeBlocos(graph: FlowGraph, errors: PublishValidationError[]): void {
+  const ids = new Set(graph.nodes.map((n) => n.id));
+  for (const no of graph.nodes) {
+    const referencias = textosDoBloco(no).flatMap(extrairReferencias);
+    if (referencias.length === 0) continue;
+    const anteriores = ancestrais(graph, no.id);
+    const vistas = new Set<string>();
+    for (const ref of referencias) {
+      if (vistas.has(ref.no_id)) continue;
+      vistas.add(ref.no_id);
+      if (!ids.has(ref.no_id)) {
+        errors.push({
+          node_id: no.id,
+          code: 'variavel_de_bloco_inexistente',
+          message: `A caixa "${no.label}" usa a variável ${ref.marca}, mas não existe um bloco "${ref.no_id}" neste fluxo.`,
+        });
+      } else if (!anteriores.has(ref.no_id)) {
+        errors.push({
+          node_id: no.id,
+          code: 'variavel_de_bloco_nao_anterior',
+          message: `A caixa "${no.label}" usa a variável ${ref.marca}, mas esse bloco não vem antes dela no caminho do fluxo.`,
+        });
+      } else {
+        // Caminho impossível: o campo (primeiro trecho) tem de existir na saída DECLARADA do tipo do bloco citado.
+        const alvo = graph.nodes.find((n) => n.id === ref.no_id)!;
+        const declarados = Object.keys(
+          (declaredNodeOutputSchema(alvo.type)?.properties as Record<string, unknown> | undefined) ?? {},
+        );
+        const campo = ref.caminho.split('.')[0]!;
+        const nomeDoMapa = alvo.type === 'map_data' && campo === 'fields' ? ref.caminho.split('.')[1] : undefined;
+        if (
+          alvo.type === 'map_data' &&
+          campo === 'fields' &&
+          !alvo.config.fields.some((f) => f.name === nomeDoMapa)
+        ) {
+          errors.push({
+            node_id: no.id,
+            code: 'variavel_de_bloco_campo_inexistente',
+            message: `A caixa "${no.label}" usa a variável ${ref.marca}, mas o bloco "${alvo.label}" não monta o campo "${nomeDoMapa ?? ''}". Campos disponíveis: ${alvo.config.fields.map((f) => f.name).join(', ') || 'nenhum'}.`,
+          });
+        } else if (!declarados.includes(campo)) {
+          errors.push({
+            node_id: no.id,
+            code: 'variavel_de_bloco_campo_inexistente',
+            message:
+              declarados.length === 0
+                ? `A caixa "${no.label}" usa a variável ${ref.marca}, mas o bloco "${alvo.label}" não produz dados para citar.`
+                : `A caixa "${no.label}" usa a variável ${ref.marca}, mas o bloco "${alvo.label}" não produz o campo "${campo}". Campos disponíveis: ${declarados.join(', ')}.`,
+          });
+        }
+      }
+    }
+  }
+}
+
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function validateFlowForPublish(
@@ -658,6 +840,25 @@ export function validateFlowForPublish(
   const { nodes, edges } = graph;
   const errors: PublishValidationError[] = [];
   const surface = contexto.surface ?? 'followup';
+  if (graph.execution_contract !== undefined && !EXECUTION_CONTRACT_AVAILABLE) {
+    errors.push({
+      node_id: null,
+      code: 'execution_contract_unavailable',
+      message: 'O contrato de execução deste fluxo ainda não está disponível nesta instalação.',
+    });
+  }
+  if (graph.execution_contract !== undefined) {
+    for (const node of nodes) {
+      if (!NODES_INTEGRATED_IN_EXECUTION_CONTRACT.has(node.type)) {
+        errors.push({
+          node_id: node.id,
+          code: 'execution_node_not_integrated',
+          message: 'Este tipo de bloco ainda não é registrado pelo novo contrato de execução.',
+        });
+      }
+    }
+  }
+  conferirSaidaDeErro(graph, errors);
   validarSuperficie(graph, surface, errors, contexto.roteiro);
   validarSomenteInterno(graph, surface, errors);
   const etapas = contexto.etapas;
@@ -770,6 +971,83 @@ export function validateFlowForPublish(
   for (const node of [...nodes].sort(byId)) {
     if (node.type === 'move_lead') conferirEtapaDestino(node, contexto, errors);
     if (node.type === 'edit_lead_tag') conferirTags(node, errors);
+    if (node.type === 'map_data') conferirMapa(node, errors);
+    if (
+      node.type === 'update_lead_field' &&
+      (!node.config.valor.trim() || (node.config.alvo !== 'deal_value' && !node.config.chave.trim()))
+    )
+      errors.push({
+        node_id: node.id,
+        code: 'campo_do_negocio_incompleto',
+        message: `A caixa "${node.label}" precisa do campo e do valor a gravar.`,
+      });
+    if (node.type === 'find_or_create_contact' && !node.config.valor.trim())
+      errors.push({
+        node_id: node.id,
+        code: 'busca_de_contato_sem_valor',
+        message: `A caixa "${node.label}" precisa do telefone ou e-mail a procurar.`,
+      });
+    if (node.type === 'find_or_create_lead' && !node.config.pipeline_id)
+      errors.push({
+        node_id: node.id,
+        code: 'negocio_sem_funil',
+        message: `A caixa "${node.label}" precisa do funil onde procurar o negócio.`,
+      });
+    if (node.type === 'find_or_create_lead' && node.config.criar && !node.config.stage_id)
+      errors.push({
+        node_id: node.id,
+        code: 'negocio_sem_etapa',
+        message: `A caixa "${node.label}" cria negócio e precisa da etapa de entrada.`,
+      });
+    {
+      const alvo =
+        'aplicar_em' in node.config && typeof node.config.aplicar_em === 'string'
+          ? node.config.aplicar_em
+          : node.type === 'find_or_create_lead'
+            ? node.config.contato
+            : '';
+      if (alvo.trim() && !/^\s*\{\{\s*nodes\.[A-Za-z0-9_-]+\.(lead_id|contact_id)\s*\}\}\s*$/.test(alvo))
+        errors.push({
+          node_id: node.id,
+          code: 'aplicar_em_invalido',
+          message: `Em "${node.label}", «Aplicar em» precisa ser o negócio ou o contato entregue por um bloco anterior.`,
+        });
+    }
+    if (node.type === 'http_request' && !node.config.connection_id)
+      errors.push({
+        node_id: node.id,
+        code: 'conexao_http_ausente',
+        message: `A caixa "${node.label}" não tem conexão escolhida.`,
+      });
+    if (node.type === 'http_request' && node.config.corpo.trim()) {
+      try {
+        JSON.parse(node.config.corpo);
+      } catch {
+        errors.push({
+          node_id: node.id,
+          code: 'corpo_http_invalido',
+          message: `O corpo da caixa "${node.label}" não é um JSON válido.`,
+        });
+      }
+    }
+    if (node.type === 'lead_product' && !node.config.product_id)
+      errors.push({
+        node_id: node.id,
+        code: 'produto_ausente',
+        message: `A caixa "${node.label}" não tem produto escolhido.`,
+      });
+    if (node.type === 'add_note' && !node.config.texto.trim())
+      errors.push({
+        node_id: node.id,
+        code: 'nota_sem_texto',
+        message: `A caixa "${node.label}" está sem o texto da nota.`,
+      });
+    if (node.type === 'assign_lead_owner' && !node.config.usuario_id)
+      errors.push({
+        node_id: node.id,
+        code: 'responsavel_ausente',
+        message: `A caixa "${node.label}" não tem responsável escolhido.`,
+      });
   }
 
   for (const node of [...nodes].sort(byId)) {
@@ -784,6 +1062,13 @@ export function validateFlowForPublish(
           node_id: node.id,
           code: 'grace_too_short',
           message: `Nó "${node.id}" tem grace_timeout_ms abaixo do mínimo de 15min.`,
+        });
+      }
+      if (node.config.grace_timeout_ms > GRACE_TIMEOUT_MAX_MS) {
+        errors.push({
+          node_id: node.id,
+          code: 'grace_too_long',
+          message: `Nó "${node.id}" tem grace_timeout_ms acima do máximo de 365 dias.`,
         });
       }
       continue;
@@ -829,6 +1114,13 @@ export function validateFlowForPublish(
         message: `Nó "${node.id}" tem grace_timeout_ms abaixo do mínimo de 15min.`,
       });
     }
+    if (node.config.grace_timeout_ms > GRACE_TIMEOUT_MAX_MS) {
+      errors.push({
+        node_id: node.id,
+        code: 'grace_too_long',
+        message: `Nó "${node.id}" tem grace_timeout_ms acima do máximo de 365 dias.`,
+      });
+    }
   }
 
   // cycle_without_wait — exact, not an approximation: a directed cycle with no
@@ -853,6 +1145,8 @@ export function validateFlowForPublish(
       message: `Ciclo sem espera mínima de 5min detectado (contém "${nodeId}").`,
     });
   }
+
+  validarVariaveisDeBlocos(graph, errors);
 
   if (errors.length === 0) return { ok: true };
 

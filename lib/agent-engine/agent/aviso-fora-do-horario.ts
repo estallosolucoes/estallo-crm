@@ -14,11 +14,8 @@
  *
  * 1. **Opt-out / `is_blocked`** (regra dura nº 2) — lido direto da fonte antes
  *    de qualquer coisa cara; o handler de envio ainda barra de novo (403).
- * 2. **Pacing / teto de envio** (F2-11) — o aviso é RESPOSTA (quem escreveu
- *    primeiro é o contato), então lê a janela `resposta*`, o warm-up, o cap
- *    diário e o throttle, e CONTA no `pacing_ledger`: gastou uma mensagem do
- *    número como qualquer outra. Vetado ⇒ não envia agora; anti-ban não é
- *    cortesia, é o que mantém o número vivo.
+ * 2. **Ritmo do número** — o aviso espera o intervalo fixo entre envios do número
+ *    (`lib/messaging/ritmo-entre-envios.ts`), como qualquer outra mensagem.
  * 3. **LGPD** — titular anonimizado não recebe nada (`isAnonymized` veta
  *    QUALQUER envio na cadeia; aqui a mesma régua, antes de gastar rede).
  *
@@ -45,7 +42,6 @@
  * teste unitário sem ambiente, sem `@/lib/env` e sem a cadeia de guardrails.
  */
 import type { Queryable } from '../queue/queue';
-import { decidePacing } from '../pacing/engine';
 import {
   inicioDoPeriodoFechado,
   msAteAJanelaAbrir,
@@ -170,18 +166,10 @@ export interface PortasDoAviso {
   ehNumeroInterno(organizationId: string, phoneNumber: string): Promise<boolean>;
   /** Já existe a linha com esta chave de aviso para ESTE contato? */
   jaAvisado(organizationId: string, contactId: string, chave: string): Promise<boolean>;
-  pacing: {
-    decide(
-      organizationId: string,
-      channelSessionId: string,
-      agora: Date,
-    ): Promise<{ liberado: boolean; motivo?: string }>;
-    /** Conta o aviso no `pacing_ledger` — gastou uma mensagem do número. */
-    registraEnvio(organizationId: string, channelSessionId: string, quando: Date): Promise<void>;
-  };
   envia(entrada: {
     organizationId: string;
     conversationId: string;
+    channelSessionId: string;
     chave: string;
     body: string;
   }): Promise<void>;
@@ -235,36 +223,16 @@ export async function enviaAvisoForaDoHorario(
   });
   if (!decisao.enviar) return decisao;
 
-  // 5. Pacing — resposta (não disparo), com warm-up, cap diário e throttle.
-  const pacing = await deps.pacing.decide(
-    entrada.organizationId,
-    entrada.channelSessionId,
-    entrada.agora,
-  );
-  if (!pacing.liberado)
-    return { enviar: false, motivo: `pacing:${pacing.motivo ?? 'vetado'}` };
-
   // 6. O envio. Quem falhar aqui NÃO grava dedupe: o próximo contato do mesmo
   //    período tenta de novo (e, se a linha já tiver sido inserida, o dedupe
   //    alcança antes de qualquer duplicata).
   await deps.envia({
     organizationId: entrada.organizationId,
     conversationId: entrada.conversationId,
+    channelSessionId: entrada.channelSessionId,
     chave,
     body: decisao.texto,
   });
-
-  // 7. Depois do envio, em seu PRÓPRIA try/catch: derrubar aqui reprocessaria o
-  //    aviso e o contato receberia duas vezes.
-  try {
-    await deps.pacing.registraEnvio(
-      entrada.organizationId,
-      entrada.channelSessionId,
-      entrada.agora,
-    );
-  } catch {
-    // O envio já aconteceu; a perda é a contabilidade, não a mensagem.
-  }
 
   return decisao;
 }
@@ -349,64 +317,9 @@ export function portasDeProducao(
       return rows.length > 0;
     },
 
-    pacing: {
-      async decide(organizationId, channelSessionId, agora) {
-        try {
-          const [{ loadChannelKnobs, loadPacingState }, { capabilitiesOf }] =
-            await Promise.all([
-              import('../pacing/store'),
-              import('@/lib/channels/capabilities'),
-            ]);
-          const cfg = await loadChannelKnobs(db, organizationId, channelSessionId);
-          const { rows: sessao } = await db.query<{ provider: string | null }>(
-            'select provider from channel_sessions where organization_id = $1 and id = $2',
-            [organizationId, channelSessionId],
-          );
-          // Provider fora da matriz → `capabilitiesOf` lança → catch abaixo,
-          // fechado: o conservador é contar com risco de banimento.
-          const provider = sessao[0]?.provider ?? null;
-          const banRisk = provider
-            ? capabilitiesOf(provider as never).banRisk
-            : true;
-          const state = await loadPacingState(db, organizationId, channelSessionId, {
-            now: agora,
-            timezone: cfg.knobs.timezone,
-            numberActivatedAt: cfg.numberActivatedAt,
-          });
-          const dailyLimit = await db.query<{ daily_message_limit: number | null }>(
-            'select daily_message_limit from channel_sessions where organization_id = $1 and id = $2',
-            [organizationId, channelSessionId],
-          );
-          const decision = decidePacing({
-            now: agora,
-            knobs: cfg.knobs,
-            state,
-            crmDailyLimit: dailyLimit.rows[0]?.daily_message_limit ?? null,
-            banRisk,
-            // RESPOSTA: é o contato que escreveu primeiro. O aviso não é
-            // disparo ativo, e a janela `resposta*` é a que protege a resposta.
-            resposta: true,
-          });
-          return decision.allow
-            ? { liberado: true }
-            : { liberado: false, motivo: decision.code };
-        } catch (err) {
-          // Sem ritmo conhecido não há envio: o anti-ban vale mais que o aviso.
-          log?.warn('[aviso-fora-do-horario] pacing indisponível — aviso não enviado', {
-            organization_id: organizationId,
-            error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
-          });
-          return { liberado: false, motivo: 'pacing_indisponivel' };
-        }
-      },
-
-      async registraEnvio(organizationId, channelSessionId, quando) {
-        const { recordSend } = await import('../pacing/store');
-        await recordSend(db, organizationId, channelSessionId, quando);
-      },
-    },
-
-    async envia({ organizationId, conversationId, chave, body }) {
+    async envia({ organizationId, conversationId, channelSessionId, chave, body }) {
+      const { esperarRitmo } = await import('@/lib/messaging/ritmo-entre-envios');
+      await esperarRitmo(channelSessionId);
       const { sendMessageHandler } = await import('@/app/api/v1/messages/_handler');
       await sendMessageHandler(
         supabase as never,

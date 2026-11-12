@@ -32,7 +32,7 @@ export function RetentionNotice({ conversationId }: { conversationId: string }) 
   const latest = data?.retentions[0];
   if (!latest || !data) return null;
 
-  const copy = retentionCopy(latest.vetoed_code, data.context, t);
+  const copy = retentionCopy(latest.vetoed_code, t);
   const Icon = KIND_ICON[copy.kind];
   const when = formatDistanceToNowStrict(new Date(latest.created_at), {
     addSuffix: true,

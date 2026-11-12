@@ -163,7 +163,7 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     // 10 das 11 hoje (subiu de 9/10 quando `agenda_stall` entrou na cadeia — ver
     // `before-send.ts`). A contagem entra na asserção de propósito: se alguém tornar
     // uma delas "configurável", este número muda e a mudança tem de ser deliberada.
-    expect(fixas).toHaveLength(10);
+    expect(fixas).toHaveLength(8);
     for (const c of fixas) {
       const linha = screen.getByTestId(`conferencia-${c.nome}-fixa`);
       expect(linha.textContent).toContain("não se desliga");

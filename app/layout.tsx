@@ -6,77 +6,47 @@ import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 import { cssDaMarca } from "@/lib/branding/css";
 import { iconeDaAba } from "@/lib/branding/icone";
-import { folhaPersonalizadaDaInstalacao } from "@/lib/branding/folha-personalizada";
-import { CABECALHO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
-  marcaDaInstalacao,
   motivoDoFallback,
   registrarEstadoDaMarca,
   type LinhaDaMarca,
 } from "@/lib/branding/instalacao";
 import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
-import {
-  camadaDaInstalacao,
-  camadaDoAmbiente,
-  resolverMarca,
-  type MarcaResolvida,
-} from "@/lib/branding/resolve";
-import { env } from "@/lib/env";
+import { type MarcaResolvida } from "@/lib/branding/resolve";
+import { marcaDaPlataforma } from "@/lib/branding/plataforma";
 import { logger } from "@/lib/logger";
 import { ThemeProvider } from "@/lib/theme";
 import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
 import "./globals.css";
 
-// Fontes versionadas em app/fonts/ (origem e licença no README de lá): o
-// next/font/google as baixava durante o build, e o build caía quando o Google
-// não respondia. A família passa a se chamar como a variável JS ("atkinson"),
-// então use sempre a custom property (--font-atkinson), nunca o nome da fonte.
-const atkinson = localFont({
-  src: [
-    {
-      path: "./fonts/atkinson-hyperlegible-400-latin-latin-ext.woff2",
-      weight: "400",
-      style: "normal",
-    },
-    {
-      path: "./fonts/atkinson-hyperlegible-700-latin-latin-ext.woff2",
-      weight: "700",
-      style: "normal",
-    },
-  ],
+// Fontes oficiais versionadas com licença OFL; build e runtime independem de rede.
+const manrope = localFont({
+  src: "./fonts/manrope-variable.ttf",
+  weight: "200 800",
   display: "swap",
-  variable: "--font-atkinson",
+  variable: "--font-manrope",
+});
+const sora = localFont({
+  src: "./fonts/sora-variable.ttf",
+  weight: "100 800",
+  display: "swap",
+  variable: "--font-sora",
+});
+const jetbrains = localFont({
+  src: "./fonts/jetbrainsmono-variable.ttf",
+  weight: "100 800",
+  display: "swap",
+  variable: "--font-jetbrains",
 });
 
-const plexMono = localFont({
-  src: [
-    { path: "./fonts/ibm-plex-mono-400-latin-latin-ext.woff2", weight: "400", style: "normal" },
-    { path: "./fonts/ibm-plex-mono-500-latin-latin-ext.woff2", weight: "500", style: "normal" },
-  ],
-  display: "swap",
-  variable: "--font-mono",
-});
-
-/**
- * A pilha de camadas da marca da instalação: BANCO acima, `.env` embaixo.
- *
- * Uma função só porque `generateMetadata`, `EstiloDaMarca` e `MarcaNoNavegador`
- * precisam da MESMA resolução — montagens separadas da pilha divergiriam, e a
- * divergência apareceria como título da aba com uma marca, cor com outra e barra
- * lateral com uma terceira.
- *
- * A leitura do banco é memoizada em `lib/branding/instalacao.ts`, então as três
- * chamadas por requisição custam UMA consulta a cada TTL.
- */
+/** Uma identidade para metadata, CSS e contexto; não lê overrides legados. */
 async function marcaResolvida(): Promise<{
-  /** A linha crua — só `EstiloDaMarca` precisa dela, para gravar o estado. */
+  /** Campo legado, mantido nulo: a identidade do SaaS não lê overrides. */
   readonly linha: LinhaDaMarca | null;
   readonly marca: MarcaResolvida;
 }> {
-  const linha = await marcaDaInstalacao();
-  const marca = resolverMarca([camadaDaInstalacao(linha), camadaDoAmbiente(env)], REGUA_DO_PRODUTO);
-  return { linha, marca };
+  return { linha: null, marca: marcaDaPlataforma() };
 }
 
 /**
@@ -257,12 +227,6 @@ async function EstiloDaMarca() {
  * CSS visual, escopado e validado do administrador da instalação. `?sem_css=1`
  * desliga a folha para quem pediu (ver `lib/branding/sem-css-personalizado.ts`).
  */
-async function EstiloCssPersonalizado() {
-  const desligada = (await headers()).get(CABECALHO_SEM_CSS) === "1";
-  const css = await folhaPersonalizadaDaInstalacao(desligada);
-  if (!css) return null;
-  return <style id="marca-css-personalizado" dangerouslySetInnerHTML={{ __html: css }} />;
-}
 
 /**
  * A marca que atravessa para o NAVEGADOR — a MESMA pilha da aba e do CSS.
@@ -327,12 +291,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       lang="pt-BR"
       data-theme="light"
       suppressHydrationWarning
-      className={`${atkinson.variable} ${plexMono.variable}`}
+      className={`${manrope.variable} ${sora.variable} ${jetbrains.variable}`}
     >
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}
         <EstiloDaMarca />
-        <EstiloCssPersonalizado />
         {/* Config pública do Supabase + marca resolvida, em runtime (imagem
             genérica self-host). */}
         <MarcaNoNavegador />

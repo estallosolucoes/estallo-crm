@@ -72,6 +72,9 @@ export function useMessagesRealtime(conversationId: string | null) {
       : undefined,
     onChange,
     enabled: !!conversationId,
+    // A conversa aberta não pode perder o que chegou entre a busca e o
+    // SUBSCRIBED (inclusive ao remontar o fio): uma releitura por abertura.
+    recuperarNaPrimeira: true,
   });
 
   /**
@@ -83,13 +86,14 @@ export function useMessagesRealtime(conversationId: string | null) {
    *
    * A assinatura é a contagem de mensagens mais o id da mais recente — a
    * contagem sozinha não flagraria uma mensagem que chega e outra que sai da
-   * primeira página no mesmo intervalo.
+   * primeira página no mesmo intervalo. A mais recente é a ÚLTIMA da primeira
+   * página: a API devolve cada página em ordem cronológica (antiga → nova).
    */
   const seguranca = useRefetchDeSeguranca<{ pages: MessagesResponse[] }>({
     queryKey,
     assinatura: (d) => {
       const msgs = d?.pages.flatMap((p) => p.data) ?? [];
-      return `${msgs.length}:${msgs[0]?.id ?? ""}`;
+      return `${msgs.length}:${d?.pages[0]?.data.at(-1)?.id ?? ""}`;
     },
     ultimaEntrega,
     enabled: !!conversationId,

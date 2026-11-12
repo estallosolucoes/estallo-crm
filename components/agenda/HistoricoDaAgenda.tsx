@@ -169,7 +169,7 @@ export function HistoricoDaAgenda({
                 "flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs transition-colors duration-fast ease-out",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
                 aba === a.id
-                  ? "bg-accent font-semibold text-accent-foreground"
+                  ? "bg-accent dark:bg-accent-700 font-semibold text-accent-foreground"
                   : "text-text-muted hover:bg-surface-elevated hover:text-text",
               )}
             >

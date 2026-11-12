@@ -1,8 +1,31 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Actor } from "@/lib/api/handlers/types";
-import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { emitLeadActivity, type EmitLeadActivityInput } from "@/lib/leads/activity-emitter";
 import type { Tarefa } from "@/lib/tarefas/tipos";
+
+export interface AtividadeDaTarefa {
+  organizationId: string;
+  tarefa: Pick<Tarefa, "id" | "title" | "due_date" | "priority" | "lead_id" | "contact_id">;
+  tipo: "task_created" | "task_completed";
+  actor: Actor;
+}
+
+/** Compartilhada pela escrita normal e pela transação com o recibo da automação. */
+export function prepararAtividadeDaTarefa(args: AtividadeDaTarefa): EmitLeadActivityInput | null {
+  if (!args.tarefa.lead_id) return null;
+  return {
+    organizationId: args.organizationId,
+    leadId: args.tarefa.lead_id,
+    contactId: args.tarefa.contact_id,
+    type: args.tipo,
+    sourceModule: "tarefas",
+    sourceId: args.tarefa.id,
+    actor: args.actor,
+    reason: args.tarefa.title.slice(0, 200),
+    payload: { due_date: args.tarefa.due_date, priority: args.tarefa.priority },
+  };
+}
 
 /**
  * O LAÇO DE RETORNO DA TAREFA (invariante 7 do Sistema Vivo).
@@ -37,33 +60,11 @@ import type { Tarefa } from "@/lib/tarefas/tipos";
  */
 export async function registraAtividadeDaTarefa(
   supabase: SupabaseClient,
-  args: {
-    organizationId: string;
-    tarefa: Pick<Tarefa, "id" | "title" | "due_date" | "priority" | "lead_id" | "contact_id">;
-    tipo: "task_created" | "task_completed";
-    actor: Actor;
-  },
+  args: AtividadeDaTarefa,
 ): Promise<{ ok: boolean; error?: string }> {
   // Sem negócio não há linha do tempo onde escrever: `crm_lead_activities.lead_id`
   // é `not null`. Tarefa solta ("revisar os textos do agente") é caso legítimo,
   // e ela vive na tela de Tarefas — não é perda.
-  if (!args.tarefa.lead_id) return { ok: true };
-
-  return emitLeadActivity(supabase, {
-    organizationId: args.organizationId,
-    leadId: args.tarefa.lead_id,
-    contactId: args.tarefa.contact_id,
-    type: args.tipo,
-    sourceModule: "tarefas",
-    sourceId: args.tarefa.id,
-    actor: args.actor,
-    // O título é texto que o operador escreveu SOBRE ESTE negócio — a mesma
-    // classe do `reason` que a Agenda já grava. Cortado porque o campo aparece
-    // numa linha da timeline, não num parágrafo.
-    reason: args.tarefa.title.slice(0, 200),
-    payload: {
-      due_date: args.tarefa.due_date,
-      priority: args.tarefa.priority,
-    },
-  });
+  const input = prepararAtividadeDaTarefa(args);
+  return input ? emitLeadActivity(supabase, input) : { ok: true };
 }

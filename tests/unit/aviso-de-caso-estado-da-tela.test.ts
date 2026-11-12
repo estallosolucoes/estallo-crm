@@ -53,7 +53,6 @@ function fatos(patch: Partial<FatosDaTelaDeAviso> = {}): FatosDaTelaDeAviso {
     agentesPublicados: { total: 1, comCasos: 1, assistidos: 0 },
     atendimentoExterno: false,
     descarte: { ignoradas: 0, ultimaEm: null },
-    aquecimento: null,
     agora: AGORA,
     ...patch,
   };
@@ -131,7 +130,7 @@ describe("pode ligar o aviso?", () => {
 
 describe("os estados que bloqueiam", () => {
   it("nenhuma conexão — o estado de toda VPS recém-instalada", () => {
-    const lista = avisosDaTela(fatos({ conexoes: [], config: null, aquecimento: null }));
+    const lista = avisosDaTela(fatos({ conexoes: [], config: null }));
     expect(lista[0]?.codigo).toBe("sem_conexao");
     expect(lista[0]?.bloqueia).toBe(true);
   });
@@ -238,21 +237,6 @@ describe("os estados que alertam sem bloquear", () => {
 });
 
 describe("os estados que só informam", () => {
-  it("aquecimento: a tela mostra o teto do dia do número que ela recomendou", () => {
-    const lista = avisosDaTela(
-      fatos({ aquecimento: { enviadosHoje: 7, teto: 20, fimEm: "2026-10-12T00:00:00.000Z" } }),
-    );
-    const aviso = lista.find((a) => a.codigo === "aquecimento");
-    expect(aviso?.dados).toMatchObject({ enviadosHoje: 7, teto: 20 });
-    expect(aviso?.bloqueia).toBe(false);
-  });
-
-  it("número fora do aquecimento (sem teto) não vira alerta", () => {
-    expect(
-      codigos(fatos({ aquecimento: { enviadosHoje: 300, teto: null, fimEm: null } })),
-    ).not.toContain("aquecimento");
-  });
-
   it("descarte recente aparece — é o que impede o silêncio de parecer defeito", () => {
     const ontem = new Date(AGORA.getTime() - 24 * 3600_000).toISOString();
     const lista = avisosDaTela(fatos({ descarte: { ignoradas: 3, ultimaEm: ontem } }));

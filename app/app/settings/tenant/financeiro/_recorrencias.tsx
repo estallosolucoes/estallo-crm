@@ -14,7 +14,8 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
-import { formatCents, parseReaisToCents } from "@/lib/money";
+import { formatCents, parseReaisToCents, centavosParaCampo } from "@/lib/money";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 export type Recorrencia = {
   id: string;
@@ -115,11 +116,10 @@ export function Recorrencias({
             ))}
           </select>
 
-          <input
+          <CampoDeDinheiro
             aria-label={t("Valor")}
-            className="min-h-11 w-28 rounded-md border p-2"
-            placeholder="0,00"
-            inputMode="decimal"
+            containerClassName="w-36"
+            className="min-h-11 w-full rounded-md border p-2"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
           />
@@ -196,7 +196,7 @@ export function Recorrencias({
                       setNome(r.name);
                       setDirecao(r.direction);
                       setContaId(r.account_id);
-                      setValor((r.amount_cents / 100).toFixed(2).replace(".", ","));
+                      setValor(centavosParaCampo(r.amount_cents));
                       setDia(String(r.day_of_month));
                       setEditandoId(r.id);
                     }}

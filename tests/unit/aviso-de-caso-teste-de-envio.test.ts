@@ -58,12 +58,9 @@ function deps(patch: Partial<DepsDoAvisoDeTeste> = {}) {
         return { externalId: "wamid.TESTE" };
       }),
     },
-    pacing: {
-      decide: vi.fn(async () => ({ liberado: true as const })),
-      registraEnvio: vi.fn(async (_org: string, canal: string, quando: Date) => {
-        ledger.push({ canal, quando });
-      }),
-    },
+    esperarRitmo: vi.fn(async (canal: string) => {
+      ledger.push({ canal, quando: AGORA });
+    }),
     clock: () => AGORA,
     urlPublica: "https://crm.exemplo.com.br",
     ...patch,
@@ -101,7 +98,7 @@ describe("o caminho feliz", () => {
     expect(corpo).not.toContain("novo caso esperando você");
   });
 
-  it("o teste PAGA a mensagem no ledger — o número gastou uma", async () => {
+  it("o teste ESPERA o ritmo do número antes de enviar — o número gasta uma como qualquer outra", async () => {
     const { deps: d, ledger } = deps();
     await enviarAvisoDeTeste(d, entrada);
     expect(ledger).toEqual([{ canal: CANAL, quando: AGORA }]);
@@ -200,33 +197,6 @@ describe("as recusas, cada uma com o seu código", () => {
     });
   });
 
-  it("teto diário do aquecimento — o código PRÓPRIO, com o instante em que libera", async () => {
-    const libera = new Date("2026-09-19T03:00:00.000Z");
-    const d = deps();
-    d.deps.pacing.decide = vi.fn(async () => ({
-      liberado: false as const,
-      motivo: "teto_diario" as const,
-      liberaEm: libera,
-    }));
-    const r = await enviarAvisoDeTeste(d.deps, entrada);
-    expect(r).toMatchObject({ enviado: false, codigo: "teto_diario_do_numero" });
-    expect(r.enviado === false && r.liberaEm).toBe(libera.toISOString());
-  });
-
-  it("espaçamento entre mensagens — motivo próprio, porque não é falha nenhuma", async () => {
-    const libera = new Date(AGORA.getTime() + 1200);
-    const d = deps();
-    d.deps.pacing.decide = vi.fn(async () => ({
-      liberado: false as const,
-      motivo: "espacamento" as const,
-      liberaEm: libera,
-    }));
-    await expect(enviarAvisoDeTeste(d.deps, entrada)).resolves.toMatchObject({
-      enviado: false,
-      codigo: "espacamento",
-    });
-  });
-
   it("destino que voltou a ser número de uma conexão ATIVA da própria organização — não envia", async () => {
     // O passo 11b do motor, repetido aqui: reativar a conexão cujo número é o
     // destino não pode fazer o teste sair verde enquanto o aviso real é recusado.
@@ -270,13 +240,13 @@ describe("as recusas, cada uma com o seu código", () => {
     expect(r.enviado === false && r.detalhe).toContain("422");
   });
 
-  it("nenhuma recusa gasta o ledger — só o que SAIU é contado", async () => {
+  it("transporte que recusa: o ritmo do número foi respeitado antes da tentativa", async () => {
     const d = deps();
     d.deps.transporte.envia = vi.fn(async () => {
       throw new Error("recusado");
     });
     await enviarAvisoDeTeste(d.deps, entrada);
-    expect(d.ledger).toEqual([]);
+    expect(d.ledger).toEqual([{ canal: CANAL, quando: AGORA }]);
   });
 });
 
@@ -284,11 +254,6 @@ describe("o teste nunca dorme", () => {
   it("não chama `setTimeout` em nenhum desfecho", async () => {
     const espiao = vi.spyOn(globalThis, "setTimeout");
     const d = deps();
-    d.deps.pacing.decide = vi.fn(async () => ({
-      liberado: false as const,
-      motivo: "espacamento" as const,
-      liberaEm: new Date(AGORA.getTime() + 1200),
-    }));
     await enviarAvisoDeTeste(d.deps, entrada);
     expect(espiao).not.toHaveBeenCalled();
     espiao.mockRestore();

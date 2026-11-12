@@ -43,10 +43,10 @@ describe("grafo de demonstração do follow-up", () => {
     const esperaCurta = flowGraphSchema.safeParse({
       ...GRAFO_DE_DEMONSTRACAO,
       nodes: GRAFO_DE_DEMONSTRACAO.nodes.map((n) =>
-        n.id === NO_ESPERA ? { ...n, config: { mode: "fixed", duration_ms: 30_000 } } : n,
+        n.id === NO_ESPERA ? { ...n, config: { mode: "fixed", duration_ms: 500 } } : n,
       ),
     });
-    expect(esperaCurta.success, "30s está abaixo do piso de 300.000 ms").toBe(false);
+    expect(esperaCurta.success, "500 ms está abaixo do piso de 1.000 ms (piso de 1 s desde 4e034afe3; era 300.000 ms)").toBe(false);
   });
 
   it("o construtor PUBLICARIA este grafo", () => {

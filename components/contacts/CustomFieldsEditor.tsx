@@ -6,7 +6,7 @@ import { useState } from "react";
  * `LeadFieldsForm`.
  */
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import { parseReaisToCents } from "@/lib/money";
+import { parseReaisToCents, centavosParaCampo } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 export type CustomFieldType =
   | "text"
@@ -41,6 +42,8 @@ export interface CustomFieldDef {
   type: CustomFieldType;
   required?: boolean;
   options?: Array<{ value: string; label: string }>;
+  /** Etapas em que o campo aparece (cadastro central). Ausente = todas. */
+  etapas_visiveis?: string[];
 }
 
 interface Props {
@@ -105,17 +108,17 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
             );
           case "currency": {
             const valorNumerico = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : null;
+            // O campo guarda REAIS (decimal), não centavos — é o contrato do
+            // campo personalizado; a máscara só converte na tela.
             const formatado =
               valorNumerico !== null && Number.isFinite(valorNumerico)
-                ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valorNumerico)
+                ? centavosParaCampo(Math.round(valorNumerico * 100))
                 : "";
             return (
               <div key={f.key} className="space-y-2">
                 {labelEl}
-                <Input
+                <CampoDeDinheiro
                   id={id}
-                  type="text"
-                  inputMode="decimal"
                   value={rascunhosDeMoeda[f.key] ?? formatado}
                   onChange={(e) => setRascunhosDeMoeda((current) => ({ ...current, [f.key]: e.target.value }))}
                   onBlur={() => {
@@ -132,7 +135,6 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                     });
                   }}
                   disabled={disabled}
-                  placeholder="R$ 0,00"
                 />
               </div>
             );

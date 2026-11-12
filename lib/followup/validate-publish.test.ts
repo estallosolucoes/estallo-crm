@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { algumCanalExigeModeloForaDaJanela, validateFlowForPublish } from './validate-publish';
 import { idsDeEtapaCitados } from './etapas-citadas';
 import type { FlowGraph, FlowNode, FlowEdge } from './graph-schema';
+import { GRACE_TIMEOUT_MAX_MS } from './graph-schema';
 import { CHANNEL_CAPABILITIES, PROVIDERS_DE_MENSAGEM, PROVIDERS_SEM_MENSAGEM } from '../channels/capabilities';
 
 const pos = { x: 0, y: 0 };
@@ -167,6 +168,23 @@ describe('validateFlowForPublish', () => {
     if (!result.ok) {
       expect(result.errors.map((e) => e.code)).toEqual(['grace_too_short']);
     }
+  });
+
+  it('flags grace_too_long when grace_timeout_ms is above the 365-day ceiling (still publishable at the ceiling)', () => {
+    const mk = (grace: number) =>
+      graph(
+        [trigger('t1'), classify('c1', ['hot'], grace), end('e1')],
+        [
+          edge('t1', 'c1', always()),
+          edge('c1', 'e1', classMatch('hot')),
+          edge('c1', 'e1', classMatch('no_reply')),
+          edge('c1', 'e1', always()),
+        ]
+      );
+    const acima = validateFlowForPublish(mk(9e15));
+    expect(acima.ok).toBe(false);
+    if (!acima.ok) expect(acima.errors.map((e) => e.code)).toEqual(['grace_too_long']);
+    expect(validateFlowForPublish(mk(GRACE_TIMEOUT_MAX_MS)).ok).toBe(true);
   });
 
   it('flags long_wait_needs_template when accumulated wait reaches 24h before an ai_message action without fallback', () => {
@@ -619,6 +637,25 @@ describe('validateFlowForPublish — cobertura por ramo num match_reply', () => 
     expect(semSaida).toHaveLength(1);
     expect(semSaida[0]!.branch_id).toBe('br_nao');
   });
+
+  it('reprova carência acima do teto de 365 dias (grace_too_long) e publica no teto exato', () => {
+    const comCarencia = (grace: number): FlowGraph => {
+      const g = grafo([
+        edge('mr1', 'fim', branch('br_sim')),
+        edge('mr1', 'fim', branch('br_nao')),
+        edge('mr1', 'fim', branch('no_reply')),
+        edge('mr1', 'fim', always()),
+      ]);
+      const mr = g.nodes.find((n) => n.id === 'mr1');
+      if (mr?.type !== 'match_reply') throw new Error('mr1 ausente');
+      mr.config.grace_timeout_ms = grace;
+      return g;
+    };
+    const acima = validateFlowForPublish(comCarencia(9e15));
+    expect(acima.ok).toBe(false);
+    if (!acima.ok) expect(acima.errors.map((e) => e.code)).toEqual(['grace_too_long']);
+    expect(validateFlowForPublish(comCarencia(GRACE_TIMEOUT_MAX_MS))).toEqual({ ok: true });
+  });
 });
 
 describe('validateFlowForPublish — cobertura por ramo num repeat', () => {
@@ -914,5 +951,59 @@ describe('validateFlowForPublish — nós de ação (#2065)', () => {
     expect(codigos(publicar(comAcao(marcar([]))))).toEqual(['tag_ausente']);
     expect(codigos(publicar(comAcao(marcar(['vip', '  ']))))).toEqual(['tag_ausente']);
     expect(publicar(comAcao(marcar(['vip'])))).toEqual({ ok: true });
+  });
+});
+
+describe('"Fallback erro" (saída de erro dos blocos)', () => {
+  const NA_ERRO: FlowEdge['condition'] = { type: 'branch', branch_id: 'on_error' };
+  const grafo = (extra: FlowEdge[], contrato?: 1): FlowGraph => ({
+    ...(contrato === undefined ? {} : { execution_contract: contrato }),
+    nodes: [
+      trigger('t'),
+      { id: 'a', type: 'edit_lead_tag', label: 'a', position: pos, config: { tags: ['vip'] } },
+      end('fim', 'converted'),
+      end('socorro', 'custom'),
+    ],
+    edges: [edge('t', 'a', { type: 'always' }), edge('a', 'fim', { type: 'always' }), ...extra],
+  });
+  const codigosDeErro = (g: FlowGraph) => {
+    const r = validateFlowForPublish(g);
+    return r.ok ? [] : r.errors.map((e) => e.code).filter((c) => c.includes('error_edge') || c === 'multiple_error_edges');
+  };
+
+  it('a saída de erro é opcional: sem aresta nela, o bloco não acusa saída solta', () => {
+    const r = validateFlowForPublish(grafo([]));
+    const codigos = r.ok ? [] : r.errors.map((e) => e.code);
+    // `socorro` fica sem entrada (é o destino da saída de erro que não foi ligada): o aviso é só esse.
+    expect(codigos).not.toContain('missing_branch_edge');
+    expect(codigos).not.toContain('missing_always_fallback');
+  });
+
+  it('no motor antigo (sem execution_contract) uma aresta de erro é recusada: ela nunca desviaria nada', () => {
+    expect(codigosDeErro(grafo([edge('a', 'socorro', NA_ERRO)]))).toEqual(['error_edge_requires_new_engine']);
+  });
+
+  it('no motor novo a aresta de erro de um bloco que pode falhar é aceita (sem erro de aresta)', () => {
+    expect(codigosDeErro(grafo([edge('a', 'socorro', NA_ERRO)], 1))).toEqual([]);
+  });
+
+  it('duas arestas de erro no mesmo bloco são recusadas', () => {
+    expect(
+      codigosDeErro(grafo([edge('a', 'socorro', NA_ERRO), edge('a', 'fim', NA_ERRO)], 1)),
+    ).toEqual(['multiple_error_edges']);
+  });
+
+  it('bloco que não tem a saída de erro (espera) recusa a aresta', () => {
+    const g: FlowGraph = {
+      nodes: [trigger('t'), wait('w', { mode: 'fixed', duration_ms: 600_000 }), end('fim'), end('socorro')],
+      edges: [edge('t', 'w', { type: 'always' }), edge('w', 'fim', { type: 'always' }), edge('w', 'socorro', NA_ERRO)],
+    };
+    expect(codigosDeErro(g)).toEqual(['error_edge_not_supported']);
+  });
+
+  it('o destino só alcançável pela saída de erro conta como alcançável', () => {
+    const r = validateFlowForPublish(grafo([edge('a', 'socorro', NA_ERRO)], 1));
+    const codigos = r.ok ? [] : r.errors.map((e) => e.code);
+    expect(codigos).not.toContain('unreachable_node');
   });
 });

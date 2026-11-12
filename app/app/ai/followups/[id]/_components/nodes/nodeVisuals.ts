@@ -1,9 +1,10 @@
 import type { ComponentType } from "react";
 
-import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag } from "@/lib/ui/icons";
+import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag, ArrowsLeftRight, UserCircle, Note, PencilSimple, Package, Globe, IdentificationCard, Target } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
+import { NODE_CATALOG } from "@/lib/followup/node-catalog";
 
 /**
  * Visual identity per node type — shared by the palette (Task 6.2 increment 2)
@@ -59,7 +60,7 @@ export function configPadraoDaAcao(triggerKind?: string): FlowNode["config"] {
 export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   trigger: {
     type: "trigger",
-    paletteLabel: "Gatilho",
+    paletteLabel: NODE_CATALOG.trigger.label,
     icon: Play,
     chipClassName: "bg-accent-soft text-accent",
     borderClassName: "border-l-accent-500",
@@ -68,7 +69,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   wait: {
     type: "wait",
-    paletteLabel: "Aguardar",
+    paletteLabel: NODE_CATALOG.wait.label,
     icon: Clock,
     chipClassName: "bg-info-bg text-info-fg",
     borderClassName: "border-l-info",
@@ -77,7 +78,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   condition: {
     type: "condition",
-    paletteLabel: "Condição",
+    paletteLabel: NODE_CATALOG.condition.label,
     icon: GitBranch,
     chipClassName: "bg-warning-bg text-warning-fg",
     borderClassName: "border-l-warning",
@@ -86,9 +87,9 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   ai_classify: {
     type: "ai_classify",
-    paletteLabel: "Classificar (IA)",
+    paletteLabel: NODE_CATALOG.ai_classify.label,
     icon: Brain,
-    chipClassName: "bg-accent text-accent-foreground",
+    chipClassName: "bg-accent text-accent-foreground dark:bg-accent-700",
     borderClassName: "border-l-accent-700",
     defaultLabel: "Classificar resposta",
     defaultConfig: () => ({
@@ -105,7 +106,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   match_reply: {
     type: "match_reply",
-    paletteLabel: "Resposta (texto)",
+    paletteLabel: NODE_CATALOG.match_reply.label,
     icon: ChatCircle,
     chipClassName: "bg-info-bg text-info-fg",
     borderClassName: "border-l-info",
@@ -117,7 +118,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   repeat: {
     type: "repeat",
-    paletteLabel: "Repetir",
+    paletteLabel: NODE_CATALOG.repeat.label,
     icon: ArrowsClockwise,
     chipClassName: "bg-warning-bg text-warning-fg",
     borderClassName: "border-l-warning",
@@ -126,7 +127,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   collect: {
     type: "collect",
-    paletteLabel: "Pergunta",
+    paletteLabel: NODE_CATALOG.collect.label,
     icon: Question,
     chipClassName: "bg-info-bg text-info-fg",
     borderClassName: "border-l-info",
@@ -135,7 +136,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   skill: {
     type: "skill",
-    paletteLabel: "Skill",
+    paletteLabel: NODE_CATALOG.skill.label,
     icon: PuzzlePiece,
     chipClassName: "bg-accent-soft text-accent",
     borderClassName: "border-l-accent-500",
@@ -144,7 +145,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   action: {
     type: "action",
-    paletteLabel: "Ação",
+    paletteLabel: NODE_CATALOG.action.label,
     icon: PaperPlaneTilt,
     chipClassName: "bg-success-bg text-success-fg",
     borderClassName: "border-l-success",
@@ -153,7 +154,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   internal_task: {
     type: "internal_task",
-    paletteLabel: "Lembrete interno",
+    paletteLabel: NODE_CATALOG.internal_task.label,
     icon: Bell,
     chipClassName: "bg-warning-bg text-warning-fg",
     borderClassName: "border-l-warning",
@@ -171,7 +172,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   // a escolha (`etapa_destino_ausente`, `tag_ausente`).
   move_lead: {
     type: "move_lead",
-    paletteLabel: "Mover lead no funil",
+    paletteLabel: NODE_CATALOG.move_lead.label,
     icon: Funnel,
     chipClassName: "bg-info-bg text-info-fg",
     borderClassName: "border-l-info",
@@ -180,16 +181,88 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
   },
   edit_lead_tag: {
     type: "edit_lead_tag",
-    paletteLabel: "Editar tag do lead",
+    paletteLabel: NODE_CATALOG.edit_lead_tag.label,
     icon: Tag,
     chipClassName: "bg-accent-soft text-accent",
     borderClassName: "border-l-accent-500",
     defaultLabel: "Gravar tag no lead",
     defaultConfig: () => ({ tags: [] }),
   },
+  lead_product: {
+    type: "lead_product",
+    paletteLabel: NODE_CATALOG.lead_product.label,
+    icon: Package,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Produto do negócio",
+    defaultConfig: () => ({ acao: "add", product_id: "", quantidade: 1 }),
+  },
+  find_or_create_contact: {
+    type: "find_or_create_contact",
+    paletteLabel: NODE_CATALOG.find_or_create_contact.label,
+    icon: IdentificationCard,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Buscar ou criar contato",
+    defaultConfig: () => ({ busca: "phone", valor: "", criar: true, nome: "" }),
+  },
+  find_or_create_lead: {
+    type: "find_or_create_lead",
+    paletteLabel: NODE_CATALOG.find_or_create_lead.label,
+    icon: Target,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Buscar ou criar negócio",
+    defaultConfig: () => ({ contato: "", pipeline_id: "", stage_id: "", titulo: "", criar: true }),
+  },
+  http_request: {
+    type: "http_request",
+    paletteLabel: NODE_CATALOG.http_request.label,
+    icon: Globe,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Requisição HTTP",
+    defaultConfig: () => ({ connection_id: "", metodo: "GET", caminho: "/", corpo: "" }),
+  },
+  update_lead_field: {
+    type: "update_lead_field",
+    paletteLabel: NODE_CATALOG.update_lead_field.label,
+    icon: PencilSimple,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Atualizar campo do negócio",
+    defaultConfig: () => ({ alvo: "custom_field", chave: "", valor: "" }),
+  },
+  add_note: {
+    type: "add_note",
+    paletteLabel: NODE_CATALOG.add_note.label,
+    icon: Note,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Nota interna",
+    defaultConfig: () => ({ destino: "lead_timeline", texto: "" }),
+  },
+  assign_lead_owner: {
+    type: "assign_lead_owner",
+    paletteLabel: NODE_CATALOG.assign_lead_owner.label,
+    icon: UserCircle,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Atribuir responsável",
+    defaultConfig: () => ({ usuario_id: "" }),
+  },
+  map_data: {
+    type: "map_data",
+    paletteLabel: NODE_CATALOG.map_data.label,
+    icon: ArrowsLeftRight,
+    chipClassName: "bg-surface-muted text-text",
+    borderClassName: "border-l-border-strong",
+    defaultLabel: "Mapear dados",
+    defaultConfig: () => ({ fields: [] }),
+  },
   end: {
     type: "end",
-    paletteLabel: "Fim",
+    paletteLabel: NODE_CATALOG.end.label,
     icon: Flag,
     chipClassName: "bg-error-bg text-error-fg",
     borderClassName: "border-l-error",
@@ -213,6 +286,14 @@ function minutos(ms: number): string {
   return `${Math.round(ms / 60_000)} min`;
 }
 
+/** Espera fixa na unidade em que foi escolhida: "30 s", "3 min", "2 h", "1 d". */
+function tempoCurto(ms: number): string {
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1_000))} s`;
+  if (ms % 86_400_000 === 0) return `${ms / 86_400_000} d`;
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000} h`;
+  return minutos(ms);
+}
+
 /**
  * One-line summary of a node's config — shown as the card subtitle. Takes the
  * RF node's own `type`/`data.config` pair (not a reconstructed `FlowNode`)
@@ -232,8 +313,9 @@ export function describeNodeConfig(
       return t("Início do fluxo");
     case "wait": {
       const c = config as ConfigOf<"wait">;
+      if (c.mode === "until") return c.data ? `${t("até")} ${c.data} ${c.hora}` : `${t("até as")} ${c.hora}`;
       return c.mode === "fixed"
-        ? minutos(c.duration_ms)
+        ? tempoCurto(c.duration_ms)
         : `${Math.round(c.min_ms / 60_000)}–${minutos(c.max_ms)} ${t("(adaptativo)")}`;
     }
     case "condition": {
@@ -276,6 +358,16 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"action">;
       if (c.mode === "ai_message") return c.prompt_hint;
       if (c.mode === "text") return c.body;
+      if (c.mode === "messages") {
+        const anexos = c.items.filter((i) => i.kind !== "text").length;
+        const textos = c.items.length - anexos;
+        return [
+          textos > 0 ? `${textos} ${textos === 1 ? t("texto") : t("textos")}` : null,
+          anexos > 0 ? `${anexos} ${anexos === 1 ? t("anexo") : t("anexos")}` : null,
+        ]
+          .filter(Boolean)
+          .join(" + ");
+      }
       return t("Template fixo");
     }
     case "internal_task": {
@@ -291,7 +383,48 @@ export function describeNodeConfig(
     }
     case "edit_lead_tag": {
       const c = config as ConfigOf<"edit_lead_tag">;
-      return c.tags.length ? c.tags.join(", ") : t("sem tag escolhida");
+      if (!c.tags.length) return t("sem tag escolhida");
+      const lista = c.acao === "remove" ? `− ${c.tags.join(", ")}` : c.tags.join(", ");
+      return c.destino === "contato" ? `${lista} (${t("no contato")})` : lista;
+    }
+    case "find_or_create_contact": {
+      const c = config as ConfigOf<"find_or_create_contact">;
+      if (!c.valor.trim()) return t("sem valor para procurar");
+      return c.criar ? t("procura e cria se não achar") : t("só procura");
+    }
+    case "find_or_create_lead": {
+      const c = config as ConfigOf<"find_or_create_lead">;
+      if (!c.pipeline_id) return t("sem funil escolhido");
+      return c.criar ? t("procura e cria se não achar") : t("só procura");
+    }
+    case "http_request": {
+      const c = config as ConfigOf<"http_request">;
+      if (!c.connection_id) return t("sem conexão escolhida");
+      return `${c.metodo} ${c.caminho || "/"}`;
+    }
+    case "lead_product": {
+      const c = config as ConfigOf<"lead_product">;
+      if (!c.product_id) return t("sem produto escolhido");
+      return c.acao === "remove" ? t("tira o produto do negócio") : `+${c.quantidade} · ${t("produto do catálogo")}`;
+    }
+    case "update_lead_field": {
+      const c = config as ConfigOf<"update_lead_field">;
+      if (!c.valor.trim()) return t("sem valor");
+      if (c.alvo === "deal_value") return t("valor do negócio");
+      return c.chave ? (c.alvo === "contact_field" ? `${c.chave} (${t("no contato")})` : c.chave) : t("sem campo escolhido");
+    }
+    case "add_note": {
+      const c = config as ConfigOf<"add_note">;
+      if (!c.texto.trim()) return t("sem texto");
+      return c.destino === "conversation_notes" ? t("nota na conversa") : t("nota no negócio");
+    }
+    case "assign_lead_owner": {
+      const c = config as ConfigOf<"assign_lead_owner">;
+      return c.usuario_id ? t("troca o responsável do negócio") : t("sem responsável escolhido");
+    }
+    case "map_data": {
+      const c = config as ConfigOf<"map_data">;
+      return c.fields.length ? c.fields.map((f) => f.name).join(", ") : t("sem campos");
     }
     case "end": {
       const c = config as ConfigOf<"end">;

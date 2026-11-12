@@ -17,8 +17,8 @@
  *   individuais, então essa janela é suficiente pra decidir `has_more` e o
  *   próximo cursor sem pular nem duplicar linha entre páginas.
  *
- * `status`/`pointer_id` só existem pra enrollment — quando setados, a fonte
- *   de promessas é pulada (nenhuma promessa tem esses atributos, então
+ * `status`/`pointer_id`/`desde`/`ate`/`modo`/`versao`/`lead` só existem pra enrollment — quando
+ *   setados, a fonte de promessas é pulada (nenhuma promessa tem esses atributos, então
  *   nenhuma promessa poderia bater no filtro mesmo se buscada).
  */
 import { randomUUID } from "node:crypto";
@@ -44,6 +44,16 @@ const ENROLLMENT_STATUSES = [
   "cancelled",
   "dead",
 ] as const;
+
+const MODOS = ["production", "simulation", "test"] as const;
+const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Data ("2026-11-05") ou instante ISO → ISO UTC; `null` quando não é data. Data pura vale o dia inteiro, no UTC. */
+export function limiteDoPeriodo(raw: string, fim: boolean): string | null {
+  const soData = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+  const d = new Date(soData ? `${raw}T${fim ? "23:59:59.999" : "00:00:00.000"}Z` : raw);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 interface CursorPayload {
   next_fire_at: string | null;
@@ -85,24 +95,43 @@ export interface QueueRow {
   id: string;
   contact: { id: string; name: string };
   flow_name: string | null;
+  /** O fluxo (ponteiro) a que a execução pertence; `null` em promessa. Leva ao histórico dentro do editor dele. */
+  flow_id?: string | null;
   /** Agente publicado que armou o fluxo (Task 8.6); null p/ promessas e enrollments sem agente pinado. */
   agent_name: string | null;
   node_or_reason: string;
   next_fire_at: string | null;
   status: string;
   detail: string | null;
+  /** Só enrollment: quando entrou, quando terminou, tentativas e passos do motor, versão fixada e modo. */
+  started_at?: string | null;
+  completed_at?: string | null;
+  attempts?: number | null;
+  steps_taken?: number | null;
+  version_id?: string | null;
+  mode?: string | null;
+  /** `restart` quando esta execução é uma reexecução de outra; `null` na original. */
+  reexecucao?: string | null;
 }
 
 /** Linha de enrollment (com embeds de contato/fluxo/agente) → QueueRow. Pura p/ teste. */
 export function enrollmentToQueueRow(e: {
   id: string;
+  pointer_id?: string | null;
   contact_id: string;
   current_node_id: string;
   next_eval_at: string | null;
   status: string;
   outcome: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  attempts?: number | null;
+  steps_taken?: number | null;
+  version_id?: string | null;
+  execution_mode?: string | null;
+  recovery_kind?: string | null;
   contacts: ContactRow | ContactRow[] | null;
-  followup_flow_pointers: { name: string } | { name: string }[] | null;
+  followup_flow_pointers: { name: string; surface?: string | null } | { name: string; surface?: string | null }[] | null;
   ai_agents: { name: string } | { name: string }[] | null;
 }): QueueRow {
   const contact = embedded(e.contacts);
@@ -113,11 +142,20 @@ export function enrollmentToQueueRow(e: {
     id: e.id,
     contact: { id: e.contact_id, name: resolveContactName(contact) },
     flow_name: pointer?.name ?? null,
+    // Roteiro de atendimento não abre no editor de follow-up (a página recusa), então não ganha o link.
+    flow_id: pointer?.surface === "atendimento" ? null : (e.pointer_id ?? null),
     agent_name: agent?.name ?? null,
     node_or_reason: e.current_node_id,
     next_fire_at: e.next_eval_at,
     status: e.status,
     detail: e.outcome,
+    started_at: e.started_at ?? null,
+    completed_at: e.completed_at ?? null,
+    attempts: e.attempts ?? null,
+    steps_taken: e.steps_taken ?? null,
+    version_id: e.version_id ?? null,
+    mode: e.execution_mode ?? null,
+    reexecucao: e.recovery_kind ?? null,
   };
 }
 
@@ -145,9 +183,24 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("invalid_request", t("status inválido."), 400, { requestId });
   }
   const pointerId = sp.get("pointer_id");
-  const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (pointerId !== null && !UUID_RX.test(pointerId)) {
     return fail("invalid_request", t("pointer_id inválido."), 400, { requestId });
+  }
+  const desdeRaw = sp.get("desde");
+  const ateRaw = sp.get("ate");
+  const desde = desdeRaw ? limiteDoPeriodo(desdeRaw, false) : null;
+  const ate = ateRaw ? limiteDoPeriodo(ateRaw, true) : null;
+  if ((desdeRaw && !desde) || (ateRaw && !ate)) {
+    return fail("invalid_request", t("Período inválido."), 400, { requestId });
+  }
+  const modo = sp.get("modo");
+  if (modo !== null && !MODOS.includes(modo as (typeof MODOS)[number])) {
+    return fail("invalid_request", t("modo inválido."), 400, { requestId });
+  }
+  const versaoId = sp.get("versao");
+  const leadId = sp.get("lead");
+  if ((versaoId !== null && !UUID_RX.test(versaoId)) || (leadId !== null && !UUID_RX.test(leadId))) {
+    return fail("invalid_request", t("versao/lead inválido."), 400, { requestId });
   }
   const q = sp.get("q")?.trim() || null;
   const cursorRaw = sp.get("cursor");
@@ -183,15 +236,23 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
   }
 
-  const skipPromises = status !== null || pointerId !== null;
+  const skipPromises =
+    status !== null ||
+    pointerId !== null ||
+    desde !== null ||
+    ate !== null ||
+    modo !== null ||
+    versaoId !== null ||
+    leadId !== null;
 
   // --- fonte 1: enrollments ---
   let enrollQuery = supabase
     .from("followup_enrollments")
     .select(
       `id, pointer_id, contact_id, status, current_node_id, next_eval_at, outcome, updated_at, agent_id,
+       started_at, completed_at, attempts, steps_taken, version_id, execution_mode, lead_id, recovery_kind,
        contacts:contact_id(id, name, display_name, phone_number),
-       followup_flow_pointers:pointer_id(name),
+       followup_flow_pointers:pointer_id(name, surface),
        ai_agents:agent_id(name)`,
     )
     .eq("organization_id", activeOrg.orgId)
@@ -200,6 +261,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     .limit(limit + 1);
   if (status !== null) enrollQuery = enrollQuery.eq("status", status);
   if (pointerId !== null) enrollQuery = enrollQuery.eq("pointer_id", pointerId);
+  if (desde !== null) enrollQuery = enrollQuery.gte("started_at", desde);
+  if (ate !== null) enrollQuery = enrollQuery.lte("started_at", ate);
+  if (modo !== null) enrollQuery = enrollQuery.eq("execution_mode", modo);
+  if (versaoId !== null) enrollQuery = enrollQuery.eq("version_id", versaoId);
+  if (leadId !== null) enrollQuery = enrollQuery.eq("lead_id", leadId);
   if (contactIds) enrollQuery = enrollQuery.in("contact_id", contactIds);
   if (cursor) {
     enrollQuery =

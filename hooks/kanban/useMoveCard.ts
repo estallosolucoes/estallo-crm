@@ -7,7 +7,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData } from "@/lib/kanban/types";
 
-interface MoveArgs {
+export interface MoveArgs {
   leadId: string;
   stageId: string;
   positionInStage: number;
@@ -22,16 +22,15 @@ interface MoveArgs {
 }
 
 /**
- * O arrasto que o servidor RECUSOU por `reabertura_cria_novo` (issue #1538) e
- * que tem porta: o funil é `novo_negocio`, o card encerrado continua encerrado,
- * e a saída é criar a nova tentativa. Guardada AQUI, no próprio hook do arrasto,
- * porque este é o único lugar que conhece os dois lados ao mesmo tempo — o card
- * que foi arrastado e a etapa que ele tentou alcançar (a retomada nasce justamente
- * na etapa em que o operador soltou o card).
+ * Um negócio GANHO ou PERDIDO levado a uma etapa aberta (30/10/2026): antes de
+ * mover, a tela pergunta "Criar novo negócio × Mover este". Guarda os argumentos
+ * do move para o "Mover este" sair exatamente como o arrasto/clique pediu, e a
+ * etapa alvejada para o "Criar novo" nascer nela.
  */
 export interface RetomadaPendente {
   leadId: string;
   stageId: string;
+  args: MoveArgs;
 }
 
 /** O que a recusa `required_fields_missing` devolve para a tela abrir o diálogo. */
@@ -49,12 +48,6 @@ interface OpcoesDeMove {
    * hook) cai no `showApiError` de sempre.
    */
   onCamposFaltando?: (recusa: RecusaDeCampos) => void;
-  /**
-   * A recusa `reabertura_cria_novo` (issue #1538) também vira diálogo: o funil
-   * retoma como novo negócio, e a tela oferece criar a nova tentativa na etapa
-   * em que o card foi solto. Sem esta opção, cai no toast de sempre.
-   */
-  onRetomada?: (retomada: RetomadaPendente) => void;
 }
 
 export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
@@ -107,14 +100,6 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
       if (err instanceof ApiError && err.status === 409) {
         // Reconcile authoritative state — server already gave new updated_at.
         qc.invalidateQueries({ queryKey });
-      }
-      if (err instanceof ApiError && err.code === "reabertura_cria_novo" && opcoes.onRetomada) {
-        // NÃO toast: um "erro" genérico mentiria sobre uma recusa que tem
-        // porta. O diálogo É a resposta — e ele leva a etapa que o operador
-        // alvejou, para a retomada nascer no lugar certo. Vem ANTES do ramo de
-        // campos: o servidor recusa a reabertura antes da régua de campos.
-        opcoes.onRetomada({ leadId: args.leadId, stageId: args.stageId });
-        return;
       }
       // O DIAGNÓGOSTO em vez do toast (issue #1536): a recusa traz em
       // `details.faltando` chave e rótulo de cada campo — é a tela que sabe

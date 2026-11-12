@@ -37,6 +37,7 @@ function renderDialog(onOpenChange = vi.fn()) {
           onOpenChange={onOpenChange}
           leadId={LEAD_ID}
           pipelineId={PIPELINE_ID}
+          expectedUpdatedAt="2026-10-14T10:00:00Z"
         />
       </QueryClientProvider>,
     ),
@@ -49,14 +50,19 @@ beforeEach(() => {
   get.mockResolvedValue({
     data: {
       pipelines: [
-        { id: "p-destino-1", name: "Suporte" },
-        { id: "p-destino-2", name: "Cobrança" },
+        {
+          id: "p-destino-1",
+          name: "Suporte",
+          etapas: [
+            { id: "s-1", name: "Triagem", color: null },
+            { id: "s-2", name: "Em andamento", color: null },
+          ],
+        },
+        { id: "p-destino-2", name: "Cobrança", etapas: [] },
       ],
     },
   });
-  post.mockResolvedValue({
-    data: { lead: { id: "clone-1" }, origem: { id: LEAD_ID, status: "lost" } },
-  });
+  post.mockResolvedValue({ data: { id: LEAD_ID, pipeline_id: "p-destino-1" } });
 });
 
 describe("MoveToOtherPipelineDialog", () => {
@@ -72,22 +78,26 @@ describe("MoveToOtherPipelineDialog", () => {
 
   it("confirmar sem escolher destino não envia nada — botão fica desabilitado", () => {
     renderDialog();
-    expect(screen.getByRole("button", { name: "Confirmar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mover" })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
 
-  it("escolhe o destino e confirma: chama POST /clone com o pipeline_id certo, e fecha", async () => {
+  it("escolhe funil e etapa e move o MESMO negócio (/move-pipeline), e fecha", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     renderDialog(onOpenChange);
 
     await user.click(await screen.findByRole("combobox", { name: "Funil de destino" }));
     await user.click(await screen.findByRole("option", { name: "Suporte" }));
-    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    // A primeira etapa aberta vem marcada; escolher outra.
+    await user.click(await screen.findByRole("combobox", { name: "Etapa de destino" }));
+    await user.click(await screen.findByRole("option", { name: "Em andamento" }));
+    await user.click(screen.getByRole("button", { name: "Mover" }));
 
     await waitFor(() =>
-      expect(post).toHaveBeenCalledWith(`/api/v1/leads/${LEAD_ID}/clone`, {
-        pipeline_id: "p-destino-1",
+      expect(post).toHaveBeenCalledWith(`/api/v1/leads/${LEAD_ID}/move-pipeline`, {
+        stage_id: "s-2",
+        expected_updated_at: "2026-10-14T10:00:00Z",
       }),
     );
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
@@ -103,7 +113,7 @@ describe("MoveToOtherPipelineDialog", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: "Funil de destino" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Confirmar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mover" })).toBeDisabled();
   });
 
   it("cancelar fecha sem chamar a API", async () => {

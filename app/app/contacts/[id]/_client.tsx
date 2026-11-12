@@ -32,8 +32,7 @@ import {
 } from "@/hooks/contacts/usePersonalContact";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
 import { useAuth } from "@/hooks/auth/AuthProvider";
-import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { useCamposPersonalizados } from "@/hooks/campos/useCamposPersonalizados";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
@@ -76,9 +75,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   const q = useContact(contactId);
   const { user, activeOrg } = useAuth();
   const clientesLigado = activeOrg?.cliente_pela_agenda === true;
-  // As DEFINIÇÕES continuam no funil (`crm_pipelines.settings.fields[]`) — só o
-  // VALOR mora no contato. `camposDoFunil` é o mesmo leitor que o Kanban usa.
-  const pipelineQuery = useDefaultPipeline(Boolean(activeOrg));
+  // As DEFINIÇÕES de contato vêm do cadastro central (CRM › Campos
+  // personalizados, migration 0657); o VALOR mora no contato.
+  const cadastroDeCampos = useCamposPersonalizados("contact", Boolean(activeOrg));
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
   // Desfazer o descadastro é o override da regra W-02 — só admin, e auditado.
@@ -184,7 +183,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {contact.tags.map((t) => (
-              <ChipDeEtiqueta key={t} tag={t} />
+              <ChipDeEtiqueta key={t} tag={t} entidade="contact" />
             ))}
             {contact.is_blocked && <Badge variant="warning">{t("Bloqueado")}</Badge>}
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
@@ -410,7 +409,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                   {contact.tags.length === 0
                     ? "—"
                     : contact.tags.map((t) => (
-                        <ChipDeEtiqueta key={t} tag={t} />
+                        <ChipDeEtiqueta key={t} tag={t} entidade="contact" />
                       ))}
                 </dd>
               </div>
@@ -471,7 +470,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         contact={contact}
         open={editOpen}
         onOpenChange={setEditOpen}
-        customFieldDefs={camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null)}
+        customFieldDefs={(cadastroDeCampos.data?.definicoes ?? [])
+          .filter((d) => !d.hidden)
+          .map((d) => ({ key: d.key, label: d.label, type: d.type, options: d.options }))}
       />
       <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
     </div>

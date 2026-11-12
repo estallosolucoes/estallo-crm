@@ -76,13 +76,12 @@ export interface ChannelDeletionImpact {
   /**
    * Referências com ON DELETE CASCADE que NÃO são estado de runtime: sumiriam em
    * silêncio junto com a linha. `ai_routers` leva os `ai_router_members` dele
-   * atrás; `channel_knobs` é o ajuste anti-ban que o operador calibrou;
-   * `before_send_traces` é auditoria durável de decisão de envio.
+   * atrás; `before_send_traces` é auditoria durável de decisão de envio.
    *
-   * Warm-up, saúde, pacing e cópias recentes também cascateiam e NÃO entram aqui
+   * Saúde do canal também cascateia e NÃO entram aqui
    * de propósito: são contadores derivados, que se regeneram sozinhos.
    */
-  configuration: { ai_routers: number; channel_knobs: number; before_send_traces: number };
+  configuration: { ai_routers: number; before_send_traces: number };
 }
 
 /** Tabelas que apontam para `channel_sessions` e cujo conteúdo decide o desfecho. */
@@ -92,14 +91,13 @@ type DependentTable =
   | "ai_agent_versions"
   | "voice_calls"
   | "ai_routers"
-  | "channel_knobs"
   | "before_send_traces";
 
 /**
  * Conta tudo que está pendurado no canal, com o CLIENTE ADMIN e filtro explícito
  * de organização.
  *
- * O cliente do usuário não serve aqui: `ai_routers`, `channel_knobs` e
+ * O cliente do usuário não serve aqui: `ai_routers` e
  * `before_send_traces` nasceram no apêndice do baseline e não têm policy de RLS
  * para o papel `authenticated`. Uma contagem que volta zero por falta de
  * permissão é indistinguível de "não há nada" — e o zero silencioso reabriria
@@ -112,8 +110,7 @@ async function loadDeletionImpact(
 ): Promise<ChannelDeletionImpact> {
   const admin = createAdminClient();
   // `select("*")` com `head` não devolve linha nenhuma — só o contador. Pedir uma
-  // coluna concreta quebraria em `channel_knobs`, cuja chave é (org, sessão): ela
-  // não tem `id`.
+  // coluna concreta quebraria nas tabelas cuja chave não é `id`.
   const count = async (table: DependentTable): Promise<number> => {
     const { count: n } = await admin
       .from(table)
@@ -123,14 +120,13 @@ async function loadDeletionImpact(
     return n ?? 0;
   };
 
-  const [conversations, messages, agentVersions, voiceCalls, routers, knobs, traces] =
+  const [conversations, messages, agentVersions, voiceCalls, routers, traces] =
     await Promise.all([
       count("conversations"),
       count("messages"),
       count("ai_agent_versions"),
       count("voice_calls"),
       count("ai_routers"),
-      count("channel_knobs"),
       count("before_send_traces"),
     ]);
 
@@ -142,7 +138,6 @@ async function loadDeletionImpact(
   };
   const configuration = {
     ai_routers: routers,
-    channel_knobs: knobs,
     before_send_traces: traces,
   };
   const nada =
@@ -314,7 +309,7 @@ export async function GET(
  * Admin only. organization_id vem da sessão — nunca do path/body.
  */
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -345,7 +340,9 @@ export async function DELETE(
   if (!session) return fail("not_found", t("Canal não encontrado."), 404, { requestId });
 
   const impact = await loadDeletionImpact(activeOrg.orgId, id);
-  const arquivar = impact.outcome === "archive";
+  let arquivar = impact.outcome === "archive";
+  // O operador marcou "apagar também o histórico" no diálogo de exclusão.
+  const apagarHistorico = req.nextUrl.searchParams.get("apagar_historico") === "1";
 
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = {
@@ -498,6 +495,43 @@ export async function DELETE(
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   }
 
+  // ─── APAGAR O HISTÓRICO, SE PEDIDO (16/10/2026) ────────────────────────────
+  //
+  // Só DEPOIS de o número sair do provedor: se a revogação falhasse, apagar
+  // antes deixaria o número conectado e sem histórico. Mensagens primeiro,
+  // conversas depois (o resto das ligações é cascade/set null). Admin client
+  // com o `organization_id` da sessão: `messages_delete` da RLS não é o
+  // problema, mas a contagem tem de enxergar tudo o que a tela contou. Mídia
+  // órfã sai na poda que já existe (0432). Sem histórico, o número pode ser
+  // apagado de vez — a decisão é refeita com o impacto novo.
+  let historicoApagado: { conversations: number; messages: number } | null = null;
+  if (apagarHistorico && impact.history.conversations + impact.history.messages > 0) {
+    const admin = createAdminClient();
+    const { count: msgs, error: msgErr } = await admin
+      .from("messages")
+      .delete({ count: "exact" })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("channel_session_id", id);
+    if (msgErr) return fail("internal_error", msgErr.message, 500, { requestId });
+    const { count: convs, error: convErr } = await admin
+      .from("conversations")
+      .delete({ count: "exact" })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("channel_session_id", id);
+    if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
+    historicoApagado = { conversations: convs ?? 0, messages: msgs ?? 0 };
+    void audit({
+      action: "channel.history_deleted",
+      actorUserId: user.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "channel_session",
+      resourceId: id,
+      requestId,
+      metadata: historicoApagado,
+    });
+    arquivar = (await loadDeletionImpact(activeOrg.orgId, id)).outcome === "archive";
+  }
+
   if (arquivar) {
     const { error: archErr } = await supabase
       .from("channel_sessions")
@@ -573,5 +607,5 @@ export async function DELETE(
     },
   });
 
-  return ok({ id, archived: arquivar, impact }, { requestId });
+  return ok({ id, archived: arquivar, impact, historico_apagado: historicoApagado }, { requestId });
 }

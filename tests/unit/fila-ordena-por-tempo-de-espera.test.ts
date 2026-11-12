@@ -90,10 +90,7 @@ function ordensPedidas(c: Chamada[]): string[] {
     });
 }
 
-const ESPERA = [
-  "awaiting_since crescente (nulos-por-último)",
-  "id crescente (nulos-por-último)",
-];
+const ESPERA = ["awaiting_since crescente (nulos-por-último)", "id crescente (nulos-por-último)"];
 
 const ATIVIDADE = [
   "last_message_at decrescente (nulos-por-último)",
@@ -127,9 +124,11 @@ describe("a Fila pede ao banco a ordem por tempo de espera", () => {
     // de organização é a ÚNICA barreira. Uma consulta nova "só para ordenar"
     // nasceria sem barreira nenhuma e devolveria conversa de OUTRO CLIENTE.
     const c = await listar({ comando: ["aguardando"] });
-    expect(c.filter((x) => x.tabela === "conversations" && x.metodo === "eq").map((x) => x.args.join(":"))).toContain(
-      "organization_id:org-1",
-    );
+    expect(
+      c
+        .filter((x) => x.tabela === "conversations" && x.metodo === "eq")
+        .map((x) => x.args.join(":")),
+    ).toContain("organization_id:org-1");
     expect(c.filter((x) => x.metodo === "order").length).toBeGreaterThan(0);
   });
 });
@@ -165,10 +164,7 @@ describe("a régua da ordem tem um lugar só", () => {
     // vigiada por `fila-tem-uma-definicao-so`). A ORDEM é a pergunta vizinha e
     // seguia solta: cada sítio com a sua cópia é como as seis definições de fila
     // divergiram.
-    for (const caminho of [
-      "app/api/v1/conversations/_handler.ts",
-      "lib/routing/queue.ts",
-    ]) {
+    for (const caminho of ["app/api/v1/conversations/_handler.ts", "lib/routing/queue.ts"]) {
       expect(fonte(caminho), `${caminho}: ordem da fila fora de ORDEM_DA_ESPERA`).toContain(
         "ORDEM_DA_ESPERA",
       );
@@ -176,26 +172,22 @@ describe("a régua da ordem tem um lugar só", () => {
   });
 
   it("⭐ o PREDICADO da Fila também vem de um lugar só", () => {
-    // A ordem passou a ter dono (acima), e o predicado que decide se ela vale
-    // continuava em duas cópias: a rota (que ordena) e a lista (que numera "1º,
-    // 2º…" e mostra o tempo de espera). Ganhar uma condição num só dos dois
-    // produz a tela ordenada por uma pergunta e numerada por outra — sem nada
-    // ficar vermelho, que é exatamente o modo de falha que este arquivo vigia.
+    // A rota mantém a consulta de roteamento para clientes da API. O Inbox
+    // não numera mais posições; a fila do backend continua com régua única.
     const PROIBIDO = /includes\(\s*["']aguardando["']\s*\)/;
     // Controle: a régua morde quando o literal existe.
     expect(PROIBIDO.test('filters.comando?.includes("aguardando")')).toBe(true);
 
-    for (const caminho of [
-      "app/api/v1/conversations/_handler.ts",
-      "components/inbox/ConversationList.tsx",
-    ]) {
+    for (const caminho of ["app/api/v1/conversations/_handler.ts", "lib/routing/queue.ts"]) {
       const semComentarios = fonte(caminho)
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/^\s*\/\/.*$/gm, "");
-      expect(semComentarios, `${caminho}: o predicado da Fila voltou a ser escrito à mão`).not.toMatch(
-        PROIBIDO,
-      );
-      expect(fonte(caminho), `${caminho}: não usa ehAFila`).toContain("ehAFila");
+      expect(
+        semComentarios,
+        `${caminho}: o predicado da Fila voltou a ser escrito à mão`,
+      ).not.toMatch(PROIBIDO);
+      const regua = caminho.endsWith("_handler.ts") ? "ehAFila" : "comandosDaFila";
+      expect(fonte(caminho), `${caminho}: não usa ${regua}`).toContain(regua);
     }
   });
 

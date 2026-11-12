@@ -136,8 +136,6 @@ mesmo cron e com o piso também dentro do banco:
 | chave | default | o que faz |
 |---|---|---|
 | `AI_TELEMETRY_RETENTION_DAYS` | `400` | `llm_calls`, `metrics`, `skill_activations`, `ai_router_decisions`. Piso de **100** dias. |
-| `PACING_LEDGER_RETENTION_DAYS` | `2` | `pacing_ledger`. Piso de **2**; o último envio de cada número nunca sai. |
-| `OUTBOUND_COPIES_RETENTION_DAYS` | `30` | `outbound_copies`. Piso de **7**; as últimas que o anti-repetição compara nunca saem. |
 | `LEAD_CHECKPOINT_RETENTION_DAYS` | `180` | `lead_checkpoints` já superados. Piso de **30**; o vigente de cada atendimento nunca sai. |
 
 `event_log` não tem poda, de propósito: é o livro-razão que impede os gatilhos

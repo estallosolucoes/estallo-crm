@@ -40,8 +40,6 @@ beforeAll(() => {
 beforeEach(() => {
   sql(`
     delete from lead_checkpoints where organization_id = '${ORG}';
-    delete from pacing_ledger where organization_id = '${ORG}';
-    delete from outbound_copies where organization_id = '${ORG}';
     delete from llm_calls where organization_id = '${ORG}';
   `);
 });
@@ -66,58 +64,6 @@ describe("telemetria da IA — padrão 400, piso 100", () => {
     linhas(450, 350);
     expect(conta(`select public.fn_expurgar_telemetria_de_ia_vencida(null, 10000)`)).toBe(1);
     expect(restam()).toBe("350");
-  });
-});
-
-describe("ritmo de envio — padrão 2, piso 2", () => {
-  // O envio de 1 hora é o último do número: sem ele, a linha mais nova do caso
-  // ficaria pela regra do "último envio", não pelo prazo.
-  const envios = (...idadesEmHoras: number[]) =>
-    sql(`
-      insert into pacing_ledger (organization_id, channel_session_id, sent_at)
-      select '${ORG}', '${SESSAO}', now() - make_interval(hours => h) from unnest(array[1, ${idadesEmHoras.join(",")}]) h;
-    `);
-  const restam = () => conta(`select count(*) from pacing_ledger where organization_id = '${ORG}'`);
-
-  it("prazo 5: o de 4 dias fica, o de 6 sai", () => {
-    envios(6 * 24, 4 * 24);
-    expect(conta(`select public.fn_expurgar_ritmo_de_envio_vencido(5, 10000)`)).toBe(1);
-    expect(restam()).toBe(2);
-  });
-
-  it("null é o padrão de 2: o de 36 horas fica, o de 3 dias sai", () => {
-    envios(3 * 24, 36);
-    expect(conta(`select public.fn_expurgar_ritmo_de_envio_vencido(null, 10000)`)).toBe(1);
-    expect(restam()).toBe(2);
-  });
-});
-
-describe("cópias enviadas — padrão 30, piso 7 (fora da janela de 20)", () => {
-  // 20 cópias de ontem enchem a janela do anti-repetição; as duas do caso ficam
-  // FORA dela, então só o prazo decide.
-  const copias = (...idades: number[]) =>
-    sql(`
-      insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash, sent_at)
-      select '${ORG}', '${SESSAO}', 'janela ' || g, md5('janela ' || g), now() - make_interval(days => 1, secs => g)
-        from generate_series(1, 20) g;
-      insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash, sent_at)
-      select '${ORG}', '${SESSAO}', 'caso ' || d, md5('caso ' || d), now() - make_interval(days => d)
-        from unnest(array[${idades.join(",")}]) d;
-    `);
-  const restam = () =>
-    sql(`select string_agg(normalized_text, ',' order by sent_at)
-           from outbound_copies where organization_id = '${ORG}' and normalized_text like 'caso %'`);
-
-  it("prazo 15: a de 10 dias fica, a de 20 sai", () => {
-    copias(20, 10);
-    expect(conta(`select public.fn_expurgar_copias_enviadas_vencidas(15, 10000)`)).toBe(1);
-    expect(restam()).toBe("caso 10");
-  });
-
-  it("null é o padrão de 30: a de 25 dias fica, a de 35 sai", () => {
-    copias(35, 25);
-    expect(conta(`select public.fn_expurgar_copias_enviadas_vencidas(null, 10000)`)).toBe(1);
-    expect(restam()).toBe("caso 25");
   });
 });
 

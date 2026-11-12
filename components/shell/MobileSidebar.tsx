@@ -76,6 +76,7 @@ export function GavetaDeNavegacao({ comoAba = false }: { comoAba?: boolean }) {
         </Button>
       </SheetTrigger>
       <SheetContent
+        data-estallo-navigation
         side="left"
         className="flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-0 p-0 sm:max-w-xs"
       >

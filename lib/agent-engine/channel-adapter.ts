@@ -45,7 +45,13 @@ export interface ChannelSendInput {
    * (`agent/fotos-do-produto.ts`). Caminho, nunca URL nem bytes: quem assina a
    * URL curta para o canal é o handler de mensagens, como em toda mídia.
    */
-  media?: { storagePath: string; mime: string };
+  media?: { storagePath: string; mime: string; kind?: 'image' | 'video' | 'audio' | 'document' };
+  /**
+   * Quem ESCREVEU o texto. `automacao` = texto fixo de um fluxo (ninguém o redigiu na hora: nem a IA nem uma
+   * pessoa) — a linha sai carimbada `sent_via=automation` e o balão diz 'Robô', em vez de 'IA'.
+   * Ausente = o agente de IA, como sempre.
+   */
+  autoria?: 'automacao';
 }
 
 /**

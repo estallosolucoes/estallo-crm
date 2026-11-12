@@ -25,50 +25,18 @@ import { CONVERSATION_TERMINAL_STATUSES, listConversationsQuerySchema } from "@/
 // ---------------------------------------------------------------------------
 
 describe("tabToFilter — o que cada aba significa", () => {
-  it("Minhas pede as minhas SEM as terminais", () => {
-    expect(tabToFilter("mine")).toEqual({ assigned_to: "me", exclude_finished: true });
+  it("Todas não impõe filtro de atendimento", () => {
+    expect(tabToFilter("all")).toEqual({});
   });
-
-  it("Fechadas continua mostrando as fechadas — senão não sobra onde vê-las", () => {
-    expect(tabToFilter("closed")).toEqual({ status: "closed" });
+  it("Sem resposta mantém a régua de quem nunca recebeu resposta", () => {
+    expect(tabToFilter("pending")).toEqual({ pendentes: true });
   });
-
-  it("a Fila pergunta QUEM MANDA, não o status — e o valor mudou por medição", () => {
-    // ESTE `toEqual` MUDOU EM 2026-08-30, e o motivo fica escrito para a próxima
-    // sessão não "consertar" de volta.
-    //
-    // O par anterior (`assigned_to=unassigned` + os dois estados de espera) tinha
-    // consertado um defeito real: a conversa escalada é `pending` e sumia de toda
-    // aba. Só que ele carregava outro: "sem dono e aberta" é TAMBÉM a conversa
-    // que o robô está atendendo agora. Medido na VPS: a Fila mostrava 83 e o
-    // automático comandava 47 delas — o atendente via como trabalho seu quase
-    // tudo que já estava sendo respondido.
-    //
-    // `comandosDaFila` responde a pergunta certa e continua cobrindo a conversa
-    // escalada (ela é `aguardando`, por causa do silêncio, não do status).
-    expect(tabToFilter("unassigned")).toEqual({ comando: ["aguardando"] });
+  it("Em espera e Em aberto usam o status de resposta", () => {
+    expect(tabToFilter("waiting")).toEqual({ status_chat: "em_espera" });
+    expect(tabToFilter("open")).toEqual({ status_chat: "em_aberto" });
   });
-
-  it("numa org SEM automático, a Fila também traz o que ninguém está atendendo", () => {
-    // O controle do caso acima. Sem ele, a Fila de uma instalação recém-instalada
-    // — que ainda não publicou agente — nasceria VAZIA com clientes esperando,
-    // que é o pior estado possível na primeira impressão.
-    expect(tabToFilter("unassigned", false)).toEqual({
-      comando: ["aguardando", "automatico"],
-    });
-  });
-
-  it("a aba do automático pergunta a régua do MOTOR, não `ai_handling`", () => {
-    // `ai_handling` é escrito por UM caminho só em produção (a volta pelo botão
-    // "Devolver ao automático"), e por isso a aba mostrava 2 enquanto o robô
-    // atendia 47.
-    expect(tabToFilter("ai")).toEqual({ comando: ["automatico"] });
-  });
-
-  it("as outras abas não ganham o filtro de tabela", () => {
-    expect(tabToFilter("unassigned").exclude_finished).toBeUndefined();
-    expect(tabToFilter("all").exclude_finished).toBeUndefined();
-    expect(tabToFilter("ai").exclude_finished).toBeUndefined();
+  it("Fechadas inclui o legado arquivado", () => {
+    expect(tabToFilter("closed")).toEqual({ status: ["closed", "archived"] });
   });
 });
 
@@ -157,6 +125,18 @@ describe("listConversationsHandler — predicado", () => {
     // agora como lista de um.
     expect(chamadas.some((c) => c.metodo === "in" && c.args[0] === "status")).toBe(true);
     expect(temNotTerminal(chamadas)).toBe(true);
+  });
+
+  it("Pendentes: entrada sem nenhuma saída, fora grupo e terminais — no BANCO", async () => {
+    const chamadas = await rodar({ pendentes: true });
+    const f = (col: string, op: string) =>
+      chamadas.some((c) => c.metodo === "filter" && c.args[0] === col && c.args[1] === op);
+    expect(f("last_inbound_at", "not.is")).toBe(true);
+    expect(f("last_outbound_at", "is")).toBe(true);
+    expect(f("is_group", "eq")).toBe(true);
+    expect(f("status", "not.in")).toBe(true);
+    // Controle: sem o parâmetro, nenhuma conversa respondida some da lista.
+    expect((await rodar({})).some((c) => c.metodo === "filter" && c.args[0] === "last_outbound_at")).toBe(false);
   });
 
   it("continua filtrando por organização — o filtro novo não desloca o de tenant", async () => {

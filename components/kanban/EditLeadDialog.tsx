@@ -14,13 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import type { Lead } from "@/lib/types/leads";
 import { updateLeadSchema, type UpdateLeadInput } from "@/lib/schemas/leads";
-import { MOEDA_PADRAO, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
-import { EcoDoValor } from "./EcoDoValor";
+import { MOEDA_PADRAO, centavosParaCampo, parseReaisToCents, simboloDaMoeda } from "@/lib/money";
 
 interface FormShape {
   title: string;
@@ -37,11 +37,6 @@ interface Props {
   pipelineId: string;
 }
 
-function centsToReais(cents: number | null | undefined): string {
-  if (cents === null || cents === undefined) return "";
-  return (cents / 100).toFixed(2).replace(".", ",");
-}
-
 export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) {
   const t = useT();
   const org = useActiveOrg();
@@ -54,7 +49,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
     defaultValues: {
       title: lead.title,
       description: lead.description ?? "",
-      valueReais: centsToReais(lead.value_cents),
+      valueReais: centavosParaCampo(lead.value_cents),
       tagsRaw: (lead.tags ?? []).join(", "),
       expected_close_date: lead.expected_close_date ?? "",
     },
@@ -65,7 +60,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
       form.reset({
         title: lead.title,
         description: lead.description ?? "",
-        valueReais: centsToReais(lead.value_cents),
+        valueReais: centavosParaCampo(lead.value_cents),
         tagsRaw: (lead.tags ?? []).join(", "),
         expected_close_date: lead.expected_close_date ?? "",
       });
@@ -144,13 +139,12 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
               {/* O rótulo segue a moeda do NEGÓCIO (a organização é a reserva):
                   `R$` em duro mentia para quem opera em euro. */}
               <Label htmlFor="valueReais">{t("Valor")} ({simboloDaMoeda(moedaDoValor)})</Label>
-              <Input
+              {/* A máscara É o eco: o que aparece no campo é o que será gravado. */}
+              <CampoDeDinheiro
                 id="valueReais"
-                inputMode="decimal"
-                placeholder="0,00"
+                moeda={moedaDoValor}
                 {...form.register("valueReais")}
               />
-              <EcoDoValor control={form.control} moeda={moedaDoValor} />
               {form.formState.errors.valueReais && (
                 <p className="text-xs text-error-fg">
                   {form.formState.errors.valueReais.message}

@@ -27,6 +27,9 @@ vi.mock("@/hooks/inbox/useMessagesRealtime", () => ({
     refetch: vi.fn(),
   }),
 }));
+// O nome de quem enviou vem da lista da equipe — fora do assunto da busca.
+vi.mock("@/hooks/inbox/useAssignableMembers", () => ({ useAssignableMembers: () => ({ data: [] }) }));
+vi.mock("@/hooks/team/useTeamMembers", () => ({ useTeamMembers: () => ({ data: undefined }) }));
 vi.mock("@/hooks/inbox/useConversationNotes", () => ({ useConversationNotes: () => [] }));
 vi.mock("@/hooks/inbox/usePassagensDaConversa", () => ({ usePassagensDaConversa: () => [] }));
 vi.mock("@/hooks/inbox/useClaimConversation", () => ({

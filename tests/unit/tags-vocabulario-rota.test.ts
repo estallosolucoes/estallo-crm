@@ -27,43 +27,49 @@ const recusa = (entrada: unknown): string | null => {
 
 describe("vocabularioDeTagsSchema — o que a rota recusa antes de tocar o banco", () => {
   it("renomear sem destino é recusado como destino_obrigatorio", () => {
-    expect(recusa({ acao: "renomear", tag: "a" })).toBe("destino_obrigatorio");
+    expect(recusa({ entidade: "lead", acao: "renomear", tag: "a" })).toBe("destino_obrigatorio");
   });
 
   it("juntar sem destino também — juntar em nada não é operação", () => {
-    expect(recusa({ acao: "juntar", tag: "a" })).toBe("destino_obrigatorio");
+    expect(recusa({ entidade: "lead", acao: "juntar", tag: "a" })).toBe("destino_obrigatorio");
   });
 
-  it("renomear para o MESMO nome, mesmo com outra caixa, é destino_igual_a_tag", () => {
-    // A função de banco devolveria `alterou: false` e a tela diria "nada mudou"
-    // sem explicar por quê.
-    expect(recusa({ acao: "renomear", tag: "VIP", destino: "vip" })).toBe("destino_igual_a_tag");
+  it("renomear para o MESMO nome é destino_igual_a_tag; trocar só a caixa passa (tela Tags, 0659)", () => {
+    expect(recusa({ entidade: "lead", acao: "renomear", tag: "VIP", destino: "VIP" })).toBe("destino_igual_a_tag");
+    expect(
+      vocabularioDeTagsSchema.safeParse({ entidade: "lead", acao: "renomear", tag: "VIP", destino: "vip" }).success,
+    ).toBe(true);
+  });
+
+  it("criar exige entidade e aceita cor (tela Tags, 0659)", () => {
+    expect(vocabularioDeTagsSchema.safeParse({ entidade: "contact", acao: "criar", tag: "Retorno", cor: "#1099d3" }).success).toBe(true);
+    expect(recusa({ acao: "criar", tag: "Retorno" })).toBe("entidade_invalida");
   });
 
   it("juntar 'vip' em 'VIP' PASSA — é o caso que existe para desduplicar grafia", () => {
     // Controle positivo do caso acima: sem ele, "recusa tudo que difere só na
     // caixa" ficaria verde e a ação central de juntar estaria morta.
-    expect(vocabularioDeTagsSchema.safeParse({ acao: "juntar", tag: "vip", destino: "VIP" }).success).toBe(true);
+    expect(vocabularioDeTagsSchema.safeParse({ entidade: "lead", acao: "juntar", tag: "vip", destino: "VIP" }).success).toBe(true);
   });
 
   it("excluir não pede destino", () => {
-    expect(vocabularioDeTagsSchema.safeParse({ acao: "excluir", tag: "a" }).success).toBe(true);
+    expect(vocabularioDeTagsSchema.safeParse({ entidade: "lead", acao: "excluir", tag: "a" }).success).toBe(true);
   });
 
   it("ação fora das três é acao_invalida", () => {
-    expect(recusa({ acao: "apagar", tag: "a" })).toBe("acao_invalida");
+    expect(recusa({ entidade: "lead", acao: "apagar", tag: "a" })).toBe("acao_invalida");
   });
 
   it("etiqueta vazia ou só de espaço é tag_obrigatoria", () => {
-    expect(recusa({ acao: "excluir", tag: "" })).toBe("tag_obrigatoria");
-    expect(recusa({ acao: "excluir", tag: "   " })).toBe("tag_obrigatoria");
+    expect(recusa({ entidade: "lead", acao: "excluir", tag: "" })).toBe("tag_obrigatoria");
+    expect(recusa({ entidade: "lead", acao: "excluir", tag: "   " })).toBe("tag_obrigatoria");
   });
 
   it("etiqueta acima do teto do seletor do Inbox é recusada", () => {
     // 60 é o mesmo teto de `conversationTagSchema`: um nome que cabe no
     // vocabulário e não cabe no seletor seria criado e nunca oferecido.
-    expect(recusa({ acao: "excluir", tag: "x".repeat(61) })).toBe("tag_longa_demais");
-    expect(vocabularioDeTagsSchema.safeParse({ acao: "excluir", tag: "x".repeat(60) }).success).toBe(true);
+    expect(recusa({ entidade: "lead", acao: "excluir", tag: "x".repeat(61) })).toBe("tag_longa_demais");
+    expect(vocabularioDeTagsSchema.safeParse({ entidade: "lead", acao: "excluir", tag: "x".repeat(60) }).success).toBe(true);
   });
 });
 
@@ -76,32 +82,32 @@ describe("vocabularioDeTagsSchema — a cor (issue #1271, fatia S6)", () => {
   it("definir_cor sem o campo `cor` é cor_obrigatoria", () => {
     // Ausente ≠ nulo: nulo é "limpe a cor". Sem o campo não dá para distinguir
     // "limpe" de "esqueci de mandar", e a operação reportaria alteração à toa.
-    expect(recusa({ acao: "definir_cor", tag: "vip" })).toBe("cor_obrigatoria");
+    expect(recusa({ entidade: "lead", acao: "definir_cor", tag: "vip" })).toBe("cor_obrigatoria");
   });
 
   it("definir_cor com `cor: null` PASSA — é o pedido de tirar a cor", () => {
-    expect(vocabularioDeTagsSchema.safeParse({ acao: "definir_cor", tag: "vip", cor: null }).success).toBe(true);
+    expect(vocabularioDeTagsSchema.safeParse({ entidade: "lead", acao: "definir_cor", tag: "vip", cor: null }).success).toBe(true);
   });
 
   it("a cor entra normalizada: `#ABC`, sem cerquilha e com espaço viram `#aabbcc`", () => {
     for (const bruto of ["#AABBCC", "aabbcc", " #aabbcc "]) {
-      expect(normalizado({ acao: "definir_cor", tag: "vip", cor: bruto }).cor).toBe("#aabbcc");
+      expect(normalizado({ entidade: "lead", acao: "definir_cor", tag: "vip", cor: bruto }).cor).toBe("#aabbcc");
     }
     // Forma curta também: a leitura precisa tolerar o que já estiver gravado à
     // mão em `settings.tags`, e é a MESMA função que normaliza os dois lados.
-    expect(normalizado({ acao: "definir_cor", tag: "vip", cor: "#f0a" }).cor).toBe("#ff00aa");
+    expect(normalizado({ entidade: "lead", acao: "definir_cor", tag: "vip", cor: "#f0a" }).cor).toBe("#ff00aa");
   });
 
   it("cor malformada é cor_invalida — nome, 5 dígitos, caractere fora de hex", () => {
     for (const ruim of ["verde", "#12345", "#zzzzzz", "rgb(0,0,0)", "#0091ff;"]) {
-      expect(recusa({ acao: "definir_cor", tag: "vip", cor: ruim }), ruim).toBe("cor_invalida");
+      expect(recusa({ entidade: "lead", acao: "definir_cor", tag: "vip", cor: ruim }), ruim).toBe("cor_invalida");
     }
   });
 
   it("definir_cor não renomeia: destino junto é destino_invalido_para_acao", () => {
     // Aceitar um destino aqui faria a tela prometer duas coisas e a função fazer
     // uma — e o nome entraria no vocabulário pela porta da cor.
-    expect(recusa({ acao: "definir_cor", tag: "vip", destino: "VIP", cor: "#0091ff" })).toBe(
+    expect(recusa({ entidade: "lead", acao: "definir_cor", tag: "vip", destino: "VIP", cor: "#0091ff" })).toBe(
       "destino_invalido_para_acao",
     );
   });
@@ -110,13 +116,13 @@ describe("vocabularioDeTagsSchema — a cor (issue #1271, fatia S6)", () => {
     // Ignorar em silêncio deixaria a tela acreditar que mandou cor na renomeação.
     for (const acao of ["renomear", "juntar", "excluir"]) {
       expect(
-        recusa({ acao, tag: "vip", destino: acao === "excluir" ? undefined : "VIP", cor: "#0091ff" }),
+        recusa({ entidade: "lead", acao, tag: "vip", destino: acao === "excluir" ? undefined : "VIP", cor: "#0091ff" }),
         acao,
       ).toBe("cor_invalida_para_acao");
     }
   });
 
   it("a ação nova não abriu a porta para as ações inexistentes", () => {
-    expect(recusa({ acao: "definir_corzinha", tag: "vip", cor: "#0091ff" })).toBe("acao_invalida");
+    expect(recusa({ entidade: "lead", acao: "definir_corzinha", tag: "vip", cor: "#0091ff" })).toBe("acao_invalida");
   });
 });

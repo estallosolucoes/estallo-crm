@@ -154,6 +154,15 @@ export const agentConfigSchema = z.object({
    * então não se liga por migration — se liga na tela do agente.
    */
   aceita_comandos_celular: z.boolean().default(false),
+  /**
+   * O tempo que o agente leva para começar a responder, como uma pessoa (ms) — antes ficava na "Proteção de envio" do
+   * canal. `alvo = clamp(notar + ms_por_caractere × tamanho do texto, mínimo, máximo)`; ver `agent/atraso-humano.ts`.
+   * Os defaults são os valores de sempre do produto, então quem nunca abriu esta tela não muda de comportamento.
+   */
+  atraso_notar_ms: z.number().int().min(0).max(60_000).default(900),
+  atraso_ms_por_caractere: z.number().int().min(0).max(200).default(22),
+  atraso_minimo_ms: z.number().int().min(0).max(60_000).default(1200),
+  atraso_maximo_ms: z.number().int().min(0).max(60_000).default(7500),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -168,6 +177,10 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   voice_model: "gpt-realtime",
   aceita_comandos_celular: false,
   sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
+  atraso_notar_ms: 900,
+  atraso_ms_por_caractere: 22,
+  atraso_minimo_ms: 1200,
+  atraso_maximo_ms: 7500,
 };
 
 // ---------------------------------------------------------------------------
@@ -192,6 +205,10 @@ export const agentConfigPatchSchema = agentConfigSchema
     voice_speed: cfg.voice_speed.removeDefault(),
     voice_model: cfg.voice_model.removeDefault(),
     aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
+    atraso_notar_ms: cfg.atraso_notar_ms.removeDefault(),
+    atraso_ms_por_caractere: cfg.atraso_ms_por_caractere.removeDefault(),
+    atraso_minimo_ms: cfg.atraso_minimo_ms.removeDefault(),
+    atraso_maximo_ms: cfg.atraso_maximo_ms.removeDefault(),
     // Sem `.default()`, senão um PATCH de outra chave reescrevia o limiar de
     // todo agente que nunca o configurou — o mesmo defeito de #1631.
     sentiment_threshold: cfg.sentiment_threshold.removeDefault(),

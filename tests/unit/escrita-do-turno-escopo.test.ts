@@ -141,7 +141,6 @@ const CASOS: Array<{ nome: string; args: (alvo: string) => Linha; doTurno: strin
     deB: CASO_DE_B,
   })),
   { nome: "crm_manage_tags", args: (a) => ({ target_kind: "contact", target_id: a }), doTurno: DO_TURNO, deB: DE_B },
-  { nome: "crm_manage_tags", args: (a) => ({ target_kind: "conversation", target_id: a }), doTurno: CONVERSA_DO_TURNO, deB: CONVERSA_DE_B },
   { nome: "crm_manage_tags", args: (a) => ({ target_kind: "lead", target_id: a }), doTurno: NEGOCIO_DO_TURNO, deB: NEGOCIO_DE_B },
 ];
 

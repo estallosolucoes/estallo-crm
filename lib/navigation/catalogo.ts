@@ -203,6 +203,18 @@ export const NAV_CATALOG = [
     icon: "CalendarBlank",
     group: "atendimento",
     sidebar: true,
+    // Liga/desliga em /app/settings/recursos (padrão: desligada).
+    capacidade: "agenda",
+  },
+  {
+    // Estallo: mora em Atendimento (pedido do dono) — o contato é quem está do
+    // outro lado da conversa, e quem atende o abre junto com o Inbox.
+    href: "/app/contacts",
+    label: "Contatos",
+    description: "As pessoas do outro lado da conversa e seu histórico.",
+    icon: "Users",
+    group: "atendimento",
+    sidebar: true,
   },
   {
     // Renomeado de "Templates": estes são scripts do atendente, consumidos pelo
@@ -212,8 +224,32 @@ export const NAV_CATALOG = [
     label: "Respostas rápidas",
     description: "Scripts salvos para responder mais rápido, seus ou da equipe.",
     icon: "FileText",
-    group: "atendimento",
-    sidebar: true,
+    // Estallo: mora no hub do CRM (/app/crm), não no menu lateral.
+    group: "crm",
+    section: "Preparar a venda",
+  },
+  {
+    // Estallo: o cadastro central de campos (lead e contato), com visibilidade
+    // por funil/etapa e obrigatoriedade. Substitui o editor por funil.
+    href: "/app/crm/campos",
+    label: "Campos personalizados",
+    description: "Os dados extras do negócio e do contato — onde aparecem e quando são obrigatórios.",
+    icon: "ListChecks",
+    group: "crm",
+    section: "Preparar a venda",
+    minRole: "admin",
+  },
+  {
+    // Estallo (0659): o cadastro de etiquetas de oportunidade e de contato, com
+    // cor por entidade. Substitui /app/settings/tags (que redireciona para cá).
+    // `manager`, a mesma régua da rota e da função do banco.
+    href: "/app/crm/tags",
+    label: "Tags",
+    description: "As etiquetas de oportunidade e de contato: nome, cor e onde estão em uso.",
+    icon: "Tag",
+    group: "crm",
+    section: "Preparar a venda",
+    minRole: "manager",
   },
 
   // ---- CRM — o funil ----
@@ -249,15 +285,6 @@ export const NAV_CATALOG = [
     // SÓ NO HUB, como as demais telas de preparação: o quinto item do sidebar do
     // CRM já fez o menu rolar 13px em 900px (e2e `navegacao.spec.ts`), e a
     // campanha é montada de vez em quando, não aberta todo dia.
-  },
-  {
-    href: "/app/contacts",
-    label: "Contatos",
-    description: "As pessoas do outro lado da conversa e seu histórico.",
-    icon: "Users",
-    group: "crm",
-    section: "O dia a dia da venda",
-    sidebar: true,
   },
   {
     href: "/app/companies",
@@ -414,6 +441,7 @@ export const NAV_CATALOG = [
     // tem hub, e se chega às telas dele por "Configurações". Eu tinha posto
     // `sidebar: true` e a cerca reprovou dizendo "a tela existe e não tem porta
     // na navegação" — a porta existia, era outra.
+    capacidade: "agenda",
   },
   {
     href: "/app/settings/tenant/proposals",
@@ -432,7 +460,8 @@ export const NAV_CATALOG = [
   {
     href: "/app/settings/tenant/proposals/modelos",
     label: "Modelos de proposta",
-    description: "Personalize os modelos da plataforma ou crie os da sua empresa, inclusive a partir de uma proposta que você já usa.",
+    description:
+      "Personalize os modelos da plataforma ou crie os da sua empresa, inclusive a partir de uma proposta que você já usa.",
     icon: "FileText",
     group: "organizacao",
     section: "Sua empresa",
@@ -549,7 +578,8 @@ export const NAV_CATALOG = [
     // e na busca, e quem usa pode pô-la no menu dela.
     href: "/app/ai/atendimento",
     label: "Fluxos de atendimento",
-    description: "Perguntas que a IA conduz durante a conversa, com as respostas guardadas na ficha do cliente.",
+    description:
+      "Perguntas que a IA conduz durante a conversa, com as respostas guardadas na ficha do cliente.",
     icon: "ListChecks",
     group: "ia",
     section: "Montar o agente",
@@ -591,7 +621,8 @@ export const NAV_CATALOG = [
     label: "Provedores",
     // O "Jev" vem cedo: o ⌘K mostra só o começo da descrição, e a versão
     // longa cortava antes do nome — quem procurava "jev" achava, mas não via por quê.
-    description: "Ligue o Jev para decisões rápidas e escolha qual inteligência atende cada parte do sistema.",
+    description:
+      "Ligue o Jev para decisões rápidas e escolha qual inteligência atende cada parte do sistema.",
     icon: "Plugs",
     group: "ia",
     section: "Montar o agente",
@@ -918,29 +949,9 @@ export const NAV_CATALOG = [
     // configuração tem superfície" (docs/doctrine/restricao-de-canal.md).
     href: "/app/settings/automacoes",
     label: "Automações",
-    description: "O freio único do passo em que a IA escolhe entre as opções de uma regra, para a empresa inteira.",
-    icon: "FlowArrow",
-    group: "organizacao",
-    section: "Sua empresa",
-    minRole: "manager",
-  },
-  {
-    // A porta que faltava para o vocabulário de etiquetas (issue #852). Até
-    // aqui a etiqueta só ENTRAva no vocabulário — cada agente escrevia a que
-    // quisesse em `add_tag` — e não havia por onde corrigir, juntar as duas
-    // grafias que a operação criou, nem tirar a que ninguém mais usa. O
-    // vocabulário dava para LER (`/api/v1/conversation-tags`) e não para
-    // AJUSTAR, então a única saída era digitar errado para sempre.
-    //
-    // `manager` e não `admin`, pelo mesmo critério da vizinha acima: quem
-    // escreve a etiqueta é quem monta a regra do agente, e a tela existe para
-    // quem monta a regra. Nada aqui apaga conversa ou muda dinheiro — o
-    // alcance da operação é ao lado do de "Distribuição de atendimento".
-    href: "/app/settings/tags",
-    label: "Tags",
     description:
-      "O vocabulário de etiquetas da empresa: onde cada uma é usada e como renomear, juntar ou excluir.",
-    icon: "Tag",
+      "O freio único do passo em que a IA escolhe entre as opções de uma regra, para a empresa inteira.",
+    icon: "FlowArrow",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "manager",
@@ -1007,8 +1018,8 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/settings/marca",
-    label: "Marca",
-    description: "O nome e a cor que sua empresa mostra dentro do sistema.",
+    label: "Identidade do produto",
+    description: "A identidade visual da plataforma e os dados da sua empresa.",
     icon: "Palette",
     group: "organizacao",
     section: "Sua empresa",
@@ -1025,11 +1036,12 @@ export const NAV_CATALOG = [
     // Spec da cobrança §9: as mensagens de limite e a Central mandam para
     // "Configurações › Plano e cobrança" — o item precisa ter esse nome.
     label: "Plano e cobrança",
-    description: "Pagamento, troca de plano e faturas da sua empresa.",
+    description: "Conheça os planos demonstrativos; contratação disponível em breve.",
     icon: "Receipt",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "admin",
+    sidebar: true,
   },
   {
     href: "/app/lgpd/requests",

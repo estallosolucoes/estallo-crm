@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-20T17:19:45.239177Z",
+  "phase": 2,
+  "status": "in_progress",
+  "execution_contract_available": false,
+  "checks": [
+    {
+      "id": "unit_sends",
+      "result": {
+        "files": 11,
+        "passed": 65
+      },
+      "log": "phase2-send-contract-unit.log",
+      "sha256": "9b6e6beaf40f0ae1dbe474a0e6484743675ac4d1754f468da0b3e8887462b67d"
+    },
+    {
+      "id": "db_lead_and_bridge",
+      "result": {
+        "files": 2,
+        "passed": 13
+      },
+      "log": "phase2-pg-regression.log",
+      "sha256": "49e59ae4ddf73a2fbbaeb912b3e0ceb03cabadcc5ae931c7f61265dbc1be8e78"
+    },
+    {
+      "id": "negative_control",
+      "result": {
+        "files": 3,
+        "expected_failures": 12,
+        "passed": 14
+      },
+      "log": "phase2-negative-capability.log",
+      "sha256": "e8134fbcf8e077a5879d5f7c0f6094eba57accd7a18e797e7bf8c12d52b06adc"
+    },
+    {
+      "id": "normal_configuration",
+      "result": {
+        "files": 3,
+        "passed": 26
+      },
+      "log": "phase2-capability-restored.log",
+      "sha256": "229aad456b4dcf386e8b732a45fb43e994958b2adc1be7b8d0479e3fea624cf0"
+    },
+    {
+      "id": "browser_regression",
+      "result": {
+        "passed": 4
+      },
+      "log": "phase2-e2e-regression.log",
+      "sha256": "ca0ad71cc4ffa512d604512e64357de60eeb13bf79e705d574c071a31fe4add5"
+    },
+    {
+      "id": "build",
+      "result": {
+        "local_host": "127.0.0.1:55321"
+      },
+      "log": "phase2-e2e-build.log",
+      "sha256": "b0de38b06c5992970ff41a3915240eb2a3e1ee1b492dbc0c16b3ed042988363b"
+    },
+    {
+      "id": "db_send_completion_regression",
+      "result": {
+        "files": 7,
+        "passed": 101
+      },
+      "log": "phase2-final-db.log",
+      "sha256": "645a2e3aaf3513b5907670f8e65a2c8f93d023c443a4b8547b761ca0c8075d16"
+    },
+    {
+      "id": "db_attachjob_and_send_completion",
+      "result": {
+        "files": 1,
+        "passed": 17
+      },
+      "log": "phase2-complete-send2.log",
+      "sha256": "7ce0465d0be177eae00c6e020231b32197f3e41bc2a37d1ae80a33940b7c526c"
+    },
+    {
+      "id": "negative_control_claim_in_event",
+      "result": {
+        "files": 1,
+        "failed": 1,
+        "passed": 16,
+        "expected": "worker que perdeu o lease falha"
+      },
+      "log": "phase2-complete-send2-sab.log",
+      "sha256": "bd7593df1f4d49ac359f291dc4a6ef8145384c54cdd85b9c7cf51c0a0d32d870"
+    },
+    {
+      "id": "db_full_after_baseline_move",
+      "result": {
+        "files": 450,
+        "passed_files": 449,
+        "tests_passed": 3559,
+        "note": "1 timeout isolado passa"
+      },
+      "log": "db-full-after-move.plain.log",
+      "sha256": "2ae007cf05c276b6dd925aa1b6ec1a87c5c576dd28fbdf9ba324c7267c111660"
+    },
+    {
+      "id": "db_automacoes_set_with_0706",
+      "result": {
+        "files": 14,
+        "passed": 261,
+        "skipped": 1
+      },
+      "log": "db-classif.plain.log",
+      "sha256": "632a2cd3a7d739c024a632c0c1b417b098952ac4fa2c22c77a4e3779f35c3570"
+    },
+    {
+      "id": "unit_full_after_0706",
+      "result": {
+        "files": 2213,
+        "failed_files": 59,
+        "failed_tests": 146,
+        "note": "atribuidos: 53 ja vermelhos no HEAD; 1 meu corrigido"
+      },
+      "log": "unit-full-0706.plain.log",
+      "sha256": "ad54feefa5be33716bdd7a008fd1a5bd881adb051900157da856c830bdfb94fc"
+    },
+    {
+      "id": "db_sigkill_node_process",
+      "result": {
+        "passed": 3
+      },
+      "log": "phase2-sigkill.log",
+      "sha256": "f4c64a828127805886cc89a291948c500deef268c8620fa52920116c848b734d"
+    },
+    {
+      "id": "db_ai_receipt_boundary",
+      "result": {
+        "passed": 4
+      },
+      "log": "phase2-recibo-ia.log",
+      "sha256": "6788a6c9af55e8c7245c0d89fcf23f2db155126bd3782ce4fbcd38a370ac9912"
+    }
+  ],
+  "sources": {
+    "lib/automation/execution-capability.ts": "26225fead377e0fc3d2ca89412da198e2adca0651eae4b4577d40a449391620f",
+    "lib/automation/texto-do-followup.ts": "032f753c96e916f1467cee089fc96e7a0d934afef20eb612bfe51fbd6fe817d8",
+    "lib/followup/engine.ts": "e9fdd5dfcddfc676c572fdef6d51fde55d1f9e5c8adbe57c75272e05d021cfc9",
+    "lib/followup/turn-bridge.ts": "b08a13a5b7d4917a33652fff4ac665d57a2428e4418ba07c04d7911e10061898",
+    "lib/followup/execution-lead.ts": "949d5fafe3d09d266ac0cced0565708a4da484aed6be8554715af4ff50102181",
+    "lib/followup/execution-lead-pg.ts": "8b2bd486ba38fd0b57c9e8b0a2836645069852b7bd7181e162e84f87d4ba1c11",
+    "lib/followup/enviar-texto-fixo.ts": "c8f49f89e1a5d125e501548493d7b45a46c33d58a7c1c8582f35d663d64e2d58",
+    "lib/agent-engine/agent/followup-turn.ts": "adc15437f77874c5a55929b42b0c15d34ede9747ace5dce0f08f502334492774"
+  },
+  "screenshots": "evidence/automacoes-fase2/2026-10-18",
+  "limits": [
+    "No real channel delivery or AI provider tested.",
+    "No transactional effect or crash recovery guarantee yet.",
+    "Full DB, unit and browser suites were not rerun on this tree.",
+    "Negative control used an external Vitest alias; product source was unchanged."
+  ]
+}

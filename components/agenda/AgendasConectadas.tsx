@@ -122,7 +122,6 @@ export function AgendasConectadas() {
             .map((calendar) => (
               <div key={calendar.id} className="space-y-1 rounded-md bg-muted/40 p-3">
                 <p className="font-medium break-words">{calendar.name}</p>
-                <p className="text-xs text-muted-foreground">{t(calendar.allowed_conference_types == null ? "Google Meet: atualize a lista para conferir" : calendar.allowed_conference_types.includes("hangoutsMeet") ? "Permite criar links do Google Meet" : "Esta agenda não permite criar Google Meet")}</p>
                 <div className="flex flex-wrap gap-4 text-sm">
                   <label className="flex items-center gap-2">
                     <input

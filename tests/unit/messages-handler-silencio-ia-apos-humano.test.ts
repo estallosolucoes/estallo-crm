@@ -31,7 +31,7 @@ vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => ({}
 vi.mock("@/lib/automation/dados-do-formulario", () => ({ dadosDoFormularioDoContexto: async () => ({ dados: {}, origem: "form", origemDaAbordagem: "formulario" }) }));
 vi.mock("@/lib/ai/elegibilidade/autorizacao", () => ({ autorizarContatoParaIA: generation.authorize }));
 const pacing = vi.hoisted(() => ({ run: async () => {} }));
-vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: () => pacing.run(), checkDailyLimit: vi.fn() }));
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({ esperarRitmo: () => pacing.run() }));
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ storage: { from: () => ({ createSignedUrl: vi.fn() }) } }),

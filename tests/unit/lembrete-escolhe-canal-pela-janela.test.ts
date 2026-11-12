@@ -30,8 +30,7 @@ vi.mock("@/lib/automation/start-conversation", () => ({
     return "conversa-1";
   },
 }));
-vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: async () => null }));
-vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: async () => {} }));
+vi.mock("@/lib/messaging/ritmo-entre-envios", () => ({ esperarRitmo: async () => {} }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async () => ({ data: 0, error: null }),

@@ -81,6 +81,7 @@ export interface Lead {
     preview: string | null;
     last_message_at: string | null;
     unread: number;
+    channel?: string;
   } | null;
   score?: {
     probability: number;
@@ -127,15 +128,10 @@ export interface Lead {
    * já validados — só http/https.
    */
   contact_phone?: string;
+  contact_name?: string;
+  contact_has_avatar?: boolean;
   contact_email?: string;
   contact_links?: Array<{ tipo: string; href: string }>;
-  /**
-   * Derivado (não é coluna): os marcadores das CONVERSAS do contato deste
-   * negócio — a terceira caixa, "Tags da conversa" no painel do Inbox, onde a
-   * IA também escreve. União de TODAS as conversas do contato, não só da mais
-   * recente. Filtrar por ela é decisão do dono (doc 40, item 7, 19/09).
-   */
-  conversation_tags?: string[];
   /**
    * Derivado (não é coluna): as tarefas EM ABERTO presas a este negócio
    * (`crm_tasks.lead_id`), e quantas delas já passaram do prazo — o selo do
@@ -144,6 +140,12 @@ export interface Lead {
    * `lib/kanban/tarefas-no-quadro.ts`.
    */
   tarefas?: ResumoDasTarefas;
+  /**
+   * Derivado (não é coluna): os produtos do catálogo vinculados a este negócio
+   * (`crm_lead_products.product_id`, 0660) — é o que o filtro por produto do
+   * quadro lê. Ausente quando não há nenhum.
+   */
+  produtos_ids?: string[];
   created_at: string;
   updated_at: string;
   created_by_user_id: string | null;

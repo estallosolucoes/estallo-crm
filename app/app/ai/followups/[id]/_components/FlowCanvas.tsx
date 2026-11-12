@@ -48,50 +48,17 @@ import { Plus, X } from "@/lib/ui/icons";
 import { NodeConfigPanel } from "./NodeConfigPanel";
 import { EdgeConfigPanel } from "./EdgeConfigPanel";
 import { EtapasDoFluxoProvider, useEtapasDoFluxo } from "./EtapasDoFluxo";
+import { SaidaDeErroProvider } from "./SaidaDeErro";
+import { VariaveisDoFluxoProvider } from "./VariaveisDoFluxo";
+import { dependentesDoNo } from "@/lib/followup/variaveis-de-blocos";
 import { NodePalette } from "./NodePalette";
 import { PublishBar } from "./PublishBar";
 import { NODE_VISUALS, configPadraoDaAcao } from "./nodes/nodeVisuals";
-import { TriggerNode } from "./nodes/TriggerNode";
-import { WaitNode } from "./nodes/WaitNode";
-import { ConditionNode } from "./nodes/ConditionNode";
-import { ClassifyNode } from "./nodes/ClassifyNode";
-import { MatchReplyNode } from "./nodes/MatchReplyNode";
-import { RepeatNode } from "./nodes/RepeatNode";
-import { ActionNode } from "./nodes/ActionNode";
-import { EndNode } from "./nodes/EndNode";
-import { CollectNode } from "./nodes/CollectNode";
-import { InternalTaskNode } from "./nodes/InternalTaskNode";
-import { MoveLeadNode } from "./nodes/MoveLeadNode";
-import { EditLeadTagNode } from "./nodes/EditLeadTagNode";
-import { SkillNode } from "./nodes/SkillNode";
+import { nodeTypes } from "./nodes/node-types";
 
 const EMPTY_GRAPH: FlowGraph = { nodes: [], edges: [] };
 const DND_MIME = "application/x-followup-node-type";
 
-// Defined outside the component — React Flow warns (and re-mounts nodes) if
-// nodeTypes is a fresh object every render.
-const nodeTypes: NodeTypes = {
-  trigger: TriggerNode,
-  wait: WaitNode,
-  condition: ConditionNode,
-  ai_classify: ClassifyNode,
-  match_reply: MatchReplyNode,
-  repeat: RepeatNode,
-  action: ActionNode,
-  // `internal_task` estava na paleta, no schema, no publish e no motor — e não
-  // aqui (#1540): o React Flow caía no fallback da caixa desconhecida, sem
-  // rótulo e sem formulário. Completar o nó é esta linha mais o formulário do
-  // painel (`forms/InternalTaskForm`).
-  internal_task: InternalTaskNode,
-  // #2065 — as duas caixas novas da issue: sem estas linhas o React Flow cai
-  // no fallback da caixa desconhecida (o mesmo defeito do #1540 medido ali em
-  // cima), sem rótulo e sem formulário.
-  move_lead: MoveLeadNode,
-  edit_lead_tag: EditLeadTagNode,
-  end: EndNode,
-  collect: CollectNode,
-  skill: SkillNode,
-};
 
 interface Props {
   flowId: string;
@@ -115,7 +82,10 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   // As configurações do GRAFO (palavras-gatilho, teto de tentativas, prazo do
   // roteiro) não vivem em nó nenhum: sem este estado, salvar o rascunho as
   // apagava — `fromReactFlow` só conhece nós e arestas.
-  const [settings, setSettings] = useState<FlowGraph["settings"]>(initialData.draft_graph?.settings);
+  const [settings, setSettings] = useState<FlowGraph["settings"]>(
+    initialData.draft_graph?.settings,
+  );
+  const [executionContract] = useState(initialData.draft_graph?.execution_contract);
   const surface = initialData.surface ?? "followup";
   // Continue after the largest persisted suffix. Starting again at 1 makes a
   // newly-created node/edge reuse an existing React Flow key and visually
@@ -128,19 +98,25 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const liveGraph = useMemo(() => {
-    const base = fromReactFlow(nodes, edges);
+    const base = fromReactFlow(nodes, edges, {
+      ...(executionContract !== undefined ? { execution_contract: executionContract } : {}),
+    });
     return settings ? { ...base, settings } : base;
-  }, [nodes, edges, settings]);
+  }, [nodes, edges, settings, executionContract]);
   const dirty = useMemo(() => !graphsEqual(liveGraph, savedGraph), [liveGraph, savedGraph]);
 
   const markNodeErrors = useCallback(
     (errorsByNode: Record<string, string[]>) => {
-      setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, errors: errorsByNode[n.id] } })));
+      setNodes((nds) =>
+        nds.map((n) => ({ ...n, data: { ...n.data, errors: errorsByNode[n.id] } })),
+      );
     },
     [setNodes],
   );
   const clearNodeErrors = useCallback(() => {
-    setNodes((nds) => nds.map((n) => (n.data.errors ? { ...n, data: { ...n.data, errors: undefined } } : n)));
+    setNodes((nds) =>
+      nds.map((n) => (n.data.errors ? { ...n, data: { ...n.data, errors: undefined } } : n)),
+    );
   }, [setNodes]);
 
   // Node and edge selection are mutually exclusive — opening one panel closes the other's.
@@ -159,14 +135,18 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
 
   const updateNodeData = useCallback(
     (id: string, patch: Partial<RFNodeData>) => {
-      setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)));
+      setNodes((nds) =>
+        nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)),
+      );
     },
     [setNodes],
   );
   const updateEdgeCondition = useCallback(
     (id: string, condition: FlowEdge["condition"]) => {
       setEdges((eds) =>
-        eds.map((e) => (e.id === id ? { ...e, data: { priority: e.data?.priority ?? 0, condition } } : e)),
+        eds.map((e) =>
+          e.id === id ? { ...e, data: { priority: e.data?.priority ?? 0, condition } } : e,
+        ),
       );
     },
     [setEdges],
@@ -174,8 +154,12 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
-  const selectedEdgeSource = selectedEdge ? (nodes.find((n) => n.id === selectedEdge.source) ?? null) : null;
-  const selectedEdgeTarget = selectedEdge ? (nodes.find((n) => n.id === selectedEdge.target) ?? null) : null;
+  const selectedEdgeSource = selectedEdge
+    ? (nodes.find((n) => n.id === selectedEdge.source) ?? null)
+    : null;
+  const selectedEdgeTarget = selectedEdge
+    ? (nodes.find((n) => n.id === selectedEdge.target) ?? null)
+    : null;
 
   // Wire label: derived at render time from `data.condition`, never persisted on the edge
   // itself — `condition` alone stays the source of truth the mapper round-trips.
@@ -309,7 +293,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     window.setTimeout(() => {
       void fitView({ padding: 0.2, duration: 200 });
     }, 0);
-  }, [nodes, liveGraph, setNodes, fitView]);
+  }, [nodes, liveGraph, setNodes, fitView, nomes]);
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -344,7 +328,9 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           canAutoFit={nodes.length > 0}
         />
       )}
-      <div className="flex flex-1 overflow-hidden">
+      {/* `min-h-0`: sem ele, numa coluna flex, a altura mínima é a do conteúdo — a paleta longa (busca + categorias)
+          esticava a página, e o canto do canvas ia parar debaixo do cabeçalho fixo. A paleta rola dentro do espaço dela. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <NodePalette onAdd={onPaletteAdd} surface={surface} />
         {/* Abaixo de `lg` a paleta fixa de 224px não cabe do lado do canvas —
             vira um drawer, disparado por este botão flutuante. */}
@@ -362,7 +348,12 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           </SheetContent>
         </Sheet>
 
-        <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
+        <div
+          className="relative h-full flex-1"
+          data-testid="flow-canvas"
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edgesForRender}
@@ -408,7 +399,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
         */}
         {selectedNode && (
           <aside
-            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[75vh] flex-col overflow-hidden rounded-t-lg border-t border-border bg-surface shadow-lg lg:static lg:z-auto lg:h-full lg:w-96 lg:max-h-none lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none"
+            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[75vh] flex-col overflow-hidden rounded-t-lg border-t border-border bg-surface shadow-lg lg:static lg:z-auto lg:h-full lg:max-h-none lg:w-96 lg:shrink-0 lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-none"
             data-testid="node-config-sheet"
           >
             {/* Barra própria pro X, não sobreposta ao conteúdo — um botão
@@ -426,24 +417,27 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 pt-0 lg:pt-4">
-              <NodeConfigPanel
-                key={selectedNode.id}
-                node={selectedNode}
-                onChange={(patch) => updateNodeData(selectedNode.id, patch)}
-                onDelete={() => deleteNode(selectedNode.id)}
-                ramosLigados={ramosLigadosDoSelecionado}
-                surface={surface}
-                flowId={flowId}
-                settings={settings}
-                onSettingsChange={setSettings}
-              />
+              <VariaveisDoFluxoProvider grafo={liveGraph} noId={selectedNode.id} flowId={flowId}>
+                <NodeConfigPanel
+                  key={selectedNode.id}
+                  node={selectedNode}
+                  onChange={(patch) => updateNodeData(selectedNode.id, patch)}
+                  onDelete={() => deleteNode(selectedNode.id)}
+                  dependentes={dependentesDoNo(liveGraph, selectedNode.id).map((n) => n.label)}
+                  ramosLigados={ramosLigadosDoSelecionado}
+                  surface={surface}
+                  flowId={flowId}
+                  settings={settings}
+                  onSettingsChange={setSettings}
+                />
+              </VariaveisDoFluxoProvider>
             </div>
           </aside>
         )}
 
         {selectedEdge && (
           <aside
-            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[75vh] flex-col overflow-hidden rounded-t-lg border-t border-border bg-surface shadow-lg lg:static lg:z-auto lg:h-full lg:w-96 lg:max-h-none lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none"
+            className="fixed inset-x-0 bottom-0 z-40 flex max-h-[75vh] flex-col overflow-hidden rounded-t-lg border-t border-border bg-surface shadow-lg lg:static lg:z-auto lg:h-full lg:max-h-none lg:w-96 lg:shrink-0 lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-none"
             data-testid="edge-config-sheet"
           >
             <div className="flex shrink-0 justify-end p-2 lg:hidden">
@@ -478,7 +472,9 @@ export function FlowCanvas(props: Props) {
   return (
     <ReactFlowProvider>
       <EtapasDoFluxoProvider>
-        <FlowCanvasInner {...props} />
+        <SaidaDeErroProvider habilitada={(props.initialData.surface ?? "followup") !== "atendimento"}>
+          <FlowCanvasInner {...props} />
+        </SaidaDeErroProvider>
       </EtapasDoFluxoProvider>
     </ReactFlowProvider>
   );

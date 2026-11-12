@@ -9,7 +9,7 @@
  * A regra de quem-vê-o-quê é do registro e está coberta em
  * `navegacao-registry.test.ts`; aqui é a superfície.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -58,6 +58,9 @@ function comoPapel(role: ActiveOrg["role"]) {
 }
 
 afterEach(cleanup);
+// Estes casos olham o INVENTÁRIO do menu: tudo aberto, como quem já expandiu
+// os grupos. O padrão fechado (IA, Canais, Análise) tem caso próprio no fim.
+beforeEach(() => window.localStorage.setItem("sidebar-grupos-fechados", "[]"));
 
 describe("Sidebar agrupado", () => {
   it("renderiza os títulos de grupo na ordem de uso", () => {
@@ -101,8 +104,10 @@ describe("Sidebar agrupado", () => {
     expect(screen.queryByRole("link", { name: "Roteadores" })).toBeNull();
     cleanup();
     // Recolhido, o contador vira ponto — é o componente que decide, com esta dica.
+    // (Casos é do grupo IA, que não aparece no rail recolhido do Estallo.)
     render(<Sidebar collapsed />);
-    expect(screen.getByTestId("marcador-casos")).toHaveAttribute("data-compacto", "true");
+    expect(screen.getByTestId("marcador-fila")).toHaveAttribute("data-compacto", "true");
+    expect(screen.queryByTestId("marcador-casos")).toBeNull();
   });
 
   it("e os dois itens de funil não disputam o mesmo nome", () => {
@@ -171,6 +176,24 @@ describe("Sidebar agrupado", () => {
     render(<Sidebar collapsed />);
     expect(screen.queryAllByRole("heading")).toHaveLength(0);
     expect(screen.getByRole("link", { name: /Inbox/ })).toBeTruthy();
+  });
+
+  it("sem preferência salva, IA, Canais e Análise começam fechados", () => {
+    window.localStorage.removeItem("sidebar-grupos-fechados");
+    comoPapel("admin");
+    render(<Sidebar collapsed={false} />);
+    for (const grupo of ["Agente de IA", "Canais", "Análise"]) {
+      expect(screen.getByRole("button", { name: new RegExp(grupo) })).toHaveAttribute("aria-expanded", "false");
+    }
+    expect(screen.getByRole("button", { name: /Atendimento/ })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("recolhido, só mostra Atendimento e CRM", () => {
+    comoPapel("admin");
+    render(<Sidebar collapsed />);
+    expect(screen.getByRole("link", { name: /Inbox/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Funis/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Ver tudo em IA/ })).toBeNull();
   });
 
   it("marca a rota atual com aria-current", () => {

@@ -85,7 +85,7 @@ async function loginGerente(page: Page, creds: CredsDoNascimento): Promise<void>
 }
 
 async function conectar(page: Page, origem: string, destino: string): Promise<void> {
-  const fonte = page.locator(`.react-flow__node[data-id="${origem}"] .react-flow__handle.source`).first();
+  const fonte = page.locator(`.react-flow__node[data-id="${origem}"] .react-flow__handle.source:not([data-handleid="on_error"])`).first();
   const alvo = page.locator(`.react-flow__node[data-id="${destino}"] .react-flow__handle.target`);
   const a = await fonte.boundingBox();
   const b = await alvo.boundingBox();
@@ -212,16 +212,17 @@ test("liga o módulo, cria um roteiro pela tela, o cliente responde pelo WhatsAp
       await dialogo.getByLabel("Nome").fill(NOME_DO_ROTEIRO);
       await dialogo.getByRole("button", { name: "Criar fluxo" }).click();
       await expect(dialogo).not.toBeVisible();
-      await page.locator("li", { hasText: NOME_DO_ROTEIRO }).getByRole("link").click();
+      await page.locator("li", { hasText: NOME_DO_ROTEIRO }).getByRole("link").first().click();
       await page.waitForURL(/\/app\/ai\/atendimento\/[0-9a-f-]+$/);
       await expect(page.locator(".react-flow")).toBeVisible();
 
       // A paleta do roteiro: quatro caixas, medidas no DOM — nenhuma do relógio.
       const paleta = page.getByTestId("node-palette").locator('[data-testid^="palette-add-"]');
       await expect(paleta).toHaveCount(4);
+      // O CONJUNTO oferecido no roteiro; a ordem segue as categorias da paleta (Fase 5).
       expect(
-        await paleta.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid"))),
-      ).toEqual(["palette-add-trigger", "palette-add-collect", "palette-add-skill", "palette-add-end"]);
+        (await paleta.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")))).sort(),
+      ).toEqual(["palette-add-collect", "palette-add-end", "palette-add-skill", "palette-add-trigger"]);
 
       await page.getByTestId("palette-add-trigger").click();
       await page.getByTestId("palette-add-collect").click();

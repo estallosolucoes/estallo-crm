@@ -32,7 +32,6 @@ const conversation: ConversationWithContact = {
   unread_count_for_assignee: 0,
   is_group: false,
   group_chat_id: null,
-  tags: [],
   metadata: {},
   snooze_until: null,
   created_at: "2026-09-08T12:00:00.000Z",

@@ -2,32 +2,20 @@ import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
-import { Relatorios } from "./_components/Relatorios";
+import { ActivityReportClient } from "./_components/ActivityReportClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Atividades" };
 
 /**
- * As duas abas são endereçáveis, como em `/app/team`: quem mandar o link da
- * aba Por etiqueta (`?aba=etiquetas`) abre nela. Valor desconhecido cai na aba
- * de sempre em vez de deixar as duas fechadas.
- *
- * `aba` em português porque é o que aparece na barra de endereço de quem usa
- * o produto — a mesma convenção do time e das telas de settings.
+ * Relatório de atividades. A aba "Por etiqueta" saiu com a 0659: ela só existia
+ * sobre a etiqueta da CONVERSA, e o Estallo deixou de etiquetar conversas.
  */
-const ABAS: Record<string, string> = { atividades: "atividades", etiquetas: "etiquetas" };
-
-export default async function ActivitiesReportPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ aba?: string }>;
-}) {
+export default async function ActivitiesReportPage() {
   const user = await requireAuth();
   // `t` local e não o hook: componente de SERVIDOR — o idioma já vem resolvido
   // pela cadeia pessoa → organização → padrão em `lib/auth/server.ts`.
   const t = (texto: string) => traduzir(texto, user.idioma);
-  const { aba } = await searchParams;
-  const abaInicial = ABAS[aba ?? ""] ?? "atividades";
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -38,7 +26,7 @@ export default async function ActivitiesReportPage({
         </p>
       </header>
 
-      <Relatorios abaInicial={abaInicial} />
+      <ActivityReportClient />
     </div>
   );
 }

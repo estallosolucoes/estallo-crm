@@ -30,6 +30,35 @@ const RAIZ = process.cwd();
 const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
 const REGUA: Regua = extrairRegua(CSS);
 
+/**
+ * DÍVIDA DECLARADA — tema escuro da identidade Estallo (decisão do dono, 06/11/2026).
+ *
+ * No tema escuro o accent do produto é o stop 700 (`#085a7f`), e o `accent-hover` o 800: azuis
+ * escuros sobre fundos escuros (`#17232c`, `#26333d`, `#34424e`). Como COMPONENTE (borda, ícone,
+ * seleção) eles ficam entre 1,0 e 2,1 contra os fundos, abaixo do piso de 3:1. No tema claro todos
+ * os 18 pares passam. O dono manteve o texto BRANCO sobre o azul (CSS, 14/10/2026) e decidiu deixar
+ * o escuro como está; medimos cinco azuis e nenhum cumpre ao mesmo tempo 3:1 contra os fundos e
+ * texto branco a 4,5:1 — então não é falha de implementação, é uma escolha de design com custo.
+ *
+ * A lista é a medida de HOJE e **só encolhe**: se um par passar a cumprir o piso (ou um novo
+ * reprovar), `a paleta Estallo cabe nos pisos` falha e manda ajustar esta lista, em vez de o
+ * defeito crescer ou sumir em silêncio.
+ */
+const DIVIDA_DO_ESCURO = [
+  "--color-accent×--color-bg",
+  "--color-accent×--color-surface",
+  "--color-accent×--color-surface-elevated",
+  "--color-accent×--color-accent-soft@--color-bg",
+  "--color-accent×--color-accent-soft@--color-surface",
+  "--color-accent×--color-accent-soft@--color-surface-elevated",
+  "--color-accent-hover×--color-bg",
+  "--color-accent-hover×--color-surface",
+  "--color-accent-hover×--color-surface-elevated",
+  "--color-accent-hover×--color-accent-soft@--color-bg",
+  "--color-accent-hover×--color-accent-soft@--color-surface",
+  "--color-accent-hover×--color-accent-soft@--color-surface-elevated",
+] as const;
+
 const rampaChapada = (hex: string): Rampa =>
   Array.from({ length: 11 }, () => hex) as unknown as Rampa;
 
@@ -58,9 +87,9 @@ const FIXTURE = [
 describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão", () => {
   it("acha os dois temas, a rampa do produto e os neutros", () => {
     expect(REGUA.rampaDoProduto).toHaveLength(11);
-    expect(REGUA.rampaDoProduto[6]).toBe("#506d48");
+    expect(REGUA.rampaDoProduto[6]).toBe("#0b6e9a");
     expect(REGUA.claro.neutros).toHaveLength(11);
-    expect(REGUA.escuro.neutros[9]).toBe("#161510");
+    expect(REGUA.escuro.neutros[9]).toBe("#17232c");
     expect(REGUA.claro.base.map((b) => b.chave)).toEqual([
       "--color-bg",
       "--color-surface",
@@ -69,13 +98,12 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
   });
 
   it("alcança o anel de foco, que mora em @layer base e uma lista à mão perderia", () => {
-    // ESTE é o par do relato: `accent-600` contra bg dá 5,51 e passaria qualquer gate
-    // ingênuo, mas quem pinta o anel é `accent-500` — e ele dá 3,79. Uma régua que só
-    // olhasse o stop da semente deixaria o anel pousar em ~2,07 com o gate verde.
+    // O anel do tema claro é o `accent-600` (o stop da semente). Já o do escuro é o `accent-400`,
+    // outro stop: uma régua que só olhasse o stop da semente mediria o anel errado.
     const foco = REGUA.claro.papeis.find((p) => p.token.includes(":focus-visible"));
     expect(foco, "o anel de foco sumiu da régua").toBeDefined();
     expect(foco?.tipo).toBe("componente");
-    expect(foco?.fonte).toMatchObject({ tipo: "grau", indice: 5 });
+    expect(foco?.fonte).toMatchObject({ tipo: "grau", indice: 6 });
 
     const focoEscuro = REGUA.escuro.papeis.find((p) => p.token.includes(":focus-visible"));
     expect(focoEscuro?.fonte).toMatchObject({ tipo: "grau", indice: 4 });
@@ -119,16 +147,26 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     const razao = (papel: string, superficie: string) =>
       pares.find((p) => p.papel === papel && p.superficie === superficie)?.razao ?? 0;
 
-    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(5.51, 2);
-    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(3.79, 2);
-    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(3.6, 2);
+    // Estallo Blue `#0b6e9a` contra `#f8fafb` e `#f1f4f6`: 5,4048 e 5,1226, conferidos com a
+    // fórmula WCAG escrita à parte (não com `razaoDeContraste`).
+    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(5.4, 1);
+    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(5.4, 1);
+    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(5.12, 2);
   });
 
-  it("a Sage inteira, como está no CSS, cabe nos pisos", () => {
-    for (const tema of [REGUA.claro, REGUA.escuro]) {
-      const reprovas = medirPares(tema, REGUA.rampaDoProduto, 0).filter((p) => !p.passa);
-      expect(reprovas, `${tema.nome}: ${JSON.stringify(reprovas)}`).toEqual([]);
-    }
+  it("a paleta Estallo cabe nos pisos no claro; no escuro, só a dívida declarada reprova", () => {
+    const claro = medirPares(REGUA.claro, REGUA.rampaDoProduto, 0).filter((p) => !p.passa);
+    expect(claro, `claro: ${JSON.stringify(claro)}`).toEqual([]);
+
+    const escuro = medirPares(REGUA.escuro, REGUA.rampaDoProduto, 0)
+      .filter((p) => !p.passa)
+      .map((p) => `${p.papel}×${p.superficie}`)
+      .sort();
+    expect(
+      escuro,
+      "a dívida do tema escuro mudou: se um par passou a cumprir o piso, tire-o de DIVIDA_DO_ESCURO; " +
+        "se um novo reprovou, é regressão",
+    ).toEqual([...DIVIDA_DO_ESCURO].sort());
   });
 });
 
@@ -205,12 +243,21 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
         // Guarda de vacuidade POR SEMENTE: um `pares: []` faria o filtro abaixo devolver
         // lista vazia e o teste passar sem ter medido nada.
         expect(tema.pares.length, `${semente}: nenhum par medido`).toBeGreaterThanOrEqual(18);
-        const reprovas = tema.pares.filter((p) => !p.passa);
+        // CONSEQUÊNCIA da dívida do tema escuro (ver DIVIDA_DO_ESCURO): o accent escuro do produto é
+        // o stop 700, então o motor precisa recuar de 2 a 6 stops para o accent da marca cumprir o
+        // piso de componente, e a regra de seleção do escuro (`accent-700` com texto `accent-50`)
+        // colapsa nas pontas da rampa (razão 1,2 a 1,9 contra 4,5). Só esse par é isentado, só no
+        // escuro, e o teste confere abaixo que ele é, de fato, o ÚNICO que reprova.
+        const ehSelecaoDoEscuro = (papel: string) => tema === marca.escuro && papel.includes("::selection");
+        const reprovas = tema.pares.filter((p) => !p.passa && !ehSelecaoDoEscuro(p.papel));
         expect(
           reprovas,
           `${semente} · grau ${tema.grauDoAccent}: ` +
             reprovas.map((r) => `${r.papel}×${r.superficie}=${r.razao.toFixed(2)}<${r.piso}`).join(", "),
         ).toEqual([]);
+        if (tema === marca.claro) {
+          expect(tema.pares.filter((p) => !p.passa), `${semente}: o claro não tem isenção`).toEqual([]);
+        }
       }
     }
   });
@@ -224,15 +271,18 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
         .map((t) => `${semente}/${t.deslocamento}`),
     );
     expect(deslocados.length).toBeGreaterThan(0);
-    expect(deslocados).toHaveLength(13);
+    // 20 hoje (eram 13 com o accent escuro no stop 400): o escuro recua de 2 a 6 stops em quase toda semente.
+    expect(deslocados).toHaveLength(20);
 
     // O amarelo é o caso que NÃO tem escapatória física: nenhum stop claro de amarelo
     // alcança 3:1 contra `#ffffff`. Se ele parar de andar, a caminhada quebrou.
     const amarelo = resultados.find((r) => r.semente === "#f5c518")!.marca;
     expect(amarelo.claro.deslocamento).toBeGreaterThan(0);
-    expect(amarelo.claro.grauDoAccent).toBe(900);
-    // …e o hex EXATO do cliente reaparece como accent do tema escuro.
-    expect(amarelo.escuro.accent).toBe("#f5c518");
+    expect(amarelo.claro.grauDoAccent).toBe(800);
+    // No escuro o accent é um stop da rampa do amarelo, mas já não é o hex EXATO do cliente: o motor
+    // recuou 2 stops (consequência da dívida do escuro), e `#f5c518` fica no stop 600.
+    expect(rampaDeSemente("#f5c518")).toContain(amarelo.escuro.accent);
+    expect(amarelo.escuro.deslocamento).toBe(-2);
   });
 
   it("nunca torce o accent: ele é sempre um stop da rampa da marca", () => {
@@ -303,35 +353,29 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
 });
 
 describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
-  it("a Sage pura já nasce colidida e dispara a reconciliação (controle positivo)", () => {
-    // `--color-success` do bloco escuro é `#82a077`, a MESMA string de
-    // `--color-accent-400` (globals.css:167 e :193). Δ = 0,0°. Se o mecanismo não
-    // disparasse aqui, ele não dispararia em lugar nenhum.
-    expect(REGUA.escuro.semanticas.find((s) => s.nome === "success")?.hex).toBe(
-      REGUA.rampaDoProduto[4],
-    );
+  it("uma semente verde colide com o success do produto e dispara a reconciliação (controle positivo)", () => {
+    // Com a paleta Estallo o `success` escuro (`#52d6a6`) já não é igual a nenhum stop do accent azul
+    // do produto. O controle positivo passa a ser uma semente que cai em cima dele: o verde Sage
+    // `#506d48` colide com `success` nos dois temas. Se o mecanismo não disparasse aqui, não
+    // disparava em lugar nenhum.
+    expect(REGUA.escuro.semanticas.find((s) => s.nome === "success")?.hex).toBe("#52d6a6");
 
     const sage = derivarMarca("#506d48", REGUA);
     const movidas = sage.motivos.filter((m) => m.codigo === "semantica_deslocada");
     expect(movidas.length).toBeGreaterThan(0);
-    expect(movidas).toHaveLength(3);
-    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual([
-      "claro/error",
-      "escuro/warning",
-      "escuro/error",
-    ]);
+    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual(["claro/success", "escuro/success"]);
   });
 
   it("devolve sinal — e não distorção — quando não há rotação que resolva", () => {
     // O laço de retorno do invariante 7 da doutrina Sistema Vivo: a peça diz o que muda
-    // no sistema quando ela não consegue resolver. Na Sage, `success` do tema escuro é
-    // literalmente o accent; girar até 60° ou colide com o accent ou colide com `info`.
-    const sage = derivarMarca("#506d48", REGUA);
-    const sinais = sage.motivos.filter(
+    // no sistema quando ela não consegue resolver. Com o vermelho `#dc2626`, o `warning` do
+    // tema claro não tem rotação que o separe do accent sem colidir com outra semântica.
+    const vermelho = derivarMarca("#dc2626", REGUA);
+    const sinais = vermelho.motivos.filter(
       (m) => m.codigo === "redundancia_nao_cromatica_necessaria",
     );
     expect(sinais).toHaveLength(1);
-    expect(sinais[0]).toMatchObject({ tema: "escuro", alvo: "success" });
+    expect(sinais[0]).toMatchObject({ tema: "claro", alvo: "warning" });
     expect(sinais[0]!.detalhe).toMatch(/ícone|rótulo/);
   });
 
@@ -375,8 +419,8 @@ describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
         }
       }
     }
-    // Guarda de vacuidade do run inteiro: 23 movimentos medidos nas 16 sementes.
-    expect(movimentosNoRun).toBe(23);
+    // Guarda de vacuidade do run inteiro: 22 movimentos medidos nas 16 sementes.
+    expect(movimentosNoRun).toBe(22);
   });
 });
 
@@ -407,12 +451,12 @@ describe("marca acromática — o accent do produto permanece", () => {
         separacaoDoNeutro(regua, tema.grauDoAccent, tema.accent),
       ).toBeGreaterThanOrEqual(PISO_DE_SEPARACAO_DO_NEUTRO);
     }
-    // Os números exatos, fixados: 0,0681 no claro (accent-600 × neutral-600) e 0,1994 no
-    // escuro (accent-400 × neutral-400). São eles que mostram por que o piso do briefing
+    // Os números exatos, fixados: 0,0761 no claro (accent-600 × neutral-600) e 0,1608 no
+    // escuro (accent-300 × neutral-300). São eles que mostram por que o piso do briefing
     // (8, na convenção ×100 — ou seja 0,08 aqui) não podia ser aceito sem medir: ele
     // reprovaria o controle positivo do próprio produto no tema claro.
-    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.0681, 4);
-    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.1994, 4);
+    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.0761, 4);
+    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.1608, 4);
     expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeLessThan(0.08);
 
     // Controle negativo: um accent cinza reprovaria as duas guardas. Sem esta linha, os
@@ -478,9 +522,16 @@ describe("ramo degradado — rampas que não têm solução", () => {
 
   it("uma rampa boa NÃO cai no ramo degradado", () => {
     // Sem este controle negativo, "o ramo é alcançável" não distinguiria um algoritmo
-    // que sempre degrada.
-    for (const tema of [REGUA.claro, REGUA.escuro] as TemaDaRegua[]) {
-      expect(escolherAccent(REGUA.rampaDoProduto, tema).motivo).toBeNull();
-    }
+    // que sempre degrada. No claro a rampa do produto cumpre os pisos sem deslocamento.
+    expect(escolherAccent(REGUA.rampaDoProduto, REGUA.claro as TemaDaRegua).motivo).toBeNull();
+  });
+
+  it("DÍVIDA DECLARADA: no escuro a rampa do produto cai no ramo degradado (ver DIVIDA_DO_ESCURO)", () => {
+    // Com o accent escuro no stop 700 nenhum deslocamento da rampa cumpre ao mesmo tempo o piso
+    // de componente e o par de seleção. Quando a dívida for paga este caso passa a devolver
+    // `null` e deve ser trocado de volta pelo controle negativo nos dois temas.
+    expect(escolherAccent(REGUA.rampaDoProduto, REGUA.escuro as TemaDaRegua).motivo).toBe(
+      "sem_deslocamento_que_satisfaz",
+    );
   });
 });

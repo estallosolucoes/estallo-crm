@@ -106,7 +106,6 @@ export function createMeetDeliveryHandler(deps: {
           jobId: job.id,
           meetingDelivery: context,
           channelSessionId: row.channel_session_id,
-          crmDailyLimit: row.daily_message_limit,
           body: textoDoCompromisso({
             // O motivo viaja no payload do job, posto por quem enfileirou. Sem
             // ele, `primeiro_envio` — o comportamento de antes desta mudança, e

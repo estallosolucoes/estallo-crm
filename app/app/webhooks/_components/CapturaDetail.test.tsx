@@ -19,8 +19,10 @@ import type { LeadCaptureRow } from "@/hooks/webhooks/useLeadCaptures";
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
-vi.mock("@/app/actions/settings/updatePipelineConfig", () => ({
-  updatePipelineConfig: vi.fn(async () => ({ ok: true })),
+// O campo nasce no cadastro central (POST /api/v1/custom-fields), visível só neste funil — o fork trocou a
+// regravação de `settings.fields` do funil (updatePipelineConfig) por esta rota (b32b7ab08).
+vi.mock("@/lib/api/client", () => ({
+  apiClient: { post: vi.fn(async () => ({})) },
 }));
 
 const FONTE = "00000000-0000-4000-8000-0000000000f1";
@@ -52,7 +54,7 @@ globalThis.ResizeObserver = class {
   disconnect() {}
 };
 
-import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
+import { apiClient } from "@/lib/api/client";
 import { CapturaDetail } from "./CapturaDetail";
 
 function captura(fields: Record<string, unknown>): LeadCaptureRow {
@@ -85,7 +87,7 @@ function abrir(c: LeadCaptureRow) {
 }
 
 beforeEach(() => {
-  vi.mocked(updatePipelineConfig).mockClear();
+  vi.mocked(apiClient.post).mockClear();
   estado.fontes = [{ id: FONTE, default_pipeline_id: FUNIL }];
   estado.funis = [
     {
@@ -112,28 +114,30 @@ describe("campo novo", () => {
     expect((screen.getByLabelText("Rótulo") as HTMLInputElement).value).toBe("Contato email");
   });
 
-  it("grava o que já existia MAIS o campo novo", async () => {
+  it("cadastra só o campo novo no cadastro central, visível neste funil", async () => {
     abrir(captura({ cidade: "Goiânia" }));
     fireEvent.click(screen.getByText("Cadastrar como campo do lead"));
     fireEvent.change(screen.getByLabelText("Rótulo"), { target: { value: "Cidade" } });
     fireEvent.click(screen.getByText("Salvar"));
-    await waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
-    expect(updatePipelineConfig).toHaveBeenCalledWith(FUNIL, {
-      fields: [
-        { key: "servico", label: "Serviço que precisa", type: "select" },
-        { key: "cidade", label: "Cidade", type: "text" },
-      ],
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1));
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/custom-fields", {
+      entity: "lead",
+      key: "cidade",
+      label: "Cidade",
+      type: "text",
+      visivel_global: false,
+      funis_visiveis: [FUNIL],
     });
   });
 
-  it("parte da leitura FRESCA: o campo que outro admin acabou de cadastrar não some", async () => {
+  it("parte da leitura FRESCA: o campo que outro admin acabou de cadastrar não é cadastrado de novo", async () => {
     estado.funisFrescos = [
       {
         id: FUNIL,
         settings: {
           fields: [
             { key: "servico", label: "Serviço que precisa", type: "select" },
-            { key: "orcamento", label: "Orçamento", type: "number" },
+            { key: "cidade", label: "Cidade", type: "text" },
           ],
         },
       },
@@ -141,9 +145,8 @@ describe("campo novo", () => {
     abrir(captura({ cidade: "Goiânia" }));
     fireEvent.click(screen.getByText("Cadastrar como campo do lead"));
     fireEvent.click(screen.getByText("Salvar"));
-    await waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
-    const fields = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1].fields ?? [];
-    expect(fields.map((f) => f.key)).toEqual(["servico", "orcamento", "cidade"]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it("rótulo vazio não grava nada", async () => {
@@ -152,7 +155,7 @@ describe("campo novo", () => {
     fireEvent.change(screen.getByLabelText("Rótulo"), { target: { value: "   " } });
     fireEvent.click(screen.getByText("Salvar"));
     await new Promise((r) => setTimeout(r, 20));
-    expect(updatePipelineConfig).not.toHaveBeenCalled();
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
 

@@ -33,16 +33,16 @@ const buttonVariants = cva(
     // E a subida arrastadas, que é o oposto do que o recuo comunica.
     "transition-[background-color,border-color,color,box-shadow]",
     "duration-fast ease-out",
-    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     "disabled:pointer-events-none disabled:opacity-50",
-    "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+    "[&_svg]:pointer-events-none [&_svg]:size-4.5 [&_svg]:shrink-0",
     "active:translate-y-px",
   ].join(" "),
   {
     variants: {
       variant: {
-        primary: "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
-        default: "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+        primary: "bg-accent text-accent-foreground shadow-xs hover:bg-accent-hover dark:bg-accent-700 dark:hover:bg-accent-800",
+        default: "bg-accent text-accent-foreground shadow-xs hover:bg-accent-hover dark:bg-accent-700 dark:hover:bg-accent-800",
         secondary:
           "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
         outline:

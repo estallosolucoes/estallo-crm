@@ -15,6 +15,7 @@ import {
   type RascunhoDaEdicao,
 } from "@/lib/catalogo/edicao-do-produto";
 import type { Produto } from "@/lib/schemas/produtos";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 /**
  * O FORMULÁRIO DE EDIÇÃO — o que a tela nunca teve.
@@ -108,16 +109,6 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
           />
         </label>
         <label className="text-sm">
-          {t("Marca")}
-          <input
-            value={rascunho.marca}
-            onChange={(e) => setRascunho({ ...rascunho, marca: e.target.value })}
-            className="mt-1 h-9 w-full rounded-md border px-3"
-            disabled={desabilitado}
-            data-testid="edicao-marca"
-          />
-        </label>
-        <label className="text-sm">
           {t("Categoria")}
           <input
             value={rascunho.categoria}
@@ -129,24 +120,13 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
         </label>
         <label className="text-sm">
           {t("Preço de venda")}
-          <input
+          <CampoDeDinheiro
             value={rascunho.preco}
             onChange={(e) => setRascunho({ ...rascunho, preco: e.target.value })}
-            placeholder="5.499,00"
-            className="mt-1 h-9 w-full rounded-md border px-3"
+            containerClassName="mt-1 w-full"
+            className="h-9 w-full rounded-md border px-3"
             disabled={desabilitado}
             data-testid="edicao-preco"
-          />
-        </label>
-        <label className="text-sm">
-          {t("Custo")} <span className="text-muted-foreground">{t("(opcional)")}</span>
-          <input
-            value={rascunho.custo}
-            onChange={(e) => setRascunho({ ...rascunho, custo: e.target.value })}
-            placeholder="4.100,00"
-            className="mt-1 h-9 w-full rounded-md border px-3"
-            disabled={desabilitado}
-            data-testid="edicao-custo"
           />
         </label>
       </div>

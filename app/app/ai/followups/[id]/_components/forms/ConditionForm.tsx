@@ -30,9 +30,11 @@ import {
 } from "@/lib/followup/vocabulario";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { etapasPorFunil, nomeDaEtapa } from "@/hooks/followup/useEtapasDeGatilho";
+import { useProdutosDoCatalogo } from "@/hooks/followup/useProdutosDoCatalogo";
 import { useT } from "@/hooks/i18n/useT";
 
 import { useEtapasDoFluxo } from "../EtapasDoFluxo";
+import { InserirVariavel } from "../VariaveisDoFluxo";
 import { regraEmBranco } from "../nodes/nodeVisuals";
 import type { ConfigOf } from "./shared";
 
@@ -312,6 +314,34 @@ export function ConditionForm({
                 falhou={etapasFalharam}
                 onEscolher={(stageId) => trocarValor(idx, stageId)}
               />
+            ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "variavel" ? (
+              // Fase 5: o dado vem de um bloco ANTERIOR (o seletor só oferece esses); o valor só existe quando o
+              // operador compara com alguma coisa — «tem valor» não pede nada.
+              <div className="space-y-2" data-testid={`regra-variavel-${idx}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="min-w-0 truncate font-mono text-[11px] text-text-muted">
+                    {check.source ?? t("Nenhum dado escolhido")}
+                  </code>
+                  <InserirVariavel
+                    soBlocos
+                    onInserir={(marca) => {
+                      const next = checks.map((c, i) => (i === idx ? { ...c, source: marca } : c));
+                      setChecks(next);
+                      commit({ checks: next });
+                    }}
+                  />
+                </div>
+                {check.op !== "exists" && check.op !== "not_exists" && (
+                  <Input
+                    aria-label={t("Valor")}
+                    placeholder={t("Valor")}
+                    value={String(check.value)}
+                    onChange={(e) => trocarValor(idx, e.target.value)}
+                  />
+                )}
+              </div>
+            ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "produto" ? (
+              <ValorDeProduto valor={String(check.value)} onEscolher={(nome) => trocarValor(idx, nome)} />
             ) : CAMPOS_DA_CONDICAO[check.field].tipoDeValor === "numero" ? (
               <Input
                 aria-label={t("Valor")}
@@ -369,6 +399,50 @@ export function ConditionForm({
       </Button>
       {error && <p className="text-xs text-error-fg">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * O seletor de produto da regra: lista o catálogo da organização. Um nome gravado que já não está
+ * na lista (produto renomeado ou apagado, ou valor digitado antes do seletor) continua escolhido e
+ * ganha um AVISO — o motor compara o nome do item do negócio, então a regra só casa com aquele nome.
+ */
+function ValorDeProduto({ valor, onEscolher }: { valor: string; onEscolher: (nome: string) => void }) {
+  const t = useT();
+  const { produtos, carregando, falhou } = useProdutosDoCatalogo();
+  const conhecido = produtos.some((p) => p.nome === valor);
+  const solto = !carregando && !falhou && valor !== "" && !conhecido;
+  const semProdutos = !carregando && !falhou && produtos.length === 0;
+
+  return (
+    <>
+      <Select value={valor} onValueChange={onEscolher} disabled={carregando || falhou || (semProdutos && valor === "")}>
+        <SelectTrigger aria-label={t("Valor")} aria-invalid={solto}>
+          <SelectValue placeholder={carregando ? t("Carregando produtos…") : t("Escolha o produto")} />
+        </SelectTrigger>
+        <SelectContent>
+          {solto && <SelectItem value={valor}>{valor}</SelectItem>}
+          {produtos.map((p) => (
+            <SelectItem key={p.id} value={p.nome}>
+              {p.ativo ? p.nome : `${p.nome} (${t("inativo")})`}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {falhou && (
+        <p className="text-xs text-warning-fg">
+          {t("Não consegui carregar os produtos agora. O que estava escolhido continua salvo — recarregue a página para escolher outro.")}
+        </p>
+      )}
+      {semProdutos && valor === "" && (
+        <p className="text-xs text-error-fg">{t("Nenhum produto no catálogo — cadastre em Produtos antes de usar esta regra.")}</p>
+      )}
+      {solto && (
+        <p className="text-xs text-warning-fg" data-testid="regra-produto-solto">
+          {t("Este produto não está mais no catálogo. A regra só vale para negócios com exatamente este nome — escolha outro da lista se ele foi renomeado.")}
+        </p>
+      )}
+    </>
   );
 }
 

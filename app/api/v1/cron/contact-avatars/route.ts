@@ -33,9 +33,11 @@ import { autorizaCron } from "@/lib/auth/cron-auth";
 export const dynamic = "force-dynamic";
 
 /** Contatos por invocação. Baixar imagem é I/O: cap baixo evita segurar o cron. */
-const SCAN_LIMIT = 25;
+const SCAN_LIMIT = 60;
 /** Revisita a foto a cada 7 dias — gente troca de foto, mas não toda hora. */
 const REFRESH_AFTER_DAYS = 7;
+/** Falha transitória (canal fora, upload com erro): de volta à fila em ~1 h. */
+const RETENTAR_EM_MS = 60 * 60 * 1000;
 /** Foto de perfil do WhatsApp é pequena; acima disto é resposta errada. */
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -118,12 +120,12 @@ async function handle(req: NextRequest): Promise<Response> {
     // volta num contato JÁ anonimizado — e o filtro do SELECT nunca mais o
     // escolheria para corrigir. Devolve as linhas afetadas para que quem chamou
     // saiba se a gravação valeu.
-    const carimbar = async (path: string | null): Promise<boolean> => {
+    const carimbar = async (path: string | null, quando = new Date()): Promise<boolean> => {
       const { data: afetadas } = await admin
         .from("contacts")
         .update({
           ...(path !== null ? { avatar_storage_path: path } : {}),
-          avatar_updated_at: new Date().toISOString(),
+          avatar_updated_at: quando.toISOString(),
         })
         .eq("id", c.id)
         .eq("organization_id", c.organization_id)
@@ -132,6 +134,18 @@ async function handle(req: NextRequest): Promise<Response> {
       return (afetadas ?? []).length > 0;
     };
 
+    /**
+     * FALHA DE CANAL NÃO É "SEM FOTO".
+     *
+     * Tudo que falhava — sessão fora do ar, WAHA reiniciando, download ou
+     * upload com erro — era carimbado como "sem foto" por 7 dias. Na troca de
+     * servidor de 15/10/2026 isso marcou 1.561 contatos de uma vez, e eles só
+     * seriam tentados de novo uma semana depois. A falha transitória agora volta
+     * à fila em ~1 h: o carimbo fica 7 dias menos 1 h no passado.
+     */
+    const retentarLogo = () =>
+      carimbar(null, new Date(Date.now() - REFRESH_AFTER_DAYS * 86_400_000 + RETENTAR_EM_MS));
+
     if (!chatId) {
       await carimbar(null);
       semFoto++;
@@ -139,9 +153,23 @@ async function handle(req: NextRequest): Promise<Response> {
     }
 
     try {
-      const { data: sessao } = await admin
+      // A sessão POR ONDE o contato conversa vem primeiro: numa org com dois
+      // números, "qualquer sessão WORKING" perguntava ao número errado, que não
+      // conhece o contato e responde sem foto.
+      const { data: conversaDoContato } = await admin
+        .from("conversations")
+        .select("channel_session_id")
+        .eq("organization_id", c.organization_id)
+        .eq("contact_id", c.id)
+        .not("channel_session_id", "is", null)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      const sessaoDoContato = (conversaDoContato as { channel_session_id?: string | null } | null)
+        ?.channel_session_id;
+      const consulta = admin
         .from("channel_sessions")
-        .select("waha_session_name, provider")
+        .select("id, waha_session_name, provider")
         .eq("organization_id", c.organization_id)
         .eq("status", "WORKING")
         // Sem o filtro, a linha de chamada de voz (spec 18) — que nasce
@@ -149,13 +177,20 @@ async function handle(req: NextRequest): Promise<Response> {
         // devolver `waha_session_name` nulo: a foto de todo mundo parava de
         // atualizar em silêncio, com o `carimbar(null)` logo abaixo parecendo
         // "este contato não tem foto".
-        .in("provider", [...PROVIDERS_DE_MENSAGEM])
-        .limit(1)
-        .maybeSingle();
-      const ref = (sessao as { waha_session_name?: string | null } | null)?.waha_session_name;
+        .in("provider", [...PROVIDERS_DE_MENSAGEM]);
+      // A do contato, se estiver no ar; senão, qualquer outra no ar da org.
+      const { data: sessoes } = await consulta.limit(10);
+      const lista = (sessoes ?? []) as Array<{
+        id?: string;
+        waha_session_name?: string | null;
+        provider?: ChannelProvider | null;
+      }>;
+      const sessao = lista.find((x) => x.id === sessaoDoContato) ?? lista[0] ?? null;
+      const ref = sessao?.waha_session_name;
       if (!ref) {
-        await carimbar(null);
-        semFoto++;
+        // Nenhum número no ar AGORA: tentar de novo logo, não daqui a 7 dias.
+        await retentarLogo();
+        falhas++;
         continue;
       }
 
@@ -164,10 +199,7 @@ async function handle(req: NextRequest): Promise<Response> {
       // `pnpm lint:channels` reprova o build se acontecer (foi o que pegou a
       // primeira versão desta rota). Testar a PRESENÇA do método é como se
       // pergunta "este canal sabe fazer isso?" sem perguntar qual canal é.
-      const adapter = getAdapter(
-        (sessao as { provider?: ChannelProvider | null } | null)?.provider ??
-          DEFAULT_CHANNEL_PROVIDER,
-      );
+      const adapter = getAdapter(sessao?.provider ?? DEFAULT_CHANNEL_PROVIDER);
       if (!adapter.fetchProfilePictureUrl) {
         await carimbar(null);
         semFoto++;
@@ -187,12 +219,13 @@ async function handle(req: NextRequest): Promise<Response> {
 
       const img = await fetch(profilePictureURL);
       if (!img.ok) {
-        await carimbar(null);
+        await retentarLogo();
         falhas++;
         continue;
       }
       const buf = Buffer.from(await img.arrayBuffer());
       if (buf.byteLength === 0 || buf.byteLength > MAX_BYTES) {
+        // Arquivo vazio ou grande demais é propriedade da foto, não do momento.
         await carimbar(null);
         falhas++;
         continue;
@@ -206,7 +239,7 @@ async function handle(req: NextRequest): Promise<Response> {
         .from("whatsapp-media")
         .upload(path, buf, { contentType: "image/jpeg", upsert: true });
       if (upErr) {
-        await carimbar(null);
+        await retentarLogo();
         falhas++;
         continue;
       }
@@ -240,7 +273,7 @@ async function handle(req: NextRequest): Promise<Response> {
       }
       atualizados++;
     } catch (err) {
-      await carimbar(null);
+      await retentarLogo();
       falhas++;
       logger.warn("[contact-avatars] contato falhou", {
         contact_id: c.id,

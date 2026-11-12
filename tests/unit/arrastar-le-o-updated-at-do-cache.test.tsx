@@ -17,7 +17,7 @@
  * produzem, sem depender de arrastar pixels no jsdom.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -202,6 +202,17 @@ async function quadroRedesenhado(esperado: string): Promise<void> {
   await act(async () => {});
 }
 
+/**
+ * Lead ganho ou perdido que sai para etapa aberta pergunta antes (30/10/2026):
+ * criar um novo ou mover o existente. O arrasto só chega ao `/move` quando a
+ * pessoa escolhe mover — e é aí que o `updated_at` do cache tem de estar certo.
+ */
+async function moverOExistente(): Promise<void> {
+  expect(post).not.toHaveBeenLastCalledWith(`/api/v1/leads/${LEAD}/move`, expect.anything());
+  fireEvent.click(await screen.findByRole("button", { name: "Mover lead existente" }));
+  await waitFor(() => expect(post.mock.calls.at(-1)?.[0]).toBe(`/api/v1/leads/${LEAD}/move`));
+}
+
 describe("mexer no negócio e arrastar em seguida", () => {
   it("depois de EDITAR, o arrasto manda o updated_at que a edição devolveu", async () => {
     patch.mockResolvedValue({
@@ -237,6 +248,7 @@ describe("mexer no negócio e arrastar em seguida", () => {
     await quadroRedesenhado(DEPOIS_DA_EDICAO);
 
     await arrastar();
+    await moverOExistente();
 
     expect(post).toHaveBeenLastCalledWith(
       `/api/v1/leads/${LEAD}/move`,
@@ -257,6 +269,7 @@ describe("mexer no negócio e arrastar em seguida", () => {
     await quadroRedesenhado(DEPOIS_DA_EDICAO);
 
     await arrastar();
+    await moverOExistente();
 
     expect(post).toHaveBeenLastCalledWith(
       `/api/v1/leads/${LEAD}/move`,

@@ -16,7 +16,24 @@ import { waitConfigSchema } from "@/lib/followup/graph-schema";
 import { MODOS_DE_ESPERA, opcoes } from "@/lib/followup/vocabulario";
 import { useT } from "@/hooks/i18n/useT";
 
-import { msToMin, minToMs, type ConfigOf } from "./shared";
+import {
+  msToMin,
+  minToMs,
+  msParaValorEUnidade,
+  valorEUnidadeParaMs,
+  UNIDADES_DE_TEMPO,
+  type ConfigOf,
+  type UnidadeDeTempo,
+} from "./shared";
+
+const ROTULO_DA_UNIDADE: Record<UnidadeDeTempo, string> = {
+  segundos: "Segundos",
+  minutos: "Minutos",
+  horas: "Horas",
+  dias: "Dias",
+};
+
+type Modo = ConfigOf<"wait">["mode"];
 
 export function WaitForm({
   config,
@@ -26,25 +43,36 @@ export function WaitForm({
   onChange: (c: ConfigOf<"wait">) => void;
 }) {
   const t = useT();
-  const [mode, setMode] = useState<"fixed" | "smart">(config.mode);
-  const [durationMin, setDurationMin] = useState(
-    config.mode === "fixed" ? msToMin(config.duration_ms) : 10,
-  );
+  const [mode, setMode] = useState<Modo>(config.mode);
+  const [hora, setHora] = useState(config.mode === "until" ? config.hora : "09:00");
+  const [data, setData] = useState(config.mode === "until" ? (config.data ?? "") : "");
+  const inicial = msParaValorEUnidade(config.mode === "fixed" ? config.duration_ms : 600_000);
+  const [duracao, setDuracao] = useState(inicial.valor);
+  const [unidade, setUnidade] = useState<UnidadeDeTempo>(inicial.unidade);
   const [minMin, setMinMin] = useState(config.mode === "smart" ? msToMin(config.min_ms) : 5);
   const [maxMin, setMaxMin] = useState(config.mode === "smart" ? msToMin(config.max_ms) : 60);
   const [guidance, setGuidance] = useState(config.mode === "smart" ? (config.guidance ?? "") : "");
   const [error, setError] = useState<string | null>(null);
 
   const commit = (next: {
-    mode: "fixed" | "smart";
-    durationMin: number;
+    mode: Modo;
+    hora?: string;
+    data?: string;
+    duracao: number;
+    unidade: UnidadeDeTempo;
     minMin: number;
     maxMin: number;
     guidance: string;
   }) => {
     const candidate =
-      next.mode === "fixed"
-        ? { mode: "fixed" as const, duration_ms: minToMs(next.durationMin) }
+      next.mode === "until"
+        ? {
+            mode: "until" as const,
+            hora: next.hora ?? hora,
+            ...((next.data ?? data) ? { data: next.data ?? data } : {}),
+          }
+        : next.mode === "fixed"
+        ? { mode: "fixed" as const, duration_ms: valorEUnidadeParaMs(next.duracao, next.unidade) }
         : {
             mode: "smart" as const,
             min_ms: minToMs(next.minMin),
@@ -67,9 +95,9 @@ export function WaitForm({
         <Select
           value={mode}
           onValueChange={(v) => {
-            const next = v as "fixed" | "smart";
+            const next = v as Modo;
             setMode(next);
-            commit({ mode: next, durationMin, minMin, maxMin, guidance });
+            commit({ mode: next, duracao, unidade, minMin, maxMin, guidance });
           }}
         >
           <SelectTrigger id="wait-mode">
@@ -87,18 +115,71 @@ export function WaitForm({
 
       {mode === "fixed" ? (
         <div className="space-y-2">
-          <Label htmlFor="wait-duration">{t("Duração (minutos)")}</Label>
-          <Input
-            id="wait-duration"
-            type="number"
-            min={5}
-            value={durationMin}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setDurationMin(v);
-              commit({ mode, durationMin: v, minMin, maxMin, guidance });
-            }}
-          />
+          <Label htmlFor="wait-duration">{t("Esperar")}</Label>
+          <div className="flex gap-2">
+            <Input
+              id="wait-duration"
+              type="number"
+              min={1}
+              value={duracao}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setDuracao(v);
+                commit({ mode, duracao: v, unidade, minMin, maxMin, guidance });
+              }}
+            />
+            <Select
+              value={unidade}
+              onValueChange={(v) => {
+                const u = v as UnidadeDeTempo;
+                setUnidade(u);
+                commit({ mode, duracao, unidade: u, minMin, maxMin, guidance });
+              }}
+            >
+              <SelectTrigger aria-label={t("Unidade de tempo")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {UNIDADES_DE_TEMPO.slice()
+                  .reverse()
+                  .map(({ unidade: u }) => (
+                    <SelectItem key={u} value={u}>
+                      {t(ROTULO_DA_UNIDADE[u])}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      ) : mode === "until" ? (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="wait-hora">{t("Horário")}</Label>
+            <Input
+              id="wait-hora"
+              type="time"
+              value={hora}
+              onChange={(e) => {
+                setHora(e.target.value);
+                commit({ mode, hora: e.target.value, duracao, unidade, minMin, maxMin, guidance });
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="wait-data">{t("Data (opcional)")}</Label>
+            <Input
+              id="wait-data"
+              type="date"
+              value={data}
+              onChange={(e) => {
+                setData(e.target.value);
+                commit({ mode, data: e.target.value, duracao, unidade, minMin, maxMin, guidance });
+              }}
+            />
+          </div>
+          <p className="col-span-2 text-xs text-text-muted">
+            {t("No fuso da organização. Sem data, espera até a próxima vez que o relógio marcar esse horário. Com data já passada, segue direto para o próximo bloco.")}
+          </p>
         </div>
       ) : (
         <>
@@ -113,7 +194,7 @@ export function WaitForm({
                 onChange={(e) => {
                   const v = Number(e.target.value);
                   setMinMin(v);
-                  commit({ mode, durationMin, minMin: v, maxMin, guidance });
+                  commit({ mode, duracao, unidade, minMin: v, maxMin, guidance });
                 }}
               />
             </div>
@@ -127,7 +208,7 @@ export function WaitForm({
                 onChange={(e) => {
                   const v = Number(e.target.value);
                   setMaxMin(v);
-                  commit({ mode, durationMin, minMin, maxMin: v, guidance });
+                  commit({ mode, duracao, unidade, minMin, maxMin: v, guidance });
                 }}
               />
             </div>
@@ -140,7 +221,7 @@ export function WaitForm({
               value={guidance}
               onChange={(e) => {
                 setGuidance(e.target.value);
-                commit({ mode, durationMin, minMin, maxMin, guidance: e.target.value });
+                commit({ mode, duracao, unidade, minMin, maxMin, guidance: e.target.value });
               }}
             />
           </div>

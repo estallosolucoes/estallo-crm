@@ -91,7 +91,10 @@ describe("inbox — texto longo não empurra a coluna (#1802)", () => {
 
   it("régua 2: o fato da Memória do contato quebra em qualquer ponto, e não volta break-words", () => {
     const fonte = ler(PAINEL);
-    const linha = fonte.split("\n").find((l) => l.includes("f.headline"));
+    // O bloco do fato é o <details> inteiro: o formatador pode pôr o <summary> e o <p> em linhas separadas.
+    const inicio = fonte.indexOf("f.headline");
+    const fimDoBloco = inicio < 0 ? -1 : fonte.indexOf("</details>", inicio);
+    const linha = inicio < 0 || fimDoBloco < 0 ? undefined : fonte.slice(fonte.lastIndexOf("<details", inicio), fimDoBloco);
     expect(linha, `não achei o bloco de fatos em ${PAINEL}`).toBeDefined();
 
     const summary = linha!.match(/<summary[^>]*>/)?.[0] ?? "";
@@ -112,16 +115,16 @@ describe("inbox — texto longo não empurra a coluna (#1802)", () => {
     const fonte = ler(LAYOUT);
 
     // Coluna da conversa — protegida pelo f7b1ef4, é a que o #1802 aponta.
-    expect(fonte).toMatch(/h-full min-h-0 min-w-0 flex-col md:flex/);
+    // Desde o redesenho (16/10/2026) a coluna é a `.ibx-chat`, e quem decide se
+    // ela aparece é `colunasDoCelular` (`min-[851px]:flex`).
+    expect(fonte).toMatch(/ibx-chat h-full min-h-0 min-w-0 flex-col/);
 
     // Coluna do CRM, trilha fixa do grid: min-w-0 como defesa uniforme com a
-    // coluna da conversa (o transbordo do fato ficava dentro do painel).
-    // O wrapper da coluna é o único <div> com `xl:block` no arquivo: é ele que
-    // o grid conta como item da terceira track. (O outro render do painel é o
-    // Sheet do celular, que não participa do grid.)
-    const coluna = fonte.split("\n").find((l) => l.includes("xl:block"));
+    // coluna da conversa (o transbordo do fato ficava dentro do painel). É a
+    // `.ibx-coluna-ficha`; mostrar/esconder por faixa mora no CSS do Inbox
+    // (`components/inbox/inbox.css`). O outro render do painel é a gaveta.
+    const coluna = fonte.split("\n").find((l) => l.includes("ibx-coluna-ficha"));
     expect(coluna, "não achei a coluna do CRM no layout").toBeDefined();
     expect(coluna, "a coluna do CRM (a última do grid) precisa de min-w-0").toContain("min-w-0");
-    expect(coluna).toContain("hidden");
   });
 });

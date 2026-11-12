@@ -46,7 +46,9 @@ vi.mock("@/lib/supabase/admin", () => ({
         const dados =
           tabela === "contacts"
             ? [linhaDoContato]
-            : { waha_session_name: "sessao-de-teste", provider: "waha" };
+            : tabela === "channel_sessions"
+              ? [{ id: "sessao-1", waha_session_name: "sessao-de-teste", provider: "waha" }]
+              : { channel_session_id: "sessao-1" };
         const proxy: Record<string, unknown> = new Proxy(
           {},
           {

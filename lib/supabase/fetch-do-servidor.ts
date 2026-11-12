@@ -31,6 +31,68 @@
  * pública.
  */
 
+import { logger } from "@/lib/logger";
+
+/**
+ * PRAZO EM TODA CHAMADA DO SERVIDOR AO SUPABASE.
+ *
+ * O `fetch` do Node não tem prazo próprio que valha aqui, e o SDK do Supabase não
+ * põe nenhum. Em 15/10/2026, na VPS Locaweb, o app ficou minutos com toda
+ * consulta ao Supabase pendurada — health "tempo_esgotado", telas em esqueleto,
+ * "Erro inesperado" na ação — enquanto um processo novo no mesmo container
+ * respondia em 230ms; só o reinício devolveu. Com prazo, a chamada pendurada vira
+ * erro (que a tela mostra e a próxima tentativa supera) em vez de espera eterna,
+ * e o log diz qual caminho travou.
+ *
+ * Storage leva mais folga: sobe e baixa mídia.
+ *
+ * Chamada SEM `signal` não ganha um: `signal` desliga a deduplicação do Next
+ * dentro do render (`tests/unit/memo-da-instalacao-fora-do-dedupe-do-render`), e
+ * pôr um em toda chamada mandaria ao banco cada GET repetido do render. Nela o
+ * prazo é uma corrida contra o cronômetro: quem chamou recebe o erro na hora, e
+ * a requisição pendurada morre com o socket. Com `signal`, os dois se somam.
+ */
+const PRAZO_MS = 20_000;
+const PRAZO_STORAGE_MS = 60_000;
+
+function comPrazo(alvo: string, init: RequestInit | undefined, fazer: (init: RequestInit) => Promise<Response>) {
+  const ms = alvo.includes("/storage/v1/") ? PRAZO_STORAGE_MS : PRAZO_MS;
+  const inicio = Date.now();
+  let estourou = false;
+  let cronometro: ReturnType<typeof setTimeout> | undefined;
+  const chamada = init?.signal
+    ? (() => {
+        const prazo = AbortSignal.timeout(ms);
+        prazo.addEventListener("abort", () => (estourou = true));
+        return fazer({ ...init, signal: AbortSignal.any([init.signal, prazo]) });
+      })()
+    : Promise.race([
+        fazer(init ?? {}),
+        new Promise<never>((_, rejeitar) => {
+          cronometro = setTimeout(() => {
+            estourou = true;
+            rejeitar(new DOMException(`O Supabase não respondeu em ${ms}ms.`, "TimeoutError"));
+          }, ms);
+        }),
+      ]);
+  return chamada.finally(() => clearTimeout(cronometro)).catch((erro: unknown) => {
+    if (estourou) {
+      let caminho = alvo;
+      try {
+        caminho = new URL(alvo).pathname; // sem query: pode carregar filtro de dado
+      } catch {
+        // alvo relativo: segue como veio
+      }
+      logger.warn("[supabase] chamada do servidor estourou o prazo", {
+        caminho,
+        prazo_ms: ms,
+        decorrido_ms: Date.now() - inicio,
+      });
+    }
+    throw erro;
+  });
+}
+
 /** Tira a barra que o `.env` pode trazer: `https://x/` + `storage/…` viraria `//`. */
 function semBarraFinal(url: string): string {
   return url.trim().replace(/\/+$/, "");
@@ -54,7 +116,8 @@ export function fetchDoServidor(urlInterna: string, urlPublica: string): typeof 
   const publica = semBarraFinal(urlPublica);
 
   if (!interna || interna === publica) {
-    return (input, init) => globalThis.fetch(input, init);
+    return (input, init) =>
+      comPrazo(urlDe(input), init, (comSinal) => globalThis.fetch(input, comSinal));
   }
 
   const desviar = (alvo: string): string => {
@@ -63,20 +126,25 @@ export function fetchDoServidor(urlInterna: string, urlPublica: string): typeof 
     return alvo;
   };
 
-  return (input, init) => {
-    if (typeof input === "string") {
-      return globalThis.fetch(desviar(input), init);
-    }
+  return (input, init) =>
+    comPrazo(urlDe(input), init, (comSinal) => {
+      if (typeof input === "string") {
+        return globalThis.fetch(desviar(input), comSinal);
+      }
 
-    if (input instanceof URL) {
-      const destino = desviar(input.href);
-      return globalThis.fetch(destino === input.href ? input : new URL(destino), init);
-    }
+      if (input instanceof URL) {
+        const destino = desviar(input.href);
+        return globalThis.fetch(destino === input.href ? input : new URL(destino), comSinal);
+      }
 
-    // O SDK do Supabase sempre passa string; o Request está aqui para o
-    // `global.fetch` ser honesto, não para um caso de uso do produto.
-    const destino = desviar(input.url);
-    if (destino === input.url) return globalThis.fetch(input, init);
-    return globalThis.fetch(new Request(destino, input as unknown as RequestInit), init);
-  };
+      // O SDK do Supabase sempre passa string; o Request está aqui para o
+      // `global.fetch` ser honesto, não para um caso de uso do produto.
+      const destino = desviar(input.url);
+      if (destino === input.url) return globalThis.fetch(input, comSinal);
+      return globalThis.fetch(new Request(destino, input as unknown as RequestInit), comSinal);
+    });
+}
+
+function urlDe(input: Parameters<typeof globalThis.fetch>[0]): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 }

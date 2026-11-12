@@ -131,9 +131,11 @@ describe("CommandPalette", () => {
     const btnAtendimento = screen.getByRole("button", { name: /Atendimento/i });
     expect(btnAtendimento).toBeTruthy();
     await user.click(btnAtendimento);
-    // Ao filtrar por Atendimento, itens de CRM ou Funcionários não devem aparecer
+    // Ao filtrar por Atendimento, itens de CRM ou Funcionários não devem aparecer. «Contatos» mora em Atendimento
+    // (pedido do dono, ver catalogo.ts), por isso o exemplo de item de CRM é «Funis».
     expect(screen.getByRole("option", { name: /Inbox/ })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: /Contatos/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /Contatos/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Funis/ })).toBeNull();
   });
 
   it("no catálogo, abre em Atendimento e a seta segue a ordem da tela", async () => {

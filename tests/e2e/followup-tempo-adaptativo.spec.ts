@@ -103,7 +103,7 @@ async function login(page: Page, email: string): Promise<void> {
  */
 async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: string): Promise<void> {
   const TENTATIVAS = 4;
-  const source = page.locator(`.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`);
+  const source = page.locator(`.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source:not([data-handleid="on_error"])`);
   const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
   const antes = await page.locator(".react-flow__edge").count();
 
@@ -166,7 +166,7 @@ test.describe("nó de espera — o modo Adaptativo tem de decidir de verdade", (
     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
     await expect(dialog).not.toBeVisible({ timeout: PRAZO_SOB_CARGA });
 
-    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.locator("li", { hasText: flowName }).getByRole("link").first().click();
     await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
     const flowId = page.url().split("/").pop()!;
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: PRAZO_SOB_CARGA });

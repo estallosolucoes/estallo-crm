@@ -1,78 +1,55 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CaretLeft, CaretRight, MagnifyingGlass } from "@/lib/ui/icons";
-import { Input } from "@/components/ui/input";
+import {
+  EnvelopeSimple,
+  FadersHorizontal,
+  Inbox,
+  Info,
+  Keyboard,
+  MagnifyingGlass,
+  User,
+  UsersThree,
+  X,
+} from "@/lib/ui/icons";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
 import { PontoDaEtiqueta } from "@/components/tags/PontoDaEtiqueta";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
-import {
-  type ModoDeEtiqueta,
-  marcadoresEscolhidos,
-} from "@/lib/inbox/marcador-da-conversa";
+import { type ModoDeEtiqueta, marcadoresEscolhidos } from "@/lib/inbox/marcador-da-conversa";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
-import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import type { Role, VisibilityMode } from "@/lib/auth/types";
 
-export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
+export type InboxTab = "all" | "pending" | "waiting" | "open" | "closed";
 
-/**
- * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
- * que espera gente, depois o histórico. Antes "Automático" fechava a faixa,
- * depois de dois passados — o valor que o operador mais olha era o último.
- *
- * Só a ordem mudou: mesmos `value`, mesmos rótulos, mesmas permissões
- * (`visibleInboxTabs` filtra sem reordenar) e mesmas contagens (`countFor` lê
- * por chave, e a chave não acompanha a posição). `moveTab` anda pelo MESMO
- * array, então as setas continuam vizinha a vizinha.
- */
+/** Categorias do atendimento, na ordem de leitura da operação. */
 const INBOX_TABS: { value: InboxTab; label: string }[] = [
-  // "Automático", não "IA": a palavra deste ator já é contrato em quatro arquivos
-  // e no dicionário, e `handoff-por-orcamento.test.ts` usa literalmente "Voltar
-  // para a IA" como a sabotagem que deve reprovar. O rótulo não mudou quando o
-  // significado mudou (deixou de filtrar `ai_handling` e passou a perguntar a
-  // régua do motor) — e a posição sim: ela era a última fora do padrão.
-  { value: "ai", label: "Automático" },
-  { value: "unassigned", label: "Fila" },
-  { value: "mine", label: "Minhas" },
   { value: "all", label: "Todas" },
+  { value: "pending", label: "Sem resposta" },
+  { value: "waiting", label: "Em espera" },
+  { value: "open", label: "Em aberto" },
   { value: "closed", label: "Fechadas" },
-  // "Arquivadas" fica ao lado de "Fechadas" porque as duas são passado — e
-  // separada dela porque são passados diferentes (#923): fechada é atendimento
-  // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
-  { value: "archived", label: "Arquivadas" },
 ];
 
 /**
- * Visões visíveis por papel + escopo (G4-02, acceptance 1). 'Todas' fica oculta
- * para `agent` quando visibility_mode ≠ 'all'; viewer/manager/admin sempre veem.
- * É apenas cosmético — a RLS (G4-01) é quem garante o escopo mesmo via ?filter=all.
+ * Visões visíveis por papel + escopo (G4-02). Todas as abas para todo papel:
+ * "Todas" ficava oculta para `agent` em visibility_mode ≠ 'all' porque ele
+ * tinha a aba "Minhas"; agora "Minhas" é filtro e "Todas" + "Minhas" é a
+ * caixa dele. Esconder nunca foi segurança — a RLS (G4-01) recorta o escopo.
  */
-export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): InboxTab[] {
-  const hideAll = role === "agent" && mode !== "all";
-  return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
+export function visibleInboxTabs(_role: Role, _mode: VisibilityMode | undefined): InboxTab[] {
+  return INBOX_TABS.map((t) => t.value);
 }
 
 export interface InboxFiltersValue {
@@ -80,6 +57,7 @@ export interface InboxFiltersValue {
   search: string;
   onlyUnread: boolean;
   channel_session_id?: string;
+  ordem?: "antigo" | "recente";
   /**
    * A etiqueta escolhida, ou VÁRIAS (#1274).
    *
@@ -93,15 +71,31 @@ export interface InboxFiltersValue {
   tagMode?: ModoDeEtiqueta;
   /** A aba "Grupos" (Task 10): manda `is_group=true` na listagem. */
   onlyGroups?: boolean;
+  /** "Minhas": só as atribuídas a mim, em qualquer aba (`assigned_to=me`). */
+  onlyMine?: boolean;
 }
 
 interface Props {
   value: InboxFiltersValue;
   onChange: (next: InboxFiltersValue) => void;
+  /** Abre a ajuda de atalhos (o botão de teclado ao lado de "Inbox"). */
+  onAbrirAtalhos?: () => void;
 }
 
-export function InboxFilters({ value, onChange }: Props) {
+/** O rascunho do popover "Filtrar conversas": só vale no "Aplicar filtros". */
+interface RascunhoDosFiltros {
+  onlyMine: boolean;
+  onlyUnread: boolean;
+  onlyGroups: boolean;
+  channel_session_id?: string;
+  ordem?: "antigo" | "recente";
+  tags: string[];
+  tagMode?: ModoDeEtiqueta;
+}
+
+export function InboxFilters({ value, onChange, onAbrirAtalhos }: Props) {
   const t = useT();
+  const [ajudaAberta, setAjudaAberta] = useState(false);
   const [searchInput, setSearchInput] = useState(value.search);
   const tabsListRef = useRef<HTMLDivElement>(null);
   const [moreTabs, setMoreTabs] = useState({ left: false, right: false });
@@ -123,8 +117,10 @@ export function InboxFilters({ value, onChange }: Props) {
       const selected = list.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
       if (selected) {
         const selectedCenter =
-          selected.getBoundingClientRect().left - list.getBoundingClientRect().left +
-          list.scrollLeft + selected.offsetWidth / 2;
+          selected.getBoundingClientRect().left -
+          list.getBoundingClientRect().left +
+          list.scrollLeft +
+          selected.offsetWidth / 2;
         const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
         list.scrollLeft = Math.max(0, Math.min(maxScroll, selectedCenter - list.clientWidth / 2));
       }
@@ -175,16 +171,12 @@ export function InboxFilters({ value, onChange }: Props) {
    * marcador que funciona nunca é oferecido.
    */
   const orgId = activeOrg?.orgId ?? null;
-  const { data: tagsDeConversa } = useConversationTagVocabulary(orgId);
+  // Estallo (0659): conversa não tem mais etiqueta — o filtro é pela do contato.
   const { data: tagsDeContato } = useContactTagVocabulary(orgId);
   const tagVocabulary = useMemo(
     () =>
-      tagsDeConversa == null && tagsDeContato == null
-        ? undefined
-        : [...new Set([...(tagsDeConversa ?? []), ...(tagsDeContato ?? [])])].sort((a, b) =>
-            a.localeCompare(b),
-          ),
-    [tagsDeConversa, tagsDeContato],
+      tagsDeContato == null ? undefined : [...tagsDeContato].sort((a, b) => a.localeCompare(b)),
+    [tagsDeContato],
   );
   // A lista de etiquetas escolhida, normalizada pelo MESMO caminho do servidor
   // (`marcadoresEscolhidos`): sem vazio, sem repetido, com a ordem da primeira
@@ -202,6 +194,7 @@ export function InboxFilters({ value, onChange }: Props) {
     tag: etiquetas,
     tagMode: value.tagMode,
     channel_session_id: value.channel_session_id,
+    soMinhas: value.onlyMine,
   });
 
   const tabs = activeOrg
@@ -212,19 +205,11 @@ export function InboxFilters({ value, onChange }: Props) {
     if (next) onChange({ ...value, tab: next });
   };
   const countFor: Partial<Record<InboxTab, number>> = {
-    // `fila` é o nome novo; `unassigned` é o alias que a rota versionada mantém.
-    // O `??` cobre a janela em que a página ainda lê um cache de react-query
-    // gravado antes do deploy — sem ele o badge sumiria por alguns segundos.
-    unassigned: counts?.fila ?? counts?.unassigned,
-    // A aba do automático ganhou contador junto com o significado: ela deixou de
-    // filtrar `ai_handling` (2 conversas) e passou a mostrar o que o robô conduz
-    // (47, na instalação onde isto foi medido). Um número que existe na API e não
-    // aparece na tela é trabalho feito que ninguém vê.
-    ai: counts?.automatico,
-    mine: counts?.mine,
+    waiting: counts?.em_espera,
+    open: counts?.em_aberto,
+    pending: counts?.pendentes,
     all: counts?.all,
     closed: counts?.closed,
-    archived: counts?.archived,
   };
   // Filtrar por um número que saiu da lista (o operador acabou de excluir o
   // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na
@@ -234,8 +219,8 @@ export function InboxFilters({ value, onChange }: Props) {
     value.channel_session_id != null &&
     channels != null &&
     !channels.some((c) => c.id === value.channel_session_id);
-  // Alternador só aparece com 2+ números — com um só não há o que alternar.
-  const showChannelSwitch = (channels?.length ?? 0) >= 2 || filtroForaDaLista;
+  // O canal fica disponível mesmo com uma única instância.
+  const showChannelSwitch = true;
   /**
    * O SELETOR NÃO PODE SUMIR DEBAIXO DO MENU ABERTO.
    *
@@ -295,10 +280,7 @@ export function InboxFilters({ value, onChange }: Props) {
   // reabrir o menu entre a primeira e a segunda, e o `DropdownMenuCheckboxItem`
   // é o item que NÃO fecha (o `Select` de hoje fecha). A regra é do componente,
   // e por isso o gatilho é um botão com `aria-expanded` em vez de um `Select`.
-  const opcoesDoSeletor = [
-    ...vocabularioDoSeletor,
-    ...etiquetasForaDoVocabulario,
-  ];
+  const opcoesDoSeletor = [...vocabularioDoSeletor, ...etiquetasForaDoVocabulario];
   /**
    * A BUSCA DENTRO DO SELETOR (#2498) — e ela é de propósito SEM consulta.
    *
@@ -367,318 +349,442 @@ export function InboxFilters({ value, onChange }: Props) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // ─── O POPOVER "FILTRAR CONVERSAS" (modelo do dono, 16/10/2026) ──────────
+  //
+  // Minhas, Não lidos, Grupos, número e tags num cartão só, atrás de um botão
+  // com contador. A escolha é um RASCUNHO que só vale no "Aplicar filtros" —
+  // marcar três caixas não dispara três consultas. Cada filtro ativo vira um
+  // chip removível embaixo da busca, para nada ficar escondido.
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const rascunhoDeAgora = (): RascunhoDosFiltros => ({
+    onlyMine: value.onlyMine ?? false,
+    onlyUnread: value.onlyUnread,
+    onlyGroups: value.onlyGroups ?? false,
+    channel_session_id: value.channel_session_id,
+    ordem: value.ordem,
+    tags: etiquetas,
+    tagMode: value.tagMode,
+  });
+  const [rascunho, setRascunho] = useState<RascunhoDosFiltros>(rascunhoDeAgora);
+  const abrirFiltros = (aberto: boolean) => {
+    if (aberto) setRascunho(rascunhoDeAgora());
+    else setBuscaDeEtiqueta("");
+    setFiltrosAbertos(aberto);
+  };
+  const aplicarRascunho = () => {
+    onChange({
+      ...value,
+      onlyMine: rascunho.onlyMine,
+      onlyUnread: rascunho.onlyUnread,
+      onlyGroups: rascunho.onlyGroups,
+      channel_session_id: rascunho.channel_session_id,
+      ordem: rascunho.ordem,
+      tag: rascunho.tags.length === 0 ? undefined : rascunho.tags,
+      tagMode: rascunho.tags.length > 1 ? rascunho.tagMode : undefined,
+    });
+    abrirFiltros(false);
+  };
+  const alternaNoRascunho = (tag: string) =>
+    setRascunho((r) => ({
+      ...r,
+      tags: r.tags.includes(tag) ? r.tags.filter((x) => x !== tag) : [...r.tags, tag],
+    }));
+  const filtrosAtivos =
+    (value.onlyMine ? 1 : 0) +
+    (value.onlyUnread ? 1 : 0) +
+    (value.onlyGroups ? 1 : 0) +
+    (value.channel_session_id ? 1 : 0) +
+    (value.ordem === "antigo" ? 1 : 0) +
+    etiquetas.length;
+  const canalEscolhido = channels?.find((c) => c.id === value.channel_session_id);
+  // Mantida para o seletor de tag continuar montado enquanto o vocabulário
+  // oscila (ver `ultimoVocabulario`), agora dentro do popover.
+  void mostrarSeletorDeTag;
+
+  // "/" leva à busca, como no modelo — fora de campo de texto.
+  const buscaRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const alvo = e.target as HTMLElement | null;
+      if (alvo && (alvo.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName)))
+        return;
+      e.preventDefault();
+      buscaRef.current?.focus();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, []);
+
+  const totalDaAba = countFor[value.tab];
+
   return (
-    <div className="border-b border-border bg-background">
-      <div className="space-y-2 px-3 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <MagnifyingGlass
-              size={15}
-              weight="regular"
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle"
-              aria-hidden
-            />
-            {/* "última mensagem", e não "mensagem": a busca alcança apenas
-                `conversations.last_message_preview` — a ÚLTIMA mensagem, truncada em 200
-                caracteres já na ingestão (`grep -rn 'slice(0, 200)' lib/channels/` mostra onde).
-                Medido numa conversa real de 32 mensagens: buscar o que o cliente pediu na
-                3ª devolve ZERO. Alcançar o histórico é projeto próprio (índice trigram +
-                retenção + LGPD); até lá, a tela não promete o que o backend não faz. */}
-            <Input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder={t("Buscar por nome, telefone ou última mensagem…")}
-              className="h-9 rounded-full border-transparent bg-surface-elevated pl-9 text-sm shadow-none focus-visible:border-border focus-visible:bg-background"
-              aria-label={t("Buscar conversas")}
-            />
-          </div>
-          {/* Botão pressionável em vez de Switch: o filtro vive na mesma linha
-              da busca, e o Switch com rótulo pedia uma linha inteira só para
-              si numa coluna de 280px. */}
-          <button
-            type="button"
-            aria-pressed={value.onlyUnread}
-            onClick={() => onChange({ ...value, onlyUnread: !value.onlyUnread })}
-            className={cn(
-              "h-9 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
-              "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              value.onlyUnread
-                ? "border-accent bg-accent text-accent-foreground"
-                : "border-border bg-transparent text-text-muted hover:bg-surface-elevated",
-            )}
-          >
-            {t("Não lidos")}
-          </button>
-          {/* MESMO PADRÃO do botão acima: filtro auxiliar pressionável, na
-              mesma linha. "Grupos" manda `is_group=true` na listagem — sem ele
-              a aba mostra tudo, individual e grupo misturados, como hoje. */}
-          <button
-            type="button"
-            aria-pressed={value.onlyGroups ?? false}
-            onClick={() => onChange({ ...value, onlyGroups: !value.onlyGroups })}
-            className={cn(
-              "h-9 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
-              "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              value.onlyGroups
-                ? "border-accent bg-accent text-accent-foreground"
-                : "border-border bg-transparent text-text-muted hover:bg-surface-elevated",
-            )}
-          >
-            {t("Grupos")}
-          </button>
-        </div>
-
-        {(showChannelSwitch || mostrarSeletorDeTag) && (
-          <div className="flex gap-2">
-            {showChannelSwitch && (
-              <Select
-                value={value.channel_session_id ?? "all"}
-                onValueChange={(v) =>
-                  onChange({ ...value, channel_session_id: v === "all" ? undefined : v })
-                }
-              >
-                <SelectTrigger
-                  className={cn(
-                    "h-8 min-w-0 flex-1 rounded-full border-transparent bg-surface-elevated px-3 text-xs shadow-none",
-                    value.channel_session_id != null && "border-accent bg-accent-soft text-accent",
-                  )}
-                  aria-label={t("Filtrar por número de WhatsApp")}
-                >
-                  <SelectValue placeholder={t("Todos os números")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("Todos os números")}</SelectItem>
-                  {filtroForaDaLista && value.channel_session_id != null && (
-                    <SelectItem value={value.channel_session_id}>{t("Número removido")}</SelectItem>
-                  )}
-                  {channels?.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {channelLabel(c)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {mostrarSeletorDeTag && (
-              <DropdownMenu onOpenChange={(aberto) => {
-                if (!aberto) setBuscaDeEtiqueta("");
-              }}>
-                {/*
-                  ⚠️ POR QUE ISTO DEIXOU DE SER UM `Select` (#1274).
-                  O `Select` do Radix é de escolha ÚNICA e — o que mata a
-                  multi-seleção — FECHA o menu a cada item escolhido. Para uma
-                  etiqueta só isso era certo; para duas, o operador teria de
-                  reabrir o menu entre a primeira e a segunda, e o custo do
-                  segundo clique é o que faz a feature parecer idiota. O
-                  `DropdownMenuCheckboxItem` marca e NÃO fecha, que é a
-                  diferença entre um filtro de duas etiquetas e um formulário.
-
-                  O gatilho continua com `aria-label="Filtrar por tag"` e a MESMA
-                  aparência de cápsula, porque quem procura este controle no
-                  Inbox (e o teste `inbox-filtro-de-tag-nao-desmonta`, que
-                  vigia a desmontagem) não pode ver o filtro mudar de figura.
-                */}
-                <DropdownMenuTrigger asChild>
+    <>
+      <header className="ibx-workspace-header">
+        <div className="ibx-list-heading">
+          <div className="ibx-brand">
+            <span className="ibx-brand-mark">
+              <Inbox size={17} aria-hidden />
+            </span>
+            <h1>{t("Inbox")}</h1>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className={cn(
-                      "h-8 min-w-0 flex-1 truncate rounded-full border border-transparent bg-surface-elevated px-3 text-left text-xs shadow-none",
-                      "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                      etiquetas.length > 0 && "border-accent bg-accent-soft text-accent",
-                    )}
-                    aria-label={t("Filtrar por tag")}
+                    className="ibx-icon-button"
+                    onClick={() => setAjudaAberta(true)}
+                    aria-label={t("O que significa cada status do chat?")}
                   >
-                    {etiquetas.length > 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        {/* O CHIP da primeira etiqueta + o resto resumido: a coluna
-                            é de 280 px e três chips não cabem. A cor continua sendo
-                            a mesma que a lista mostra ao lado — mesma razão do
-                            `border-accent`, que é o que faz o filtro ativo se
-                            reconhecer de relance. */}
-                        <ChipDeEtiqueta tag={etiquetas[0]!} className="h-5 px-1.5 text-[11px]" />
-                        {etiquetas.length > 1 && (
-                          <span className="tabular-nums text-[11px]">+{etiquetas.length - 1}</span>
-                        )}
-                      </span>
-                    ) : (
-                      t("Todas as tags")
-                    )}
+                    <Info className="ibx-icon" aria-hidden />
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-64">
-                  <DropdownMenuLabel>{t("Todas as tags")}</DropdownMenuLabel>
-                  {/*
-                    A BUSCA (#2498): filtra o vocabulário que já está aqui dentro,
-                    sem tocar em `value` — ver o comentário junto de
-                    `opcoesVisiveis`. Ela fica ACIMA dos itens de propósito: o
-                    "Todas as tags" (que limpa o filtro) e o E/OU continuam
-                    alcançáveis mesmo com a lista toda filtrada, que é quando mais
-                    se precisa deles.
-                  */}
-                  <div className="px-2 pb-1">
-                    <Input
-                      value={buscaDeEtiqueta}
-                      onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
-                      onKeyDown={(e) => {
-                        // O typeahead do Radix lê QUALQUER tecla imprimível que
-                        // suba do conteúdo e salta o foco para o item que começa
-                        // com ela — dentro de um campo de texto isso rouba a
-                        // segunda letra. `stopPropagation` só nas caracteres:
-                        // Escape continua subindo e fecha o menu.
-                        if (e.key.length === 1) e.stopPropagation();
-                      }}
-                      placeholder={t("Buscar etiqueta")}
-                      aria-label={t("Buscar etiqueta")}
-                      className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs shadow-none focus-visible:border-border"
-                    />
-                  </div>
-                  <DropdownMenuItem
-                    onClick={() => onChange({ ...value, tag: undefined, tagMode: undefined })}
-                  >
-                    {t("Todas as tags")}
-                  </DropdownMenuItem>
-                  {/*
-                    O E/OU só aparece havendo DUAS etiquetas. Com uma só o parâmetro
-                    não muda o resultado, e um botão que não muda nada é um
-                    controle morto — a mesma razão pela qual o seletor some quando
-                    a organização não tem vocabulário.
-                  */}
-                  {etiquetas.length > 1 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      {/* Rádio, e não item comum: marca o modo ATIVO (e só ele) e
-                          expõe `aria-checked` a quem usa leitor de tela. */}
-                      <DropdownMenuRadioGroup
-                        value={value.tagMode === "ou" ? "ou" : "e"}
-                        onValueChange={(modo) =>
-                          onChange({ ...value, tagMode: modo === "ou" ? "ou" : undefined })
-                        }
-                      >
-                        <DropdownMenuRadioItem value="e">{t("Todas (E)")}</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="ou">
-                          {t("Qualquer uma (OU)")}
-                        </DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  {/* As órfãs entram na lista: sem elas o gatilho mostraria o
-                      resumo de um filtro cujas opções não estão mais lá, e o
-                      operador não teria como tirá-las. */}
-                  {opcoesVisiveis.map((tag) => (
-                    <DropdownMenuCheckboxItem
-                      key={tag}
-                      checked={etiquetas.includes(tag)}
-                      onCheckedChange={() => alternaEtiqueta(tag)}
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      {/* Ponto, não chip: a opção é uma linha de 280 px que já
-                          divide espaço com o filtro de número. O nome continua
-                          sendo o que se lê; a cor só acelera o reconhecimento
-                          de quem já conhece o vocabulário da operação. */}
-                      <span className="inline-flex items-center gap-2">
-                        <PontoDaEtiqueta tag={tag} />
-                        {tag}
-                      </span>
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  {/* Dizer que NADA casou é diferente de uma lista vazia: sem
-                      esta linha o operador lê um menu em branco e acha que o
-                      seletor quebrou. Só existe quando há busca — sem termo,
-                      lista vazia é o caso "organização sem etiqueta", que o
-                      seletor nem deveria estar desenhando. */}
-                  {termoDaEtiqueta !== "" && opcoesVisiveis.length === 0 && (
-                    <p className="px-2 py-1.5 text-xs text-text-subtle">
-                      {t("Nenhuma etiqueta com esse texto")}
-                    </p>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                </TooltipTrigger>
+                <TooltipContent>{t("O que significa cada status do chat?")}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-        )}
-      </div>
-
-      {/* As setas aparecem só quando há abas fora da área visível; a faixa e o
-          sublinhado continuam com a altura compacta do Inbox.
-
-          `flex-wrap` + `gap-x-1` (#2745) — A FAIXA QUEBRA EM VEZ DE ESCONDER.
-          Medido em browser real, com o CSS do produto compilado e a fonte
-          verdadeira (`tests/sonda-abas-inbox-1280.test.tsx`), as seis abas
-          somam 358px de rótulo+contagem e 378px com o gap de 4px; a coluna da
-          lista vale de 240 (mínimo do arraste, `LIMITES_LISTA`) a 520px, e o
-          padrão da faixa `xl` — a janela de 1280px da issue — é 272px. Sem
-          quebra, o `overflow-x-auto` rolava 191px na coluna de 272 e 13px na
-          de 450: "Fechadas" cortada e "Arquivadas" escondida atrás da seta,
-          que era exatamente o corte medido. Agora, na mesma medição: 2 linhas
-          (68px) em 272, 1 linha (30px) em 450, e as seis dentro da coluna em
-          toda a faixa — rolagem zero.
-
-          `shrink-0` + `whitespace-nowrap` seguem valendo: rótulo não encolhe
-          nem parte no meio. O `gap-x-1` só aperta onde não há folga (com
-          `justify-between` a sobra continua distribuída, então a faixa larga
-          não muda de figura) — e é o que leva 272px de 3 linhas para 2. A
-          seta de rolagem fica sendo o que sempre foi: reserva para o caso em
-          que UMA aba sozinha não cabe (zoom alto, coluna arrastada no mínimo).
-
-          Só o LAYOUT mudou: `value.tab`, `onChange`, `visibleInboxTabs` e
-          `countFor` estão byte a byte como estavam — a aba continua o mesmo
-          filtro com o mesmo rótulo, e "Automático" continua "Automático". */}
-      <Tabs
-        value={value.tab}
-        onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
-        className="px-3"
-      >
-        <div className="flex items-center gap-1">
-          {moreTabs.left ? (
+          {onAbrirAtalhos && (
             <button
               type="button"
-              onClick={() => moveTab(-1)}
-              aria-label={t("Aba anterior")}
-              className="flex w-4 shrink-0 items-center justify-center text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              className="ibx-icon-button"
+              onClick={onAbrirAtalhos}
+              aria-label={t("Atalhos do teclado")}
+              title={t("Atalhos do teclado")}
             >
-              <CaretLeft size={13} aria-hidden />
+              <Keyboard className="ibx-icon" aria-hidden />
             </button>
-          ) : (
-            <span className="w-4 shrink-0" aria-hidden />
           )}
+        </div>
+        {/* A FAIXA DE CATEGORIAS do modelo: rótulo em cima, contagem embaixo,
+            sublinhado na ativa e rolagem lateral (sem barra) quando aperta. A
+            contagem aparece também quando é zero — "0" é informação. As setas
+            de antes continuam para quem navega pelo teclado (moveTab). */}
+        <Tabs value={value.tab} onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}>
           <TabsList
             ref={tabsListRef}
             onScroll={updateMoreTabs}
-            className="h-auto min-w-0 flex-1 flex-wrap justify-between gap-x-1 gap-y-2 rounded-none bg-transparent p-0 [scrollbar-width:none]"
+            aria-label={t("Categorias de conversas")}
+            className="ibx-categories"
+            onKeyDown={(e) => {
+              if (e.key === "Home" || e.key === "End") {
+                const alvo = e.key === "Home" ? tabs[0] : tabs[tabs.length - 1];
+                if (alvo) onChange({ ...value, tab: alvo });
+              }
+            }}
           >
             {tabs.map((tab) => {
               const meta = INBOX_TABS.find((t) => t.value === tab)!;
               const count = countFor[tab];
               return (
-                <TabsTrigger
-                  key={tab}
-                  value={tab}
-                  className="shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
-                >
-                  {t(meta.label)}
-                  {typeof count === "number" && count > 0 && (
-                    <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
-                  )}
+                <TabsTrigger key={tab} value={tab} className="ibx-category">
+                  <span>{t(meta.label)}</span>
+                  <span className="ibx-category-count">
+                    {typeof count === "number" ? count : "–"}
+                  </span>
                 </TabsTrigger>
               );
             })}
           </TabsList>
-          {moreTabs.right ? (
-            <button
-              type="button"
-              onClick={() => moveTab(1)}
-              aria-label={t("Próxima aba")}
-              className="flex w-4 shrink-0 items-center justify-center text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        </Tabs>
+        {/* Quando a faixa rola (coluna estreita, zoom alto), as setas levam à
+            vizinha escondida — só a do lado em que há aba fora da vista. */}
+        {(moreTabs.left || moreTabs.right) && (
+          <span className="sr-only">
+            {moreTabs.left && (
+              <button type="button" onClick={() => moveTab(-1)}>
+                {t("Aba anterior")}
+              </button>
+            )}
+            {moreTabs.right && (
+              <button type="button" onClick={() => moveTab(1)}>
+                {t("Próxima aba")}
+              </button>
+            )}
+          </span>
+        )}
+      </header>
+
+      <div className="ibx-list-tools">
+        <div className="ibx-search-row">
+          <label className="ibx-search">
+            <MagnifyingGlass className="ibx-icon" aria-hidden />
+            {/* "última mensagem" continua no rótulo acessível: a busca alcança
+                apenas `conversations.last_message_preview` (ver o histórico deste
+                campo) — a tela não promete o que o backend não faz. */}
+            <input
+              ref={buscaRef}
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={t("Buscar nome ou telefone")}
+              aria-label={t("Buscar conversas")}
+              title={t("Buscar por nome, telefone ou última mensagem…")}
+            />
+            <kbd aria-hidden>/</kbd>
+          </label>
+          <Popover open={filtrosAbertos} onOpenChange={abrirFiltros}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn("ibx-filter-button", filtrosAtivos > 0 && "ibx-has-filters")}
+                aria-label={t("Filtrar conversas")}
+                title={t("Filtrar conversas")}
+              >
+                <FadersHorizontal className="ibx-icon" aria-hidden />
+                {filtrosAtivos > 0 && <span className="ibx-filter-count">{filtrosAtivos}</span>}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              sideOffset={7}
+              // O Radix reposiciona e mede o espaço livre (`--radix-popover-
+              // content-available-height`), que o CSS usa como teto: o menu
+              // nunca passa da janela, em qualquer zoom ou resolução.
+              collisionPadding={8}
+              className="ibx ibx-floating ibx-filter-popover"
             >
-              <CaretRight size={13} aria-hidden />
-            </button>
-          ) : (
-            <span className="w-4 shrink-0" aria-hidden />
-          )}
+              <div className="ibx-popover-heading">
+                <strong>{t("Filtrar conversas")}</strong>
+                <button
+                  type="button"
+                  className="ibx-text-button"
+                  onClick={() =>
+                    setRascunho({ onlyMine: false, onlyUnread: false, onlyGroups: false, tags: [] })
+                  }
+                >
+                  {t("Limpar")}
+                </button>
+              </div>
+              {/* Só o miolo rola: o cabeçalho e o "Aplicar filtros" ficam sempre
+                  à vista — antes, em tela baixa, o botão saía da janela. */}
+              <div className="ibx-filter-scroll">
+              <div className="ibx-filter-options">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={rascunho.onlyMine}
+                    onChange={(e) => setRascunho((r) => ({ ...r, onlyMine: e.target.checked }))}
+                  />
+                  <span>
+                    <User className="ibx-icon" aria-hidden />
+                    {t("Minhas")}
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={rascunho.onlyUnread}
+                    onChange={(e) => setRascunho((r) => ({ ...r, onlyUnread: e.target.checked }))}
+                  />
+                  <span>
+                    <EnvelopeSimple className="ibx-icon" aria-hidden />
+                    {t("Não lidos")}
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={rascunho.onlyGroups}
+                    onChange={(e) => setRascunho((r) => ({ ...r, onlyGroups: e.target.checked }))}
+                  />
+                  <span>
+                    <UsersThree className="ibx-icon" aria-hidden />
+                    {t("Grupos")}
+                  </span>
+                </label>
+              </div>
+              {showChannelSwitch && (
+                <div className="ibx-filter-field">
+                  <label htmlFor="ibx-filtro-numero">{t("Canais")}</label>
+                  <select
+                    id="ibx-filtro-numero"
+                    aria-label={t("Filtrar por canal")}
+                    value={rascunho.channel_session_id ?? "all"}
+                    onChange={(e) =>
+                      setRascunho((r) => ({
+                        ...r,
+                        channel_session_id: e.target.value === "all" ? undefined : e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="all">{t("Todos os canais")}</option>
+                    {filtroForaDaLista && value.channel_session_id != null && (
+                      <option value={value.channel_session_id}>{t("Número removido")}</option>
+                    )}
+                    {channels?.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.display_name || channelLabel(c)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="ibx-filter-field">
+                <label htmlFor="ibx-filtro-ordem">{t("Ordem")}</label>
+                <select
+                  id="ibx-filtro-ordem"
+                  value={rascunho.ordem ?? "recente"}
+                  onChange={(e) =>
+                    setRascunho((r) => ({
+                      ...r,
+                      ordem: e.target.value === "antigo" ? "antigo" : "recente",
+                    }))
+                  }
+                >
+                  <option value="antigo">{t("Antigo > recente")}</option>
+                  <option value="recente">{t("Recente > antigo")}</option>
+                </select>
+              </div>
+              {opcoesDoSeletor.length > 0 && (
+                <fieldset className="ibx-tag-filters" aria-label={t("Filtrar por tag")}>
+                  <legend>{t("Tags do contato")}</legend>
+                  {opcoesDoSeletor.length > 6 && (
+                    <input
+                      className="ibx-tag-search"
+                      value={buscaDeEtiqueta}
+                      onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
+                      placeholder={t("Buscar etiqueta")}
+                      aria-label={t("Buscar etiqueta")}
+                    />
+                  )}
+                  <div className="ibx-tag-list">
+                    {opcoesVisiveis.map((tag) => (
+                      <label key={tag}>
+                        <input
+                          type="checkbox"
+                          checked={rascunho.tags.includes(tag)}
+                          onChange={() => alternaNoRascunho(tag)}
+                        />
+                        <PontoDaEtiqueta tag={tag} />
+                        {tag}
+                      </label>
+                    ))}
+                    {termoDaEtiqueta !== "" && opcoesVisiveis.length === 0 && (
+                      <p className="mt-2 text-[10px] text-text-subtle">
+                        {t("Nenhuma etiqueta com esse texto")}
+                      </p>
+                    )}
+                  </div>
+                </fieldset>
+              )}
+              {rascunho.tags.length > 1 && (
+                <div className="ibx-filter-field">
+                  <label htmlFor="ibx-filtro-modo">{t("Combinar tags")}</label>
+                  <select
+                    id="ibx-filtro-modo"
+                    value={rascunho.tagMode === "ou" ? "ou" : "e"}
+                    onChange={(e) =>
+                      setRascunho((r) => ({
+                        ...r,
+                        tagMode: e.target.value === "ou" ? "ou" : undefined,
+                      }))
+                    }
+                  >
+                    <option value="e">{t("Todas as selecionadas (E)")}</option>
+                    <option value="ou">{t("Qualquer selecionada (OU)")}</option>
+                  </select>
+                </div>
+              )}
+              </div>
+              <button
+                type="button"
+                className="ibx-button ibx-primary ibx-filter-apply w-full"
+                onClick={aplicarRascunho}
+                data-testid="aplicar-filtros"
+              >
+                {t("Aplicar filtros")}
+              </button>
+            </PopoverContent>
+          </Popover>
         </div>
-      </Tabs>
-    </div>
+
+        {filtrosAtivos > 0 && (
+          <div className="ibx-active-filters" aria-label={t("Filtros ativos")}>
+            {value.ordem === "antigo" && (
+              <ChipDoFiltro
+                rotulo={t("Antigo > recente")}
+                onRemover={() => onChange({ ...value, ordem: undefined })}
+              />
+            )}
+            {value.onlyMine && (
+              <ChipDoFiltro
+                rotulo={t("Minhas")}
+                onRemover={() => onChange({ ...value, onlyMine: false })}
+              />
+            )}
+            {value.onlyUnread && (
+              <ChipDoFiltro
+                rotulo={t("Não lidos")}
+                onRemover={() => onChange({ ...value, onlyUnread: false })}
+              />
+            )}
+            {value.onlyGroups && (
+              <ChipDoFiltro
+                rotulo={t("Grupos")}
+                onRemover={() => onChange({ ...value, onlyGroups: false })}
+              />
+            )}
+            {value.channel_session_id && (
+              <ChipDoFiltro
+                // Lista de números ainda carregando: não afirma que o número saiu.
+                rotulo={
+                  canalEscolhido
+                    ? channelLabel(canalEscolhido)
+                    : channels == null
+                      ? t("Número do WhatsApp")
+                      : t("Número removido")
+                }
+                onRemover={() => onChange({ ...value, channel_session_id: undefined })}
+              />
+            )}
+            {etiquetas.map((tag) => (
+              <ChipDoFiltro key={tag} rotulo={tag} onRemover={() => alternaEtiqueta(tag)} />
+            ))}
+          </div>
+        )}
+
+        <div className="ibx-list-caption">
+          <span>
+            {typeof totalDaAba === "number"
+              ? `${totalDaAba} ${totalDaAba === 1 ? t("conversa") : t("conversas")}`
+              : ""}
+          </span>
+        </div>
+      </div>
+      <Dialog open={ajudaAberta} onOpenChange={setAjudaAberta}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("O que significa cada status do chat?")}</DialogTitle>
+            <DialogDescription>{t("Veja quem está aguardando uma resposta.")}</DialogDescription>
+          </DialogHeader>
+          <dl className="space-y-4 text-sm">
+            {[
+              [t("Todas"), t("Todas as conversas, inclusive as fechadas.")],
+              [t("Sem resposta"), t("Primeiro contato: ainda não recebeu nenhuma resposta.")],
+              [t("Em espera"), t("Já foi respondido e escreveu novamente. Aguarda sua resposta.")],
+              [t("Em aberto"), t("Você enviou uma mensagem e aguarda o contato responder.")],
+              [t("Fechadas"), t("Conversas com atendimento encerrado.")],
+            ].map(([titulo, descricao]) => (
+              <div key={titulo}>
+                <dt className="font-semibold">{titulo}</dt>
+                <dd className="mt-1 text-text-muted">{descricao}</dd>
+              </div>
+            ))}
+          </dl>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ChipDoFiltro({ rotulo, onRemover }: { rotulo: string; onRemover: () => void }) {
+  const t = useT();
+  return (
+    <span className="ibx-filter-chip">
+      {rotulo}
+      <button type="button" onClick={onRemover} aria-label={`${t("Remover filtro")}: ${rotulo}`}>
+        <X size={10} aria-hidden />
+      </button>
+    </span>
   );
 }

@@ -6,6 +6,8 @@ version: 0.1
 date: 2026-04-28
 ---
 
+> **Padrão visual vigente:** [Design System Estallo](../README.md). Esta pasta registra jornadas e estados operacionais; referências visuais herdadas não substituem os tokens atuais. O catálogo executável de navegação é `lib/navigation/registry.ts`.
+
 # 08 — Accessibility
 
 > Compromisso AA mínimo. Atendente passa 8h+/dia no produto: teclado-first é requisito de produtividade, não bonus de inclusão. Reduce-motion respeitado em toda animação.
@@ -14,50 +16,50 @@ date: 2026-04-28
 
 ### 1.1 Globais (em qualquer tela `/app/*`)
 
-| Atalho | Ação |
-|---|---|
+| Atalho         | Ação                                          |
+| -------------- | --------------------------------------------- |
 | `Cmd/Ctrl + K` | Busca global (contacts, leads, conversations) |
-| `?` | Mostra cheatsheet de atalhos (modal) |
-| `g` depois `i` | Vai pra `/app/inbox` |
-| `g` depois `p` | Vai pra Pipeline (último visitado) |
-| `g` depois `c` | Vai pra `/app/contacts` |
-| `g` depois `s` | Vai pra `/app/settings` |
-| `Esc` | Fecha modal/dialog/drawer mais externo |
+| `?`            | Mostra cheatsheet de atalhos (modal)          |
+| `g` depois `i` | Vai pra `/app/inbox`                          |
+| `g` depois `p` | Vai pra Pipeline (último visitado)            |
+| `g` depois `c` | Vai pra `/app/contacts`                       |
+| `g` depois `s` | Vai pra `/app/settings`                       |
+| `Esc`          | Fecha modal/dialog/drawer mais externo        |
 
 ### 1.2 Inbox (`/app/inbox`)
 
-| Atalho | Ação |
-|---|---|
-| `j` | Conversa abaixo na lista |
-| `k` | Conversa acima na lista |
-| `Enter` | Abre conversa focada |
-| `r` | Foca composer pra responder |
-| `e` | Resolver conversa atual |
-| `a` | Claim ("Eu cuido") |
-| `m` | Marcar como não lida |
+| Atalho             | Ação                          |
+| ------------------ | ----------------------------- |
+| `j`                | Conversa abaixo na lista      |
+| `k`                | Conversa acima na lista       |
+| `Enter`            | Abre conversa focada          |
+| `r`                | Foca composer pra responder   |
+| `e`                | Resolver conversa atual       |
+| `a`                | Claim ("Eu cuido")            |
+| `m`                | Marcar como não lida          |
 | `Cmd/Ctrl + Enter` | Enviar mensagem (no composer) |
-| `/` | Abre menu de quick replies |
-| `n` | Nova nota interna |
+| `/`                | Abre menu de quick replies    |
+| `n`                | Nova nota interna             |
 
 ### 1.3 Kanban (`/app/pipelines/[id]`)
 
-| Atalho | Ação |
-|---|---|
-| `j/k` | Próximo/anterior card na coluna atual |
-| `h/l` | Coluna anterior/próxima |
-| `Enter` | Abre card focado |
-| `Space` | Inicia "modo mover": setas movem entre stages, Enter confirma |
-| `Cmd/Ctrl + A` | Seleciona todos visíveis (modo bulk) |
-| `Esc` | Sai do modo bulk |
+| Atalho         | Ação                                                          |
+| -------------- | ------------------------------------------------------------- |
+| `j/k`          | Próximo/anterior card na coluna atual                         |
+| `h/l`          | Coluna anterior/próxima                                       |
+| `Enter`        | Abre card focado                                              |
+| `Space`        | Inicia "modo mover": setas movem entre stages, Enter confirma |
+| `Cmd/Ctrl + A` | Seleciona todos visíveis (modo bulk)                          |
+| `Esc`          | Sai do modo bulk                                              |
 
 ### 1.4 Composer
 
-| Atalho | Ação |
-|---|---|
-| `Cmd/Ctrl + Enter` | Enviar |
-| `Cmd/Ctrl + V` | Colar imagem (suporte clipboard image) |
-| `Tab` | Sai do composer (acessa toolbar) |
-| `:emoji:` | Auto-complete emoji |
+| Atalho             | Ação                                   |
+| ------------------ | -------------------------------------- |
+| `Cmd/Ctrl + Enter` | Enviar                                 |
+| `Cmd/Ctrl + V`     | Colar imagem (suporte clipboard image) |
+| `Tab`              | Sai do composer (acessa toolbar)       |
+| `:emoji:`          | Auto-complete emoji                    |
 
 Atalhos finalizados deferidos pra Spec Sub-PRD 04 §9; lista acima é proposta inicial.
 
@@ -72,7 +74,8 @@ Toda tela autenticada deve ser navegável **inteiramente** com `Tab` / `Shift+Ta
 5. **Modais**: foco trapped dentro do modal; `Esc` fecha; foco volta pro elemento que abriu
 
 ### Foco visível
-- Anel `ring-2 ring-sage-500 ring-offset-2 ring-offset-background` em todo elemento focável
+
+- Anel `ring-2 ring-ring ring-offset-2 ring-offset-background` em todo elemento focável
 - Nunca remover outline com `outline:none` sem substituto visível
 - `focus-visible:` (não `focus:`) pra evitar ring em mouse
 
@@ -80,19 +83,19 @@ Toda tela autenticada deve ser navegável **inteiramente** com `Tab` / `Shift+Ta
 
 ### 3.1 Componentes custom críticos
 
-| Componente | Role | Labels |
-|---|---|---|
-| `<ConversationList>` | `listbox` (ou `list` + `listitem`) | `aria-label="Lista de conversas"`, items com `aria-selected` |
-| `<KanbanBoard>` | `region` | `aria-label="Quadro {pipeline.name}"` |
-| `<KanbanColumn>` | `list` | `aria-label="Estágio {stage.name} com {count} cards"` |
-| `<KanbanCard>` | `listitem` ou `button` | `aria-label="{lead.title}, valor {value}, {tags}"` |
-| `<MessageBubble>` | `article` | `aria-label="Mensagem {role} em {time}"` |
-| `<HandoffBanner>` | `alert` | `aria-live="assertive"` — atendente precisa saber agora |
-| `<NotificationBell>` | `button` | `aria-label="Notificações ({count} novas)"`, `aria-expanded` |
-| `<PresenceDot>` | `status` | `aria-label="{name} está {online/busy/offline}"` |
-| `<ComposerBar textarea>` | `textbox` | `aria-label="Compor mensagem"`, `aria-multiline="true"` |
-| `<MFAInput>` | `group` de 6 inputs | `aria-label="Código TOTP de 6 dígitos"` |
-| `<KanbanCard dragging>` | mantém role `button` | `aria-grabbed="true"` (deprecated mas ainda lido por NVDA) + `aria-describedby` com instruções |
+| Componente               | Role                               | Labels                                                                                         |
+| ------------------------ | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `<ConversationList>`     | `listbox` (ou `list` + `listitem`) | `aria-label="Lista de conversas"`, items com `aria-selected`                                   |
+| `<KanbanBoard>`          | `region`                           | `aria-label="Quadro {pipeline.name}"`                                                          |
+| `<KanbanColumn>`         | `list`                             | `aria-label="Estágio {stage.name} com {count} cards"`                                          |
+| `<KanbanCard>`           | `listitem` ou `button`             | `aria-label="{lead.title}, valor {value}, {tags}"`                                             |
+| `<MessageBubble>`        | `article`                          | `aria-label="Mensagem {role} em {time}"`                                                       |
+| `<HandoffBanner>`        | `alert`                            | `aria-live="assertive"` — atendente precisa saber agora                                        |
+| `<NotificationBell>`     | `button`                           | `aria-label="Notificações ({count} novas)"`, `aria-expanded`                                   |
+| `<PresenceDot>`          | `status`                           | `aria-label="{name} está {online/busy/offline}"`                                               |
+| `<ComposerBar textarea>` | `textbox`                          | `aria-label="Compor mensagem"`, `aria-multiline="true"`                                        |
+| `<MFAInput>`             | `group` de 6 inputs                | `aria-label="Código TOTP de 6 dígitos"`                                                        |
+| `<KanbanCard dragging>`  | mantém role `button`               | `aria-grabbed="true"` (deprecated mas ainda lido por NVDA) + `aria-describedby` com instruções |
 
 ### 3.2 Live regions
 
@@ -110,15 +113,15 @@ Toda tela autenticada deve ser navegável **inteiramente** com `Tab` / `Shift+Ta
 
 ## 4. Contraste
 
-A paleta sage/zinc do design-system base já confirma AA. Validações específicas:
+A paleta vigente é a Estallo. Medir contraste nos tokens e temas atuais; as medições herdadas abaixo não comprovam conformidade do produto e precisam ser refeitas antes de servir como aceite:
 
-| Combinação | Razão | OK? |
-|---|---|---|
-| Texto principal (`zinc-900`) sobre `background` (`zinc-50`) | 16:1 | ✅ AAA |
-| Texto secundário (`zinc-600`) sobre `background` | 7:1 | ✅ AAA |
-| Texto em botão sage (`white` sobre `sage-600`) | 5.2:1 | ✅ AA |
-| Sentiment baixo (texto branco sobre vermelho) | precisa ≥4.5:1 | confirmar na Spec |
-| Estados disabled | 3:1 mínimo (UI components) | confirmar |
+| Combinação                                                  | Razão                      | OK?                   |
+| ----------------------------------------------------------- | -------------------------- | --------------------- |
+| Texto principal (`zinc-900`) sobre `background` (`zinc-50`) | 16:1                       | ✅ AAA                |
+| Texto secundário (`zinc-600`) sobre `background`            | 7:1                        | ✅ AAA                |
+| Texto em botão principal (tokens atuais)                    | Medir nos dois temas       | Pendente nesta tabela |
+| Sentiment baixo (texto branco sobre vermelho)               | precisa ≥4.5:1             | confirmar na Spec     |
+| Estados disabled                                            | 3:1 mínimo (UI components) | confirmar             |
 
 **Nunca usar cor como único sinal**: status `failed` tem ícone `WarningCircle` + texto + cor; status `online` tem dot + texto + cor.
 
@@ -126,7 +129,9 @@ A paleta sage/zinc do design-system base já confirma AA. Validações específi
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
@@ -135,6 +140,7 @@ A paleta sage/zinc do design-system base já confirma AA. Validações específi
 ```
 
 Aplicações específicas:
+
 - **Skeletons**: estáticos (sem `animate-pulse`)
 - **Toasts**: aparecem sem slide
 - **Drag-drop**: movimentos instantâneos (sem ease)
@@ -145,17 +151,17 @@ Aplicações específicas:
 
 ### 6.1 Eventos críticos a anunciar
 
-| Evento | Live region | Texto |
-|---|---|---|
-| Nova mensagem inbound | polite | "Nova mensagem de {nome}: {preview 80 chars}" |
-| Handoff disparado | assertive | "Bot escalou para humano. Motivo: {trigger_reason}" |
-| Conversation atribuída a mim | polite | "Você assumiu a conversa com {nome}" |
-| Mensagem enviada | (do not announce — visual já mostra) | — |
-| Mensagem falhou ao enviar | assertive | "Falha ao enviar — toque para reenviar" |
-| LGPD request recebido | polite | "Novo pedido LGPD de {nome}, prazo D+7" |
-| WAHA session caiu | assertive | "Sessão WhatsApp {phone} desconectada" |
-| Drag-drop conflict | polite | "Card mudou enquanto você arrastava — atualizado" |
-| Realtime reconnecting | polite | "Reconectando ao servidor" |
+| Evento                       | Live region                          | Texto                                               |
+| ---------------------------- | ------------------------------------ | --------------------------------------------------- |
+| Nova mensagem inbound        | polite                               | "Nova mensagem de {nome}: {preview 80 chars}"       |
+| Handoff disparado            | assertive                            | "Bot escalou para humano. Motivo: {trigger_reason}" |
+| Conversation atribuída a mim | polite                               | "Você assumiu a conversa com {nome}"                |
+| Mensagem enviada             | (do not announce — visual já mostra) | —                                                   |
+| Mensagem falhou ao enviar    | assertive                            | "Falha ao enviar — toque para reenviar"             |
+| LGPD request recebido        | polite                               | "Novo pedido LGPD de {nome}, prazo D+7"             |
+| WAHA session caiu            | assertive                            | "Sessão WhatsApp {phone} desconectada"              |
+| Drag-drop conflict           | polite                               | "Card mudou enquanto você arrastava — atualizado"   |
+| Realtime reconnecting        | polite                               | "Reconectando ao servidor"                          |
 
 ### 6.2 Ordem de leitura na inbox aberta
 
@@ -168,41 +174,49 @@ Aplicações específicas:
 ## 7. Focus management
 
 ### 7.1 Modais
+
 - Foco vai pro 1º elemento focável ao abrir
 - Foco fica trapped (Tab cicla dentro)
 - `Esc` fecha; foco volta pro elemento que disparou
 
 ### 7.2 Navegação entre rotas
+
 - Foco vai pro `<h1>` da nova página (programaticamente, `tabIndex={-1}`)
 - Skip link sempre disponível
 
 ### 7.3 Notificações de novo conteúdo
+
 - **Não** mover foco automaticamente quando nova mensagem chega
 - Anunciar via live region
 - Atendente decide quando ir lá
 
 ### 7.4 Forms com erro
+
 - Foco move pro 1º campo com erro ao submit failure
 - Mensagens de erro vinculadas via `aria-describedby`
 
 ## 8. Testes obrigatórios
 
 ### 8.1 Manual
+
 - Navegar inbox completa só com teclado (login → claim → reply → resolve)
 - Navegar Kanban com setas + Space (modo mover)
 - Abrir modal → fechar com Esc → foco volta corretamente
 
 ### 8.2 Screen reader
+
 - VoiceOver (Safari macOS) — checklist obrigatório antes de release P0
 - NVDA (Firefox Windows) — Fase 1.5
 
 ### 8.3 Automated
+
 - `axe-core` integrado nos testes E2E (CI bloqueia merge se crítico encontrado)
 - `eslint-plugin-jsx-a11y` no lint (CI)
 
 ## 9. Internacionalização (consideração futura)
 
 PT-BR único no MVP. Mas:
+
 - Strings sempre via lookup, nunca hardcoded em JSX
 - `<html lang="pt-BR">` no layout root
 - Datas via `Intl.DateTimeFormat('pt-BR')`
@@ -219,6 +233,7 @@ PT-BR único no MVP. Mas:
 ## 11. Checklist por release
 
 Antes de marcar P0 como pronto, validar em cada tela:
+
 - [ ] Tab order faz sentido visual
 - [ ] Foco visível em todo elemento focável
 - [ ] Atalhos documentados funcionam

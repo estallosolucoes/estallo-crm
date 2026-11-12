@@ -33,6 +33,12 @@ interface Props {
   bloqueio?: string | null;
   /** Conversa encerrada: desabilita o envio sem texto próprio, como o composer. */
   encerrada?: boolean;
+  /**
+   * Sem o botão próprio: quem abre é um item de menu de fora (o "⋯" do
+   * cabeçalho do chat, 16/10/2026). O diálogo continua morando AQUI — dentro do
+   * menu ele morreria junto com o menu ao fechar.
+   */
+  controle?: { aberto: boolean; onAbertoChange: (aberto: boolean) => void };
 }
 
 /**
@@ -88,10 +94,13 @@ export function VideoCallButton({
   lastInboundAt,
   bloqueio,
   encerrada = false,
+  controle,
 }: Props) {
   const t = useT();
   const servidor = useMemo(() => servidorDeVideo(), []);
-  const [aberto, setAberto] = useState(false);
+  const [abertoProprio, setAbertoProprio] = useState(false);
+  const aberto = controle ? controle.aberto : abertoProprio;
+  const setAberto = controle ? controle.onAbertoChange : setAbertoProprio;
   // A sala nasce quando o diálogo abre e morre quando ele fecha: nada de
   // gravar, nada de reusar o link da chamada anterior desta conversa.
   const [sala, setSala] = useState<string | null>(null);
@@ -113,20 +122,25 @@ export function VideoCallButton({
     if (vaiAbrir) setSala(novaSala());
     setAberto(vaiAbrir);
   };
+  // Aberto de fora, a sala nasce no primeiro render aberto.
+  if (controle?.aberto && !sala) setSala(novaSala());
+  if (controle && !controle.aberto && sala) setSala(null);
 
   if (!servidor) return null;
 
   return (
     <>
-      <Button
-        variant="outline"
-        className="shrink-0"
-        onClick={() => abrir(true)}
-        data-testid="btn-videochamada"
-      >
-        <VideoCamera size={16} weight="bold" aria-hidden />
-        <span>{t("Vídeo")}</span>
-      </Button>
+      {!controle && (
+        <Button
+          variant="outline"
+          className="shrink-0"
+          onClick={() => abrir(true)}
+          data-testid="btn-videochamada"
+        >
+          <VideoCamera size={16} weight="bold" aria-hidden />
+          <span>{t("Vídeo")}</span>
+        </Button>
+      )}
 
       {/* O diálogo só existe ABERTO: é a condição que segura a mutação
           (`useSendMessage`) para dentro — ver o cabeçalho deste arquivo.

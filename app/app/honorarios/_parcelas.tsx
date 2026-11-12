@@ -17,6 +17,7 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { apiClient } from "@/lib/api/client";
 import { formatCents, parseReaisToCents } from "@/lib/money";
 import { randomId } from "@/lib/random-id";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
 
 type Parcela = {
   id: string;
@@ -221,13 +222,12 @@ function FormularioDeParcela({
 
       <label className="flex flex-col gap-1 text-xs text-text-muted">
         {t("Valor")}
-        <input
+        <CampoDeDinheiro
           value={valor}
-          inputMode="decimal"
-          placeholder="0,00"
+          containerClassName="w-36"
           data-testid="parcela-valor"
           onChange={(e) => setValor(e.target.value)}
-          className="w-28 rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+          className="w-full rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
         />
       </label>
 

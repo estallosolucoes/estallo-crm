@@ -45,8 +45,10 @@ const ETAPA_DO_OUTRO_FUNIL = "66666666-6666-4666-8666-666666666666";
 function clienteStub() {
   return {
     from: (tabela: string) => ({
-      select: () => ({
-        eq: () => ({
+      select: () => {
+        // O handler filtra por organização e por id: o encadeamento aceita quantos `.eq` vierem.
+        const consulta = {
+          eq: () => consulta,
           maybeSingle: async () =>
             tabela === "crm_leads"
               ? {
@@ -70,8 +72,9 @@ function clienteStub() {
                   },
                   error: null,
                 },
-        }),
-      }),
+        };
+        return consulta;
+      },
     }),
   };
 }

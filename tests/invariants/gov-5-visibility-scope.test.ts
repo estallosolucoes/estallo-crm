@@ -37,6 +37,7 @@ const OWN_CONTACT = "ffffffff-3333-4000-8000-000000000001";
 const OWN_CONV_UNASSIGNED = "ffffffff-4444-4000-8000-000000000001";
 const GOV_MSG_AGENT_B = "ffffffff-7777-4000-8000-000000000001";
 const GOV_CAE_AGENT_B = "ffffffff-8888-4000-8000-000000000001";
+const GOV_MSG_OUT_AGENT_B = "ffffffff-9999-4000-8000-000000000001";
 
 beforeAll(() => {
   seedGov();
@@ -46,8 +47,11 @@ beforeAll(() => {
       (id, organization_id, conversation_id, channel_session_id, contact_id, type, direction, body)
     values
       ('${GOV_MSG_AGENT_B}', '${GOV_ORG}', '${GOV_CONV_AGENT_B}', '${GOV_SESSION}', '${GOV_CONTACT_2}',
-       'text', 'inbound', 'gov invariant probe')
+       'text', 'inbound', 'gov invariant probe'),
+      ('${GOV_MSG_OUT_AGENT_B}', '${GOV_ORG}', '${GOV_CONV_AGENT_B}', '${GOV_SESSION}', '${GOV_CONTACT_2}',
+       'text', 'outbound', 'gov invariant probe out')
     on conflict (id) do nothing;
+    update public.messages set status = 'delivered' where id = '${GOV_MSG_OUT_AGENT_B}';
 
     -- 1 linha de auditoria de atribuição na MESMA conversa (probe de herança
     -- conversation_assignment_events <- conversation, migration 0173). Antes dela
@@ -180,5 +184,38 @@ describe("eixo 5 — escopo de visualização", () => {
            where id = '${GOV_CAE_AGENT_B}';`,
       ),
     ).toBe(1);
+  });
+
+  // Migration 0711: a policy deixou de chamar fn_can_view_conversation por
+  // linha (173 conversas davam statement timeout nas contagens da inbox). A
+  // matriz acima prova que a visibilidade é a mesma; esta cerca impede a volta
+  // da função por linha.
+  it("policy de SELECT de conversations não chama função por linha (0711)", () => {
+    const qual = sql(`
+      select pg_get_expr(polqual, polrelid) from pg_policy
+       where polrelid = 'public.conversations'::regclass and polname = 'conversations_select';
+    `);
+    expect(qual).not.toContain("fn_can_view_conversation(");
+    expect(qual).toContain("fn_orgs_veem_todos_os_negocios");
+  });
+
+  it("ultimo_status_de_saida: o responsável lê o status da última saída da própria conversa", () => {
+    expect(
+      countAs(
+        GOV_AGENT_B,
+        `select count(*) from public.conversations c
+           where c.id = '${GOV_CONV_AGENT_B}' and public.ultimo_status_de_saida(c) = 'delivered';`,
+      ),
+    ).toBe(1);
+  });
+
+  it("ultimo_status_de_saida: quem não vê a conversa não lê o status", () => {
+    expect(
+      countAs(
+        GOV_AGENT_A,
+        `select count(*) from public.conversations c
+           where c.id = '${GOV_CONV_AGENT_B}' and public.ultimo_status_de_saida(c) is not null;`,
+      ),
+    ).toBe(0);
   });
 });

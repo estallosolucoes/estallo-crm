@@ -25,7 +25,14 @@ export function entregarAviso(input: EntregarAvisoInput): void {
   const body = traduzir(input.body, idioma);
   const href = input.href;
 
-  if (canalLigado(input.category, "in_app")) {
+  // Com o Inbox aberto a conversa nova já aparece na lista, ao lado: o toast
+  // no canto só cobriria a tela de quem atende. O som continua (canal push).
+  const noInbox =
+    input.category === "message" &&
+    typeof window !== "undefined" &&
+    window.location?.pathname?.startsWith("/app/inbox") === true;
+
+  if (canalLigado(input.category, "in_app") && !noInbox) {
     // O aviso já carrega o destino (`href`); sem ação, o toast dizia "nova
     // mensagem" e deixava a pessoa procurando a conversa na mão. Com ação, ele
     // leva direto para lá. Sem destino, não inventa botão: um botão morto é

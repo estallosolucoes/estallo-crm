@@ -156,7 +156,7 @@ export function HistoricoDeEnvios({
         </label>
         <button
           type="submit"
-          className="rounded-md border bg-primary px-4 py-2 text-sm text-primary-foreground"
+          className="rounded-md border bg-primary dark:bg-accent-700 px-4 py-2 text-sm text-primary-foreground"
         >
           {t("Filtrar")}
         </button>

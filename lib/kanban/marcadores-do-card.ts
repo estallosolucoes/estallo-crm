@@ -47,7 +47,6 @@ export function marcadoresDoCard(lead: Lead): string[] {
   for (const marcador of [
     ...lead.tags,
     ...(lead.contact_tags ?? []),
-    ...(lead.conversation_tags ?? []),
   ]) {
     if (vistos.has(marcador)) continue;
     vistos.add(marcador);
@@ -56,13 +55,9 @@ export function marcadoresDoCard(lead: Lead): string[] {
   return marcadores;
 }
 
-/** Este card casa com o marcador filtrado? Pergunta as três caixas. */
+/** Este card casa com o marcador filtrado? Pergunta as duas caixas (negócio e contato). */
 export function cardTemMarcador(lead: Lead, marcador: string): boolean {
-  return (
-    lead.tags.includes(marcador) ||
-    (lead.contact_tags ?? []).includes(marcador) ||
-    (lead.conversation_tags ?? []).includes(marcador)
-  );
+  return lead.tags.includes(marcador) || (lead.contact_tags ?? []).includes(marcador);
 }
 
 /**
@@ -84,6 +79,6 @@ export function cardTemMarcador(lead: Lead, marcador: string): boolean {
  */
 export function cardTemTodasNaMesmaCaixa(lead: Lead, marcadores: readonly string[]): boolean {
   if (marcadores.length === 0) return true;
-  const caixas = [lead.tags, lead.contact_tags ?? [], lead.conversation_tags ?? []];
+  const caixas = [lead.tags, lead.contact_tags ?? []];
   return caixas.some((caixa) => marcadores.every((m) => caixa.includes(m)));
 }

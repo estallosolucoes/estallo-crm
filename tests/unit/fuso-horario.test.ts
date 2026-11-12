@@ -96,12 +96,6 @@ describe("a agenda do atendente rejeita fuso inválido", () => {
 });
 
 describe("as telas OFERECEM em vez de pedir para digitar", () => {
-  it("o painel anti-banimento", () => {
-    const fonte = readFileSync("components/connections/AntiBanSheet.tsx", "utf8");
-    expect(fonte).toMatch(/FUSOS_OFERECIDOS\.map/);
-    expect(fonte, "ainda é campo de texto").not.toMatch(/aria-label="Fuso horário IANA"\s*\n\s*\/>/);
-  });
-
   it("e a agenda do atendente", () => {
     const fonte = readFileSync("app/app/team/_components/AttendantsClient.tsx", "utf8");
     expect(fonte).toMatch(/FUSOS_OFERECIDOS\.map/);

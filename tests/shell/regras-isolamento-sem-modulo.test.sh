@@ -185,7 +185,7 @@ honorarios_parcelas'
 # Uma raiz por caso: fixture compartilhada entre casos é como um estado vazado
 # vira verde falso — cada caso nasce limpo, como cada instalação de verdade.
 montar_instalacao() {  # montar_instalacao <raiz>
-  local raiz="$1" proj="$1/deskcommcrm"
+  local raiz="$1" proj="$1/estallo-crm"
   mkdir -p "$proj"
   cp -RL "$REPO_ROOT/hostgator-setup-kit" "$proj/"
   # backup.sh de mentira: deixa uma marca no disco. É o marco "o script já
@@ -207,7 +207,7 @@ STUB
   # recuperação do update.sh o referencia por nome.
   printf 'services:\n  app:\n    pull_policy: never\n    build:\n      context: .\n' > "$proj/docker-compose.build.yml"
   cat > "$proj/.env" <<ENV
-APP_IMAGE=${NS}/deskcommcrm:latest
+APP_IMAGE=${NS}/estallo-crm:latest
 APP_PULL_POLICY=always
 SUPABASE_DB_URL=postgresql://x/y
 NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br
@@ -235,7 +235,7 @@ rodar() {
   local raiz="$WORK/$1"
   shift
   POLICIAS_EXISTENTES="$1" TABELAS_EXISTENTES="$2" \
-    bash -c 'cd "$1/deskcommcrm" && exec bash hostgator-setup-kit/update.sh --to v0.9.0 --force' \
+    bash -c 'cd "$1/estallo-crm" && exec bash hostgator-setup-kit/update.sh --to v0.9.0 --force' \
     _ "$raiz" > "$OUTFILE" 2>&1 < /dev/null || RC=$?
 }
 

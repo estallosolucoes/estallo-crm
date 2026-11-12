@@ -1,7 +1,8 @@
 /**
- * G4-02 — Inbox com escopo (acceptance 1 e 4). Prova que a visão 'Todas' é
- * ocultada para `agent` em modo own* e visível para manager/admin/viewer, e que
- * as contagens por visão são renderizadas a partir do hook RLS-scoped
+ * G4-02 — Inbox com escopo (acceptance 1 e 4). Desde que "Minhas" virou filtro
+ * (2026-10-15), a visão 'Todas' aparece para todo papel — para o `agent` em
+ * modo own* ela é a caixa dele, recortada pela RLS —, e as contagens por visão
+ * são renderizadas a partir do hook RLS-scoped
  * (useConversationCounts → /api/v1/conversations/counts, client user-scoped).
  *
  * A garantia REAL de escopo (agent forçando ?filter=all não vaza) é da RLS —
@@ -38,17 +39,24 @@ vi.mock("@/hooks/channels/useChannelSessions", async (original) => {
 const tagsRef: { current: string[] | undefined } = { current: [] };
 /** A OUTRA caixa: marcadores do contato. Separada para os casos da união. */
 const tagsDoContatoRef: { current: string[] | undefined } = { current: [] };
-vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useConversationTagVocabulary: () => ({ data: tagsRef.current }),
-}));
+// Desde a 0659 o filtro tem uma fonte só (o contato). O teste ainda alimenta as
+// duas refs; a união sai ESTÁVEL entre renders, como o `data` do react-query.
+let ultimaUniao: { chave: string; valor: string[] | undefined } = { chave: "", valor: undefined };
+function vocabularioUnico(): string[] | undefined {
+  if (tagsRef.current === undefined && tagsDoContatoRef.current === undefined) return undefined;
+  const valor = [...new Set([...(tagsRef.current ?? []), ...(tagsDoContatoRef.current ?? [])])];
+  const chave = JSON.stringify(valor);
+  if (chave !== ultimaUniao.chave) ultimaUniao = { chave, valor };
+  return ultimaUniao.valor;
+}
 vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
-  useContactTagVocabulary: () => ({ data: tagsDoContatoRef.current }),
+  useContactTagVocabulary: () => ({ data: vocabularioUnico() }),
 }));
 vi.mock("@/hooks/inbox/useConversationCounts", () => ({
-  useConversationCounts: () => ({ data: { unassigned: 3, mine: 2, all: 5 } }),
+  useConversationCounts: () => ({ data: { em_espera: 3, mine: 2, pendentes: 4, all: 5 } }),
 }));
 
-const VALUE: InboxFiltersValue = { tab: "unassigned", search: "", onlyUnread: false };
+const VALUE: InboxFiltersValue = { tab: "all", search: "", onlyUnread: false };
 
 function setOrg(role: ActiveOrg["role"], visibility_mode: ActiveOrg["visibility_mode"]) {
   activeOrgRef.current = { orgId: "org-1", name: "Org", role, visibility_mode };
@@ -71,7 +79,12 @@ function canal(over: Partial<ChannelSession> = {}): ChannelSession {
   };
 }
 
-const SELETOR = "Filtrar por número de WhatsApp";
+const SELETOR = "Filtrar por canal";
+
+/** Desde o redesenho (16/10/2026) número, tags e Minhas moram no popover "Filtrar conversas". */
+function abrirFiltros() {
+  fireEvent.click(screen.getByRole("button", { name: "Filtrar conversas" }));
+}
 
 beforeEach(() => {
   setOrg("agent", "own_and_unassigned");
@@ -82,11 +95,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("visibleInboxTabs (lógica pura de visões)", () => {
-  it("agent em own_and_unassigned NÃO vê 'all'", () => {
-    expect(visibleInboxTabs("agent", "own_and_unassigned")).not.toContain("all");
+  // Esconder 'Todas' do agent nunca foi segurança (a RLS recorta o escopo), e
+  // sem a aba "Minhas" ele ficaria sem caixa nenhuma além da Fila.
+  it("agent em own_and_unassigned VÊ 'all' (recortada pela RLS)", () => {
+    expect(visibleInboxTabs("agent", "own_and_unassigned")).toContain("all");
   });
-  it("agent em 'own' NÃO vê 'all'", () => {
-    expect(visibleInboxTabs("agent", "own")).not.toContain("all");
+  it("agent em 'own' VÊ 'all' (recortada pela RLS)", () => {
+    expect(visibleInboxTabs("agent", "own")).toContain("all");
   });
   it("agent em 'all' VÊ 'all'", () => {
     expect(visibleInboxTabs("agent", "all")).toContain("all");
@@ -100,9 +115,10 @@ describe("visibleInboxTabs (lógica pura de visões)", () => {
   it("admin sempre vê 'all'", () => {
     expect(visibleInboxTabs("admin", "own")).toContain("all");
   });
-  it("as 3 visões nomeadas existem (Minhas/Fila/Todas) para manager", () => {
+  it("as visões nomeadas existem (Fila/Sem resposta/Todas) e 'mine' não é mais aba", () => {
     const tabs = visibleInboxTabs("manager", "own_and_unassigned");
-    expect(tabs).toEqual(expect.arrayContaining(["mine", "unassigned", "all"]));
+    expect(tabs).toEqual(expect.arrayContaining(["all", "pending", "waiting", "open", "closed"]));
+    expect(tabs).not.toContain("mine");
   });
 });
 
@@ -125,12 +141,12 @@ describe("InboxFilters render — 3 visões + escopo", () => {
       Object.defineProperty(list, "clientWidth", { configurable: true, get: () => width });
       Object.defineProperty(list, "scrollWidth", { configurable: true, value: 520 });
       vi.spyOn(list, "getBoundingClientRect").mockReturnValue({ left: 0 } as DOMRect);
-      const all = screen.getByRole("tab", { name: /Todas/ });
+      const all = screen.getByRole("tab", { name: /Em aberto/ });
       Object.defineProperty(all, "offsetWidth", { configurable: true, value: 40 });
       vi.spyOn(all, "getBoundingClientRect").mockImplementation(
         () => ({ left: 210 - list.scrollLeft }) as DOMRect,
       );
-      rerender(<InboxFilters value={{ ...VALUE, tab: "all" }} onChange={onChange} />);
+      rerender(<InboxFilters value={{ ...VALUE, tab: "open" }} onChange={onChange} />);
       expect(list.scrollLeft).toBe(140);
       expect(screen.getByRole("button", { name: "Aba anterior" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Próxima aba" })).toBeInTheDocument();
@@ -141,28 +157,38 @@ describe("InboxFilters render — 3 visões + escopo", () => {
       act(() => onResize([], {} as ResizeObserver));
       expect(list.scrollLeft).toBe(100);
 
-      const archived = screen.getByRole("tab", { name: /Arquivadas/ });
+      const archived = screen.getByRole("tab", { name: /Fechadas/ });
       Object.defineProperty(archived, "offsetWidth", { configurable: true, value: 60 });
       vi.spyOn(archived, "getBoundingClientRect").mockImplementation(
         () => ({ left: 430 - list.scrollLeft }) as DOMRect,
       );
-      rerender(<InboxFilters value={{ ...VALUE, tab: "archived" }} onChange={onChange} />);
+      rerender(<InboxFilters value={{ ...VALUE, tab: "closed" }} onChange={onChange} />);
       expect(list.scrollLeft).toBe(260);
       expect(screen.getByRole("button", { name: "Aba anterior" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Próxima aba" })).not.toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: /Arquivadas/ })).toHaveAttribute("data-state", "active");
+      expect(screen.getByRole("tab", { name: /Fechadas/ })).toHaveAttribute("data-state", "active");
     } finally {
       vi.unstubAllGlobals();
     }
     expect(disconnect).toHaveBeenCalled();
   });
 
-  it("agent em modo own*: mostra Minhas e Fila, esconde Todas", () => {
+  it("agent em modo own*: Fila, Pendentes e Todas na faixa; Minhas é botão de filtro", () => {
     setOrg("agent", "own_and_unassigned");
-    render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Minhas/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Fila/ })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /Todas/ })).not.toBeInTheDocument();
+    const onChange = vi.fn();
+    render(<InboxFilters value={VALUE} onChange={onChange} />);
+    expect(screen.getByRole("tab", { name: /Sem resposta/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Em espera/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Todas/ })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Minhas/ })).not.toBeInTheDocument();
+    abrirFiltros();
+    const minhas = screen.getByRole("checkbox", { name: "Minhas" });
+    expect(minhas).not.toBeChecked();
+    fireEvent.click(minhas);
+    // O popover é um RASCUNHO: nada muda até "Aplicar filtros".
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: VALUE.tab, onlyMine: true }));
   });
 
   it("manager: mostra Todas", () => {
@@ -171,27 +197,29 @@ describe("InboxFilters render — 3 visões + escopo", () => {
     expect(screen.getByRole("tab", { name: /Todas/ })).toBeInTheDocument();
   });
 
-  it("contagens por visão são renderizadas (Fila=3, Minhas=2)", () => {
+  it("contagens por visão são renderizadas (Fila=3, Pendentes=4)", () => {
     setOrg("manager", "all");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Fila/ })).toHaveTextContent("3");
-    expect(screen.getByRole("tab", { name: /Minhas/ })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /Em espera/ })).toHaveTextContent("3");
+    expect(screen.getByRole("tab", { name: /Sem resposta/ })).toHaveTextContent("4");
     expect(screen.getByRole("tab", { name: /Todas/ })).toHaveTextContent("5");
   });
 });
 
 describe("InboxFilters — seletor de número e o filtro órfão", () => {
-  it("um número só: não há o que alternar, o seletor não aparece", () => {
+  it("um canal só: o seletor continua disponível", () => {
     setOrg("manager", "all");
     canaisRef.current = [canal()];
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.queryByLabelText(SELETOR)).not.toBeInTheDocument();
+    abrirFiltros();
+    expect(screen.getByLabelText(SELETOR)).toBeInTheDocument();
   });
 
   it("dois números: o seletor aparece com os dois", () => {
     setOrg("manager", "all");
     canaisRef.current = [canal(), canal({ id: "canal-2", display_name: "Suporte" })];
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
+    abrirFiltros();
     expect(screen.getByLabelText(SELETOR)).toBeInTheDocument();
   });
 
@@ -207,6 +235,7 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     render(
       <InboxFilters value={{ ...VALUE, channel_session_id: "canal-excluido" }} onChange={() => {}} />,
     );
+    abrirFiltros();
     const seletor = screen.getByLabelText(SELETOR);
     expect(seletor).toBeInTheDocument();
     expect(seletor).toHaveTextContent("Número removido");
@@ -226,6 +255,7 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     render(
       <InboxFilters value={{ ...VALUE, tag: "etiqueta-orfa" }} onChange={() => {}} />,
     );
+    abrirFiltros();
     // ⚠️ `getByLabelText` continua valendo (#1274): o seletor deixou de ser um
     // `Select` (que era `role="combobox"`) e virou um botão de menu, mas o RÓTULO
     // ACESSÍVEL é o mesmo — e é por ele que se procura o controle, e por ele que
@@ -245,13 +275,15 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     setOrg("manager", "all");
     tagsDoContatoRef.current = ["vip"];
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
+    abrirFiltros();
     expect(screen.getByLabelText("Filtrar por tag")).toBeInTheDocument();
   });
 
-  it("marcador que só existe na CONVERSA faz o seletor aparecer", () => {
+  it("marcador do vocabulário faz o seletor aparecer", () => {
     setOrg("manager", "all");
     tagsRef.current = ["reclamacao"];
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
+    abrirFiltros();
     expect(screen.getByLabelText("Filtrar por tag")).toBeInTheDocument();
   });
 
@@ -261,6 +293,7 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     setOrg("manager", "all");
     tagsRef.current = [];
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
+    abrirFiltros();
     expect(screen.queryByLabelText("Filtrar por tag")).not.toBeInTheDocument();
   });
 
@@ -268,6 +301,7 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     setOrg("manager", "all");
     canaisRef.current = [canal(), canal({ id: "canal-2", display_name: "Suporte" })];
     render(<InboxFilters value={{ ...VALUE, channel_session_id: "canal-2" }} onChange={() => {}} />);
+    abrirFiltros();
     const seletor = screen.getByLabelText(SELETOR);
     expect(seletor).toHaveTextContent("Suporte");
     expect(seletor).not.toHaveTextContent("Número removido");
@@ -285,6 +319,7 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     render(
       <InboxFilters value={{ ...VALUE, channel_session_id: "canal-1" }} onChange={() => {}} />,
     );
+    abrirFiltros();
     expect(screen.queryByText("Número removido")).not.toBeInTheDocument();
   });
 });

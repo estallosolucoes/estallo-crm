@@ -7,10 +7,6 @@ const mocks = vi.hoisted(() => ({
   boundary: vi.fn(),
   preflight: vi.fn(),
   authorize: vi.fn(),
-  knobs: vi.fn(),
-  open: vi.fn(),
-  prospeccaoAberta: vi.fn(),
-  pacing: vi.fn(),
   paradas: vi.fn(),
   prepare: vi.fn(),
 }));
@@ -30,29 +26,9 @@ vi.mock("@/lib/ai/elegibilidade/consulta-pre-go-live", () => ({
   decidirPreGoLiveDoCanalViaSupabase: mocks.preflight,
 }));
 vi.mock("@/lib/prospecting/guard", () => ({ assertProspectingDelivery: mocks.guard }));
-vi.mock("@/lib/agent-engine/pacing/store", () => ({
-  loadChannelKnobs: mocks.knobs,
-  loadPacingState: vi.fn().mockResolvedValue({ sentToday: 0 }),
-  recordSend: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock("@/lib/agent-engine/pacing/engine", () => ({
-  janelaDeEnvioAberta: mocks.open,
-  // A prospecção lê o portão próprio (dias + horas, 0642) — o genérico não é
-  // mais chamado neste worker. Sem estas duas chaves o import morre e TODOS os
-  // casos desta suíte falham com "not a function", não só os de janela.
-  janelaDeProspeccaoAberta: mocks.prospeccaoAberta,
-  decidePacing: mocks.pacing,
-  proximaAberturaDaJanela: () => new Date(Date.now() + 3600000),
-  proximaAberturaDaProspeccao: () => new Date(Date.now() + 3600000),
-  // O ritmo da esteira fria (`lib/prospecting/ritmo-da-esteira-fria.ts`) deriva
-  // o teto diário DESTA função em vez de manter uma tabela de degraus própria.
-  // O mock precisa dela, senão o import do worker morre antes de qualquer caso
-  // — e a falha aparece como "esperava erro X" em testes que não têm nada a ver.
-  warmupCapFor: (_idade: number, degraus: Array<{ minAgeDays: number; cap: number | null }>) => {
-    let cap: number | null = degraus[0]?.cap ?? null;
-    for (const d of degraus) if (_idade >= d.minAgeDays) cap = d.cap;
-    return cap;
-  },
+vi.mock("@/lib/messaging/ritmo-entre-envios", async (orig) => ({
+  ...(await orig<typeof import("@/lib/messaging/ritmo-entre-envios")>()),
+  esperarRitmo: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/env", () => ({ env: {} }));
 // Só `idsDeOrgsParadas` é dublê: `OrgNaoOperanteError` segue a classe real
@@ -109,8 +85,7 @@ function database(
 ) {
   return {
     query: vi.fn(async (sql: string) => {
-      if (sql.startsWith("select daily_message_limit"))
-        return { rows: [{ daily_message_limit: 50 }] };
+      if (sql.startsWith("select 1 as ok")) return { rows: [{ ok: 1 }] };
       if (sql.includes("count(*) filter")) return { rows: [counts] };
       if (sql.startsWith("select * from prospecting_candidates")) return { rows: [row] };
       if (sql.startsWith("select published_version_id"))
@@ -121,10 +96,6 @@ function database(
 }
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.knobs.mockResolvedValue({ knobs: {} });
-  mocks.open.mockReturnValue(true);
-  mocks.prospeccaoAberta.mockReturnValue(true);
-  mocks.pacing.mockReturnValue({ allow: true, waitMs: 0 });
   mocks.preflight.mockResolvedValue({ permite: true });
   mocks.guard.mockResolvedValue(undefined);
   mocks.boundary.mockResolvedValue(undefined);
@@ -200,13 +171,6 @@ describe("gradual outreach", () => {
     expect(mocks.generate).not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
   });
-  it("pede o ritmo como prospecção: o gate genérico não veta o domingo que os dias próprios liberaram", async () => {
-    await sendNextCandidate({} as never, database() as never, {} as never, campaign);
-    // Sem a flag, o veto de domingo do gate genérico barra a abordagem que o
-    // portão próprio deixou passar: a prospecção de domingo é reagendada para
-    // segunda, calada, mesmo com o domingo marcado na caixa da prospecção.
-    expect(mocks.pacing).toHaveBeenCalledWith(expect.objectContaining({ prospeccao: true }));
-  });
   it("keeps spacing across campaign switches", async () => {
     await sendNextCandidate(
       {} as never,
@@ -214,26 +178,6 @@ describe("gradual outreach", () => {
       {} as never,
       campaign,
     );
-    expect(mocks.generate).not.toHaveBeenCalled();
-  });
-  it("stops outside the configured window", async () => {
-    mocks.prospeccaoAberta.mockReturnValue(false);
-    const db = database();
-    await sendNextCandidate({} as never, db as never, {} as never, campaign);
-    expect(mocks.send).not.toHaveBeenCalled();
-    // Sem tentativa e sem trilha: reagendou para a próxima abertura e voltou.
-    expect(
-      db.query.mock.calls.some(
-        ([q]) => q.includes("update prospecting_campaigns set next_send_at=$3"),
-      ),
-    ).toBe(true);
-    expect(mocks.audit).not.toHaveBeenCalled();
-  });
-  it("fails closed when channel settings cannot be read", async () => {
-    mocks.knobs.mockRejectedValue(new Error("database unavailable"));
-    await expect(
-      sendNextCandidate({} as never, database() as never, {} as never, campaign),
-    ).rejects.toThrow();
     expect(mocks.generate).not.toHaveBeenCalled();
   });
   it("does not send when campaign pauses while the model generates", async () => {

@@ -19,12 +19,13 @@ export function SearchTrigger() {
       <Button
         variant="outline"
         size="sm"
-        className="gap-2 text-muted-foreground"
+        // ponytail: largura fixa = conteúdo antigo (~150px) × 1,3. Medir de novo se o texto mudar.
+        className="gap-2 text-muted-foreground md:w-[293px] md:justify-start"
         onClick={() => setOpen(true)}
       >
         <MagnifyingGlass size={14} aria-hidden />
         <span className="hidden md:inline">{t("Buscar...")}</span>
-        <kbd className="ml-2 hidden md:inline rounded-md border bg-muted px-1.5 py-0.5 text-[10px]">⌘K</kbd>
+        <kbd className="ml-auto hidden md:inline rounded-md border bg-muted px-1.5 py-0.5 text-[10px]">⌘K</kbd>
       </Button>
       <CommandPalette open={open} onOpenChange={setOpen} />
     </>

@@ -9,16 +9,10 @@ import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-tu
 import {
   BEFORE_SEND_GATES,
   evaluateBeforeSend,
-  type Gate,
   type GateContext,
   type GateTraceEntry,
   loadChannelProvider,
-  pacingGate,
 } from '../guardrails/before-send';
-import { loadChannelKnobs, loadPacingState } from '../pacing/store';
-import { PACING_DEFAULTS } from '../pacing/defaults';
-import { SPINNING_DEFAULTS } from '../spinning/defaults';
-import { loadRecentCopies, loadSpinningKnobs } from '../spinning/store';
 import { loadPromiseTable } from '../guardrails/promise/table';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
@@ -50,10 +44,7 @@ export interface PreviewResult {
   impediments: Array<{ code: string; message: string }>;
   /**
    * O que NÃO impediu o candidato, mas o operador precisa ver sobre o ENVIO real:
-   * um gate que o barraria agora, ou uma mídia que não sairia (produto sem fotos,
-   * #2490). O aviso de gate só o sandbox escreve (ver `gatesDoSandbox`) — o rascunho
-   * assistido trata o mesmo veto como impedimento; o de produto sem fotos
-   * (`midia_sem_fotos`) sai nos dois.
+   * uma mídia que não sairia (produto sem fotos, #2490), `midia_sem_fotos`.
    */
   warnings: Array<{ code: string; message: string }>;
   restrictions: string[];
@@ -88,10 +79,6 @@ export async function previewGateContext(
   if (p.gateContext) return { ...p.gateContext, now };
   const org = p.organizationId,
     channel = p.channelId;
-  const cfg = channel
-    ? await loadChannelKnobs(db, org, channel, log)
-    : { knobs: PACING_DEFAULTS, numberActivatedAt: null };
-  const spinning = channel ? await loadSpinningKnobs(db, org, channel, log) : SPINNING_DEFAULTS;
   const promise = await loadPromiseTable(db, org),
     disclosure = await loadDisclosureTemplate(db, org);
   const first = p.contactId ? (await countPriorAcceptedSends(db, org, p.contactId)) === 0 : true;
@@ -113,26 +100,6 @@ export async function previewGateContext(
     optedOut: p.context.context.contact.is_blocked,
     provider: channel ? await loadChannelProvider(db, org, channel) : DEFAULT_CHANNEL_PROVIDER,
     messagingWindow: { lastInboundAt: lastInbound },
-    pacing: {
-      knobs: cfg.knobs,
-      // A prévia propõe a RESPOSTA a uma mensagem recebida: vale a janela
-      // `resposta_*` (0495), a mesma que `approved-reply.ts` usa ao enviar o
-      // rascunho aprovado (#1984). Sem isto, o rascunho da prévia seria vetado
-      // pelo `outside_window` da janela de DISPARO (7h-22h) em vez da de resposta.
-      resposta: true,
-      state: channel
-        ? await loadPacingState(db, org, channel, {
-            now,
-            timezone: cfg.knobs.timezone,
-            numberActivatedAt: cfg.numberActivatedAt,
-          })
-        : { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
-      crmDailyLimit: null,
-    },
-    spinning: {
-      knobs: spinning,
-      window: channel ? await loadRecentCopies(db, org, channel, spinning.windowSize) : [],
-    },
     promise: { table: promise?.table ?? null },
     semanticPromise: null,
     disclosure: { template: disclosure?.body ?? null, isFirstOutbound: first, mode: 'inject' },
@@ -172,39 +139,6 @@ export const SCENARIO_READS = new Set([
   'crm_search_products',
   'crm_search_knowledge',
 ]);
-/**
- * A cadeia do Testar (sandbox): a de produção, com o veto de pacing rebaixado a aviso.
- *
- * Fora da janela de envio, o `pacingGate` impede que a resposta do modelo
- * apareça como candidato de teste. Janela, aquecimento e limite diário protegem
- * o envio real; o sandbox não envia mensagens. Rebaixar somente esse veto a aviso
- * permite inspecionar o candidato e executar os demais gates de conteúdo.
- *
- * Só o pacing muda, e só aqui. Opt-out, LGPD e os gates de conteúdo continuam vetando;
- * o rascunho assistido (`assisted`, contato real) e a produção seguem com
- * `BEFORE_SEND_GATES` intacta. O veto vira linha `skipped: 'sandbox_send_embargo'` no
- * trace e um aviso explícito no resultado — nunca um `pass` silencioso.
- */
-function gatesDoSandbox(avisos: Array<{ code: string; message: string }>): readonly Gate[] {
-  return BEFORE_SEND_GATES.map((gate) =>
-    gate.name !== pacingGate.name
-      ? gate
-      : {
-          name: gate.name,
-          evaluate: (ctx: GateContext) => {
-            const verdict = gate.evaluate(ctx);
-            if (verdict.pass) return verdict;
-            avisos.push({
-              code: verdict.code,
-              message:
-                `Em produção esta resposta não sairia agora (${verdict.reason}). ` +
-                'O teste mostra a resposta mesmo assim; nenhuma mensagem foi enviada.',
-            });
-            return { pass: true, skipped: 'sandbox_send_embargo' as const };
-          },
-        },
-  );
-}
 /**
  * A MESMA preparação de mídia do envio real, dentro do dry-run (#2490).
  *
@@ -331,7 +265,6 @@ export function applyPreviewPolicy(
                       'nenhuma imagem seria enviada no envio real — só o texto.',
                   });
               }
-              const avisos: Array<{ code: string; message: string }> = [];
               const result = evaluateBeforeSend(
                 {
                   ...ctx,
@@ -339,7 +272,7 @@ export function applyPreviewPolicy(
                   body,
                   semanticPromise: semanticClassifier ? await semanticClassifier(body) : null,
                 },
-                p.kind === 'sandbox' ? gatesDoSandbox(avisos) : BEFORE_SEND_GATES,
+                BEFORE_SEND_GATES,
               );
               if (result.veto) {
                 p.result.impediments.push({ code: result.veto.code, message: result.veto.message });
@@ -348,10 +281,6 @@ export function applyPreviewPolicy(
                   error: { code: result.veto.code, message: result.veto.message },
                 };
               }
-              // O aviso acompanha um candidato; vetado por outro gate, o impedimento já diz.
-              for (const aviso of avisos)
-                if (!p.result.warnings.some((w) => w.code === aviso.code))
-                  p.result.warnings.push(aviso);
               p.result.candidates.push({
                 body: result.body,
                 citations: citations(),

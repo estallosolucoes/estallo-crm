@@ -28,6 +28,12 @@
  * segue o gravado em c85293f05: o payload brasileiro é comparado a ele SEM
  * essas duas chaves (`semAsChavesDoDoc110`), o que prova que nenhuma outra
  * mudou, e um caso à parte cobra que as duas estão lá.
+ *
+ * Quarta exceção deliberada (identidade Estallo): `email.json`, `alarmes.json` e
+ * `alarmes-store-redact.json` foram REGRAVADOS só na COR do HTML — o texto da tinta
+ * (`#1c1a16` → `#26333d`) e o do texto secundário (`#7d786c` → `#647480`). Nenhum
+ * caractere de texto mudou: a regravação aplicou o mapeamento medido sobre o diff, e o diff
+ * com as cores neutralizadas era vazio. O botão do e-mail segue `#2f6f4e`.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

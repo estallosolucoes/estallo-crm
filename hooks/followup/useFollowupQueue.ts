@@ -1,5 +1,7 @@
 "use client";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef } from "react";
+import { useRealtimeChannel, type RealtimeStatus } from "@/hooks/realtime/useRealtimeChannel";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -34,17 +36,38 @@ export interface FollowupQueueRow {
   id: string;
   contact: { id: string; name: string };
   flow_name: string | null;
+  flow_id?: string | null;
   agent_name: string | null;
   node_or_reason: string;
   next_fire_at: string | null;
   status: string;
   detail: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  attempts?: number | null;
+  steps_taken?: number | null;
+  version_id?: string | null;
+  mode?: string | null;
+  reexecucao?: string | null;
 }
+
+export type FollowupExecutionMode = "production" | "simulation" | "test";
 
 export interface FollowupQueueFilters {
   status?: FollowupEnrollmentStatus;
   pointer_id?: string;
   q?: string;
+  /** Datas "AAAA-MM-DD": entrada da execução no intervalo (dia inteiro, UTC). */
+  desde?: string;
+  ate?: string;
+  modo?: FollowupExecutionMode;
+  versao?: string;
+  lead?: string;
+}
+
+export interface FollowupQueueOptions {
+  /** Atualização automática (polling) a cada `ms`; sem isto a lista só muda ao filtrar ou recarregar. */
+  refetchMs?: number | false;
 }
 
 interface ListResponse {
@@ -57,7 +80,7 @@ const QUEUE_LIMIT = 20;
 export const followupQueueQueryKey = (filters: FollowupQueueFilters) =>
   ["followup", "queue", filters] as const;
 
-export function useFollowupQueue(filters: FollowupQueueFilters = {}) {
+export function useFollowupQueue(filters: FollowupQueueFilters = {}, options: FollowupQueueOptions = {}) {
   return useInfiniteQuery({
     queryKey: followupQueueQueryKey(filters),
     initialPageParam: undefined as string | undefined,
@@ -66,6 +89,10 @@ export function useFollowupQueue(filters: FollowupQueueFilters = {}) {
       if (filters.status) qs.set("status", filters.status);
       if (filters.pointer_id) qs.set("pointer_id", filters.pointer_id);
       if (filters.q) qs.set("q", filters.q);
+      for (const k of ["desde", "ate", "modo", "versao", "lead"] as const) {
+        const v = filters[k];
+        if (v) qs.set(k, v);
+      }
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", String(QUEUE_LIMIT));
       try {
@@ -77,6 +104,7 @@ export function useFollowupQueue(filters: FollowupQueueFilters = {}) {
     },
     getNextPageParam: (last) => (last.meta?.has_more && last.meta.cursor ? last.meta.cursor : undefined),
     staleTime: 15_000,
+    refetchInterval: options.refetchMs ?? false,
   });
 }
 
@@ -131,4 +159,38 @@ export function useCancelFollowupPromise() {
       showApiError(err);
     },
   });
+}
+
+/**
+ * Execuções de UM fluxo ao vivo: assina `followup_enrollments` (publicação desde a migration 0715) filtrada pelo fluxo
+ * e só INVALIDA a lista e o dossiê — o dado volta pela API, sob a RLS de sempre. O motor escreve na linha a cada passo,
+ * então os eventos são agrupados: no máximo uma releitura por segundo. Devolve o status do canal para quem chama
+ * escolher o polling de recuperação.
+ */
+export function useExecucoesAoVivo(flowId: string, enabled: boolean): RealtimeStatus {
+  const qc = useQueryClient();
+  const pendente = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (pendente.current) clearTimeout(pendente.current);
+    },
+    [],
+  );
+  const onChange = useCallback(() => {
+    if (pendente.current) return;
+    pendente.current = setTimeout(() => {
+      pendente.current = null;
+      void qc.invalidateQueries({ queryKey: ["followup", "queue"] });
+      void qc.invalidateQueries({ queryKey: ["followup", "enrollment"] });
+    }, 1_000);
+  }, [qc]);
+  const { status } = useRealtimeChannel({
+    name: `followup-execucoes-${flowId}`,
+    postgresChanges: { event: "*", schema: "public", table: "followup_enrollments", filter: `pointer_id=eq.${flowId}` },
+    onChange,
+    enabled,
+    // O que mudou entre a busca inicial e o SUBSCRIBED não vem pelo canal.
+    recuperarNaPrimeira: true,
+  });
+  return status;
 }

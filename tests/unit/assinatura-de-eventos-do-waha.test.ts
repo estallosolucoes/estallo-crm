@@ -35,7 +35,11 @@ import { describe, expect, it } from "vitest";
  * banco de todo clone, sem trazer uma única mensagem a mais.
  */
 
-const COMPOSES = ["docker-compose.prod.yml", "docker-compose.yml"];
+// `docker-stack.estallo.yml` entrou em 30/10/2026: assinava só
+// `message.any,session.status`, e sem `message.ack` nenhuma mensagem enviada
+// passava de "enviada" — o tique duplo e o azul nunca apareciam (medido: zero
+// eventos `message.ack` no `webhook_events_log` em dois dias).
+const COMPOSES = ["docker-compose.prod.yml", "docker-compose.yml", "docker-stack.estallo.yml"];
 
 describe("a assinatura de eventos do canal por QR", () => {
   for (const arquivo of COMPOSES) {

@@ -19,6 +19,8 @@ import {
 } from "@/lib/prospecting/schema";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
+import { CampoDeDinheiro } from "@/components/ui/campo-de-dinheiro";
+import { centavosParaCampo, parseReaisToCents } from "@/lib/money";
 
 type Campaign = {
   id: string;
@@ -417,16 +419,13 @@ export function ProspectingClient() {
                 </div>
                 <div>
                   <Label htmlFor="prospecting-budget">{t("Teto da busca (US$)")}</Label>
-                  <Input
+                  <CampoDeDinheiro
                     id="prospecting-budget"
-                    type="number"
-                    min={0.5}
-                    max={10}
-                    step={0.5}
-                    value={budget}
-                    onChange={(e) => setBudget(Number(e.target.value))}
+                    moeda="USD"
+                    value={centavosParaCampo(Math.round(budget * 100))}
+                    onChange={(e) => setBudget((parseReaisToCents(e.target.value) ?? 0) / 100)}
                     required
-                    className="mt-1"
+                    containerClassName="mt-1 w-full"
                   />
                 </div>
               </div>

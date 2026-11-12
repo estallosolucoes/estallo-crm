@@ -30,6 +30,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobRow } from "@/lib/agent-engine/queue/queue";
+import type * as InboundTurnModule from "@/lib/agent-engine/agent/inbound-turn";
+import type * as FollowupTurnModule from "@/lib/agent-engine/agent/followup-turn";
 
 const runBeforeSend = vi.fn(async (args: Record<string, unknown>) => {
   await (args.send as (b: string) => Promise<unknown>)(args.body as string);
@@ -51,7 +53,7 @@ vi.mock("@/lib/agent-engine/edge/crm/get-lead-context", () => ({
 
 const runAgentTurn = vi.fn(async () => undefined);
 vi.mock("@/lib/agent-engine/agent/inbound-turn", async (original) => ({
-  ...(await original<typeof import("@/lib/agent-engine/agent/inbound-turn")>()),
+  ...(await original<typeof InboundTurnModule>()),
   runAgentTurn,
 }));
 vi.mock("@/lib/agent-engine/edge/crm/send-ledger", () => ({
@@ -103,7 +105,12 @@ function job(): JobRow {
 
 /** `null` = a inscrição não existe mais (fluxo apagado / cascata). */
 interface Cenario {
-  inscricao: { current_node_id: string; status: string } | null;
+  inscricao: {
+    current_node_id: string;
+    status: string;
+    execution_contract?: number;
+    graph_execution_contract?: number | null;
+  } | null;
 }
 
 /**
@@ -113,21 +120,23 @@ interface Cenario {
 let inserts: Array<{ sql: string; params: unknown[] }> = [];
 
 function fakePool(c: Cenario) {
-  const query = vi.fn(async (sql: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }> => {
-    if (/insert into followup_enrollment_events/.test(sql)) {
-      inserts.push({ sql, params: params ?? [] });
+  const query = vi.fn(
+    async (sql: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }> => {
+      if (/insert into followup_enrollment_events/.test(sql)) {
+        inserts.push({ sql, params: params ?? [] });
+        return { rows: [] };
+      }
+      if (sql.includes("d.fechada_em::text"))
+        return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
+      if (/from conversations/.test(sql))
+        return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
+      // A checagem da inscrição: distinta da janela do agente (`from followup_enrollments e`).
+      if (/from followup_enrollments/.test(sql) && !/left join ai_agents/.test(sql)) {
+        return { rows: c.inscricao ? [{ ...c.inscricao }] : [] };
+      }
       return { rows: [] };
-    }
-    if (sql.includes("d.fechada_em::text"))
-      return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
-    if (/from conversations/.test(sql))
-      return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
-    // A checagem da inscrição: distinta da janela do agente (`from followup_enrollments e`).
-    if (/from followup_enrollments/.test(sql) && !/left join ai_agents/.test(sql)) {
-      return { rows: c.inscricao ? [{ ...c.inscricao }] : [] };
-    }
-    return { rows: [] };
-  });
+    },
+  );
   return { query } as never;
 }
 
@@ -145,7 +154,7 @@ function deps() {
   return { d, send, completeFollowupTurn };
 }
 
-let criarHandler: typeof import("@/lib/agent-engine/agent/followup-turn").createFollowupTurnHandler;
+let criarHandler: typeof FollowupTurnModule.createFollowupTurnHandler;
 
 beforeAll(async () => {
   ({ createFollowupTurnHandler: criarHandler } =
@@ -159,6 +168,31 @@ beforeEach(() => {
 });
 
 describe("o turno de fluxo diante da inscrição que não está mais viva", () => {
+  it.each([
+    [0, 1, "execution_contract_mismatch"],
+    [1, 0, "execution_contract_mismatch"],
+  ])("contratos %s/%s não tocam o envio (%s)", async (executionContract, graphContract, reason) => {
+    const { d, send, completeFollowupTurn } = deps();
+    await expect(
+      criarHandler(d)(
+        job(),
+        fakePool({
+          inscricao: {
+            current_node_id: NO,
+            status: "active",
+            execution_contract: executionContract,
+            graph_execution_contract: graphContract,
+          },
+        }),
+        { workerId: "w1" },
+      ),
+    ).rejects.toThrow(reason);
+    expect(runBeforeSend).not.toHaveBeenCalled();
+    expect(runAgentTurn).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(completeFollowupTurn).not.toHaveBeenCalled();
+  });
+
   it("inscrição apagada (fluxo apagado pela rota): não envia nada", async () => {
     const { d, send, completeFollowupTurn } = deps();
     await criarHandler(d)(job(), fakePool({ inscricao: null }), { workerId: "w1" });

@@ -12,8 +12,6 @@ import {
   type GateContext,
 } from "@/lib/agent-engine/guardrails/before-send";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
-import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
-import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 
 /**
  * O GATE de afirmação clínica (`clinical_claim`). O detector tem os próprios casos em
@@ -28,12 +26,6 @@ function baseCtx(overrides: Partial<GateContext> = {}): GateContext {
     body: "",
     optedOut: false,
     provider: "waha",
-    pacing: {
-      knobs: PACING_DEFAULTS,
-      state: { lastSentAt: null, sentToday: 0, numberActivatedAt: null },
-      crmDailyLimit: null,
-    },
-    spinning: { knobs: SPINNING_DEFAULTS, window: [] },
     promise: { table: null },
     semanticPromise: null,
     disclosure: { template: null, isFirstOutbound: false, mode: "inject" },
@@ -106,7 +98,6 @@ function chamaCadeiaReal(args: { body: string; armado: boolean }): {
       channelSessionId: "00000000-0000-4000-8000-000000000004",
       body: args.body,
       optedOutThisTurn: false,
-      crmDailyLimit: null,
       now: COMERCIAL,
       rng: () => 0,
       sleep: async () => {},

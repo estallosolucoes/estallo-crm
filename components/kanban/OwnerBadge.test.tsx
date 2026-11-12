@@ -31,8 +31,8 @@ describe("OwnerBadge", () => {
   it("agente: mesmo tamanho do humano, com anel e inicial em mono", () => {
     render(<OwnerBadge ownerKind="ai" ownerName="Agente Beta" agentVersion={3} />);
     const initials = screen.getByText("AB");
-    // Par do humano: mesmo diâmetro (h-6 w-6). Distinção é a FORMA, não a cor.
-    expect(initials.className).toContain("h-6 w-6");
+    // Par do humano: mesmo diâmetro (h-7 w-7, o tamanho do avatar do card). Distinção é a FORMA, não a cor.
+    expect(initials.className).toContain("h-7 w-7");
     expect(initials.className).toContain("font-mono");
     expect(initials.className).toContain("ring-1");
     expect(initials.className).not.toContain("bg-accent-soft");

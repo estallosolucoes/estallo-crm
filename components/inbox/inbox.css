@@ -1,0 +1,1425 @@
+/* ─── O INBOX NO DESENHO DO MODELO (16/10/2026) ────────────────────────────────
+ *
+ * Fonte: o modelo do dono em finbast-app/public/previews/inbox-layout (chat.css),
+ * copiado nas medidas, pesos e espaçamentos. As CORES não são copiadas em hex:
+ * cada uma sai do token do Design System mais próximo (`app/globals.css`), e por
+ * isso o desenho acompanha o tema escuro e a cor de marca da instalação.
+ *   #0b6e9a accent · #095a7f accent-hover · #e7f5fc accent-50 (claro) ·
+ *   #e2e7eb border · #f8fafb bg · #26333d text · #647480 text-subtle.
+ *
+ * Fica de fora, de propósito: o menu lateral do sistema, o cabeçalho do sistema
+ * e o conteúdo da ficha do lead — só a lista, os filtros e o chat mudam.
+ *
+ * CSS próprio (e não utilitários) porque o modelo é uma régua de dezenas de
+ * medidas por breakpoint; escrever isso em classes arbitrárias espalhadas por
+ * seis componentes seria ilegível e impossível de conferir contra o modelo.
+ */
+
+.ibx {
+  --ibx-blue: var(--color-accent);
+  --ibx-blue-hover: var(--color-accent-hover);
+  --ibx-blue-text: var(--color-accent-text, var(--color-accent));
+  --ibx-pale: var(--color-accent-50);
+  --ibx-pale-strong: var(--color-accent-100);
+  --ibx-pale-line: var(--color-accent-200);
+  --ibx-ink: var(--color-text);
+  --ibx-muted: var(--color-text-subtle);
+  --ibx-line: var(--color-border);
+  --ibx-line-soft: color-mix(in srgb, var(--color-border) 65%, transparent);
+  --ibx-panel: var(--color-surface);
+  --ibx-canvas: var(--color-bg);
+  --ibx-field: color-mix(in srgb, var(--color-surface-elevated) 60%, var(--color-surface));
+  --ibx-green: #15944e;
+  color: var(--ibx-ink);
+}
+[data-theme="dark"] .ibx {
+  --ibx-pale: var(--color-accent-soft);
+  --ibx-pale-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
+  --ibx-pale-line: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.ibx-icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+}
+
+/* ─── A GRADE E AS FAIXAS ───────────────────────────────────────────────────
+ * ≥1600: lista 360 + ficha 320 aberta · 1280–1599: lista 336, ficha fechada
+ * (o botão a abre fixa em 296) · 1101–1279: 336, ficha em gaveta · 851–1100:
+ * 300 · ≤850: uma coluna por vez. A largura arrastada entra por cima (inline). */
+.ibx-grade {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--ibx-canvas);
+  border: 1px solid var(--ibx-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ibx-coluna-ficha {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ibx-canvas);
+}
+@media (min-width: 851px) {
+  .ibx-grade {
+    grid-template-columns: 420px minmax(0, 1fr);
+  }
+}
+@media (min-width: 1101px) {
+  .ibx-grade {
+    grid-template-columns: 420px minmax(0, 1fr);
+  }
+}
+@media (min-width: 1280px) {
+  .ibx-grade.ibx-ficha-aberta {
+    grid-template-columns: 420px minmax(0, 1fr) 296px;
+  }
+  .ibx-grade.ibx-ficha-aberta .ibx-coluna-ficha {
+    display: block;
+  }
+}
+@media (min-width: 1600px) {
+  .ibx-grade {
+    grid-template-columns: 420px minmax(0, 1fr) 320px;
+  }
+  .ibx-grade .ibx-coluna-ficha {
+    display: block;
+  }
+  .ibx-grade.ibx-ficha-fechada {
+    grid-template-columns: 420px minmax(0, 1fr);
+  }
+  .ibx-grade.ibx-ficha-fechada .ibx-coluna-ficha {
+    display: none;
+  }
+}
+
+/* ─── A COLUNA DA LISTA ───────────────────────────────────────────────────── */
+/* `display` NÃO mora aqui: quem decide se a coluna aparece é o Tailwind
+   (`colunasDoCelular`: `hidden` / `min-[851px]:flex`). Este CSS fica fora de
+   `@layer`, então um `display: flex` aqui venceria o `hidden` e o celular
+   mostraria lista e conversa juntas. */
+.ibx-list-panel {
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--ibx-line);
+  background: var(--ibx-panel);
+}
+.ibx-workspace-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: none;
+  gap: 7px;
+  padding: 12px 13px 0;
+  background: var(--ibx-panel);
+  border-bottom: 1px solid var(--ibx-line);
+}
+.ibx-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ibx-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.ibx-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 7px;
+  background: var(--ibx-pale);
+  color: var(--ibx-blue-text);
+}
+.ibx-brand h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.4px;
+  font-weight: 700;
+}
+.ibx-categories {
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  gap: 4px;
+  min-width: 0;
+  height: 64px;
+  overflow: auto;
+  scrollbar-width: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.ibx-categories::-webkit-scrollbar {
+  display: none;
+}
+.ibx-category {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1 0 auto;
+  min-width: max-content;
+  gap: 3px;
+  padding: 4px 8px 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ibx-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.ibx-category:hover {
+  color: var(--ibx-blue-text);
+  background: color-mix(in srgb, var(--ibx-pale) 40%, transparent);
+}
+.ibx-category[data-state="active"] {
+  color: var(--ibx-blue-text);
+  font-weight: 700;
+  background: none;
+  box-shadow: none;
+}
+.ibx-category[data-state="active"]::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ibx-blue);
+  left: 4px;
+  right: 4px;
+}
+.ibx-category-count {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-surface-elevated);
+  color: var(--ibx-muted);
+}
+.ibx-category[data-state="active"] .ibx-category-count {
+  background: var(--ibx-pale);
+  color: var(--ibx-blue-text);
+}
+
+.ibx-list-tools {
+  padding: 19px 17px 0;
+  flex: none;
+}
+.ibx-search-row {
+  display: flex;
+  gap: 8px;
+}
+.ibx-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+  height: 39px;
+  padding: 0 11px;
+  border: 1px solid var(--ibx-line-soft);
+  background: var(--ibx-field);
+  border-radius: 8px;
+  color: var(--ibx-muted);
+}
+.ibx-search:focus-within {
+  outline: 2px solid var(--ibx-pale-line);
+  border-color: var(--ibx-pale-line);
+}
+.ibx-search .ibx-icon {
+  width: 16px;
+  height: 16px;
+}
+.ibx-search input {
+  border: 0;
+  outline: 0;
+  width: 100%;
+  min-width: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ibx-ink);
+}
+.ibx-search input::placeholder {
+  color: var(--ibx-muted);
+}
+.ibx-search kbd {
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  width: 16px;
+  height: 18px;
+  border: 1px solid var(--ibx-line);
+  border-radius: 3px;
+  color: var(--ibx-muted);
+  font-family: inherit;
+}
+.ibx-filter-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  flex: none;
+  border: 1px solid var(--ibx-line);
+  border-radius: 8px;
+  background: var(--ibx-panel);
+  color: var(--ibx-muted);
+}
+.ibx-filter-button:hover,
+.ibx-filter-button[data-state="open"],
+.ibx-filter-button.ibx-has-filters {
+  border-color: var(--ibx-pale-line);
+  background: var(--ibx-pale);
+  color: var(--ibx-blue-text);
+}
+.ibx-filter-count {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  right: -4px;
+  top: -5px;
+  width: 15px;
+  height: 15px;
+  color: var(--color-accent-foreground);
+  background: var(--ibx-blue);
+  border: 2px solid var(--ibx-panel);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ibx-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 11px;
+}
+.ibx-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--ibx-pale-line);
+  border-radius: 5px;
+  background: var(--ibx-pale);
+  color: var(--ibx-blue-text);
+  font-size: 12px;
+}
+.ibx-filter-chip button {
+  display: grid;
+  place-items: center;
+  color: inherit;
+}
+.ibx-list-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 17px 0 12px;
+  font-size: 12px;
+  color: var(--ibx-muted);
+}
+.ibx-list-caption > span:first-child {
+  font-weight: 500;
+}
+.ibx-queue-help {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+  font-size: 12px;
+}
+.ibx-queue-help .ibx-icon {
+  width: 16px;
+  height: 16px;
+}
+.ibx-contact-list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+.ibx-list-footer {
+  height: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--ibx-line-soft);
+  padding: 0 18px;
+  color: var(--ibx-muted);
+  font-size: 12px;
+  flex: none;
+}
+.ibx-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-success);
+  opacity: 0.65;
+  flex: none;
+}
+.ibx-live-dot[data-status="off"] {
+  background: var(--color-warning);
+}
+
+/* ─── A LINHA DA CONVERSA ─────────────────────────────────────────────────── */
+.ibx-conversation {
+  position: relative;
+  min-height: 91px;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--ibx-line-soft);
+}
+.ibx-conversation:hover {
+  background: color-mix(in srgb, var(--ibx-pale) 40%, transparent);
+}
+.ibx-conversation.ibx-selected {
+  border-left-color: var(--ibx-blue);
+  background: var(--ibx-pale);
+}
+.ibx-open-conversation {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 13px 15px;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: inherit;
+}
+.ibx-open-conversation:focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: -2px;
+}
+.ibx-avatar {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+.ibx-avatar-face {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 500;
+}
+/* Os seis tons pastel do modelo; no escuro, o mesmo matiz sobre a superfície. */
+.ibx-tom-neutro {
+  background: #e7edf2;
+  color: #778b9b;
+}
+.ibx-tom-areia {
+  background: #eae0d3;
+  color: #967b58;
+}
+.ibx-tom-rosa {
+  background: #f1e3e5;
+  color: #a17c86;
+}
+.ibx-tom-salvia {
+  background: #dcece6;
+  color: #6a8e80;
+}
+.ibx-tom-lilas {
+  background: #e8e5f4;
+  color: #8a80a7;
+}
+.ibx-tom-ceu {
+  background: #e0edf5;
+  color: #6486a0;
+}
+[data-theme="dark"]
+  :is(
+    .ibx-tom-neutro,
+    .ibx-tom-areia,
+    .ibx-tom-rosa,
+    .ibx-tom-salvia,
+    .ibx-tom-lilas,
+    .ibx-tom-ceu
+  ) {
+  background: color-mix(in srgb, currentColor 22%, var(--color-surface));
+}
+.ibx-channel-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  background: var(--ibx-panel);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ibx-panel);
+}
+.ibx-contact-copy {
+  min-width: 0;
+  flex: 1;
+}
+.ibx-contact-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 69px;
+  height: 20px;
+}
+.ibx-contact-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.ibx-pin-indicator {
+  flex: none;
+  color: var(--ibx-blue-text);
+  transform: rotate(30deg);
+}
+.ibx-message-preview {
+  display: block;
+  padding-right: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ibx-muted);
+  font-size: 12px;
+  margin-top: 3px;
+  height: 18px;
+}
+.ibx-operational {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ibx-muted);
+  min-width: 0;
+}
+.ibx-operational > * {
+  flex: none;
+}
+.ibx-operational .ibx-icon {
+  width: 16px;
+  height: 16px;
+}
+.ibx-position {
+  color: var(--ibx-blue-text);
+}
+.ibx-operational-separator {
+  opacity: 0.55;
+}
+.ibx-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding-right: 22px;
+}
+.ibx-row-time {
+  position: absolute;
+  right: 39px;
+  top: 17px;
+  font-size: 12px;
+  color: var(--ibx-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.ibx-row-menu {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  top: 11px;
+  right: 10px;
+  width: 25px;
+  height: 25px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ibx-muted);
+}
+.ibx-row-menu:hover,
+.ibx-row-menu[data-state="open"] {
+  color: var(--ibx-blue-text);
+  background: var(--ibx-pale-strong);
+}
+.ibx-unread-count {
+  position: absolute;
+  right: 17px;
+  top: 45px;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 9px;
+  background: var(--ibx-blue);
+  color: var(--color-accent-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+.ibx-is-unread .ibx-contact-name {
+  font-weight: 700;
+}
+.ibx-is-unread .ibx-message-preview {
+  color: var(--color-text-muted);
+}
+
+/* O avatar de quem atende, na linha dos selos (17/10/2026). */
+.ibx-attendant {
+  display: inline-flex;
+  flex: none;
+  border-radius: 9999px;
+}
+
+/* O menu da linha e o popover de filtros: o mesmo cartão flutuante do modelo. */
+.ibx-floating {
+  border: 1px solid var(--ibx-line);
+  border-radius: 11px;
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  box-shadow:
+    0 12px 40px rgb(30 75 107 / 0.13),
+    0 2px 7px rgb(30 75 107 / 0.03);
+}
+.ibx-menu {
+  padding: 6px;
+  min-width: 247px;
+}
+.ibx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 9px 11px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.ibx-menu-item .ibx-icon {
+  width: 17px;
+  height: 17px;
+  color: var(--ibx-muted);
+}
+.ibx-menu-item[data-highlighted] {
+  background: var(--ibx-pale);
+  color: var(--ibx-blue-text);
+}
+.ibx-menu-item.ibx-danger,
+.ibx-menu-item.ibx-danger .ibx-icon {
+  color: var(--color-error-fg);
+}
+.ibx-menu-item.ibx-danger[data-highlighted] {
+  background: var(--color-error-bg);
+}
+.ibx-menu-separator {
+  height: 1px;
+  background: var(--ibx-line-soft);
+  margin: 5px 7px;
+}
+
+.ibx-filter-popover {
+  width: min(304px, calc(100vw - 16px));
+  padding: 17px;
+  font-size: 12px;
+  /* O teto é o espaço livre que o Radix mede (já descontado o
+     `collisionPadding`): o menu nunca passa da janela, em zoom ou tela baixa.
+     Cabeçalho e "Aplicar filtros" ficam fixos; só o miolo rola. */
+  display: flex;
+  flex-direction: column;
+  max-height: var(--radix-popover-content-available-height, calc(100dvh - 16px));
+}
+.ibx-filter-popover > .ibx-popover-heading,
+.ibx-filter-popover > .ibx-filter-apply {
+  flex: none;
+}
+.ibx-filter-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Espaço para a barra de rolagem não colar nos checkboxes. */
+  margin-right: -8px;
+  padding-right: 8px;
+}
+.ibx-filter-apply {
+  margin-top: 12px;
+}
+/* Dentro do miolo rolável a lista de tags não tem rolagem própria: rolagem
+   dentro de rolagem esconde opções justamente em tela pequena. */
+.ibx-filter-scroll .ibx-tag-list {
+  max-height: none;
+  overflow-y: visible;
+}
+.ibx-popover-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.ibx-popover-heading strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+.ibx-text-button {
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  color: var(--ibx-blue-text);
+  font-size: 12px;
+}
+.ibx-filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ibx-line-soft);
+  margin-bottom: 14px;
+}
+.ibx-filter-options label {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 1px;
+  cursor: pointer;
+}
+.ibx-filter-options label > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ibx-filter-options .ibx-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--ibx-muted);
+}
+.ibx-filter-popover input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--ibx-blue);
+  cursor: pointer;
+}
+.ibx-filter-field {
+  margin: 12px 0;
+}
+.ibx-filter-field > label,
+.ibx-tag-filters legend {
+  display: block;
+  color: var(--ibx-muted);
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ibx-filter-field select,
+.ibx-tag-search {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: var(--ibx-field);
+  border: 1px solid var(--ibx-line);
+  border-radius: 6px;
+  padding: 8px;
+}
+.ibx-tag-filters {
+  border: 0;
+  padding: 0;
+  margin: 14px 0;
+}
+.ibx-tag-list {
+  max-height: 168px;
+  overflow-y: auto;
+}
+.ibx-tag-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ─── O CHAT ──────────────────────────────────────────────────────────────── */
+.ibx-chat {
+  container: ibx-chat / inline-size;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--ibx-canvas);
+}
+.ibx-chat-header {
+  min-height: 76px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--ibx-line);
+  background: var(--ibx-panel);
+  flex: none;
+}
+.ibx-chat-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  flex: 1;
+}
+.ibx-chat-identity .ibx-avatar,
+.ibx-chat-identity .ibx-avatar-face {
+  width: 37px;
+  height: 37px;
+  font-size: 12px;
+}
+.ibx-chat-identity-text {
+  min-width: 0;
+}
+.ibx-chat-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ibx-chat-contact-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.ibx-status {
+  color: var(--ibx-muted);
+  border: 1px solid var(--ibx-line);
+  background: var(--ibx-panel);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex: none;
+}
+.ibx-chat-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ibx-muted);
+  font-size: 12px;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+.ibx-chat-subtitle > * {
+  flex: none;
+}
+.ibx-chat-subtitle .ibx-chat-owner {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ibx-chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+.ibx-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 8px 13px;
+  min-height: 34px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.ibx-button .ibx-icon {
+  width: 15px;
+  height: 15px;
+}
+.ibx-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.ibx-primary {
+  background: var(--ibx-blue);
+  color: var(--color-accent-foreground);
+  border-color: var(--ibx-blue);
+}
+.ibx-primary:hover:not(:disabled) {
+  background: var(--ibx-blue-hover);
+}
+.ibx-secondary {
+  background: var(--ibx-panel);
+  border-color: var(--ibx-line);
+  color: var(--color-text-muted);
+}
+.ibx-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ibx-pale) 50%, var(--ibx-panel));
+  color: var(--ibx-blue-text);
+  border-color: var(--ibx-pale-line);
+}
+.ibx-icon-button {
+  width: 33px;
+  height: 33px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0;
+  background: transparent;
+  color: var(--ibx-muted);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.ibx-icon-button:hover,
+.ibx-icon-button[aria-expanded="true"],
+.ibx-icon-button[data-state="open"],
+.ibx-icon-button.ibx-ativo {
+  background: var(--ibx-pale);
+  color: var(--ibx-blue-text);
+}
+.ibx-icon-button .ibx-icon {
+  width: 18px;
+  height: 18px;
+}
+.ibx-toolbar-divider {
+  width: 1px;
+  height: 19px;
+  background: var(--ibx-line);
+  margin: 0 1px;
+}
+.ibx-show-list {
+  display: none;
+}
+.ibx-motivo {
+  padding: 6px 24px;
+  border-bottom: 1px solid var(--ibx-line);
+  background: var(--ibx-panel);
+  font-size: 12px;
+  color: var(--ibx-muted);
+}
+.ibx-message-search-bar {
+  padding: 8px 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--ibx-pale) 60%, var(--ibx-canvas));
+  border-bottom: 1px solid var(--ibx-line);
+  color: var(--ibx-muted);
+  flex: none;
+}
+.ibx-message-search-bar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ibx-ink);
+}
+
+/* As mensagens. */
+.ibx-thread {
+  background: var(--ibx-canvas);
+}
+.ibx-thread-content {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 23px 20px 25px;
+}
+.ibx-day {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--ibx-muted);
+  font-size: 12px;
+  margin: 9px 0 13px;
+}
+.ibx-day::before,
+.ibx-day::after {
+  content: "";
+  height: 1px;
+  background: var(--ibx-line-soft);
+  flex: 1;
+}
+.ibx-bubble {
+  position: relative;
+  max-width: min(78%, 490px);
+  min-width: 95px;
+  padding: 10px 13px 7px;
+  border: 1px solid var(--ibx-line-soft);
+  border-radius: 2px 12px 12px 12px;
+  background: var(--ibx-panel);
+  color: var(--ibx-ink);
+  font-size: 15px;
+  line-height: 1.65;
+  box-shadow: 0 1px 1px rgb(24 60 83 / 0.02);
+}
+.ibx-bubble.ibx-outgoing {
+  border-radius: 12px 2px 12px 12px;
+  background: var(--ibx-blue);
+  border-color: var(--ibx-blue);
+  color: var(--color-accent-foreground);
+}
+.ibx-bubble.ibx-com-menu {
+  padding-right: 32px;
+}
+.ibx-bubble.ibx-falhou {
+  border-color: var(--color-error);
+}
+.ibx-bubble.ibx-achada {
+  box-shadow:
+    0 0 0 2px var(--color-background),
+    0 0 0 4px var(--color-foreground);
+}
+.ibx-bubble-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.8;
+  margin-bottom: 2px;
+}
+.ibx-bubble-time {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  margin-top: 3px;
+  color: var(--ibx-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ibx-outgoing .ibx-bubble-time {
+  color: color-mix(in srgb, var(--color-accent-foreground) 75%, transparent);
+}
+.ibx-quoted-message {
+  border-left: 2px solid var(--color-accent-300);
+  background: rgb(255 255 255 / 0.09);
+  padding: 5px 8px;
+  margin: 0 0 7px;
+  border-radius: 3px;
+  font-size: 12px;
+  max-height: 65px;
+  overflow: hidden;
+}
+.ibx-bubble:not(.ibx-outgoing) .ibx-quoted-message {
+  background: color-mix(in srgb, var(--ibx-pale) 60%, transparent);
+}
+
+/* O composer. */
+.ibx-composer {
+  flex: none;
+  border-top: 1px solid var(--ibx-line);
+  background: var(--ibx-panel);
+  padding: 12px 23px 15px;
+}
+.ibx-composer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+.ibx-compose-modes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ibx-compose-modes button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ibx-muted);
+}
+.ibx-compose-modes button[aria-pressed="true"],
+.ibx-compose-modes button[aria-selected="true"] {
+  color: var(--ibx-blue-text);
+  background: var(--ibx-pale);
+  font-weight: 600;
+}
+.ibx-compose-modes .ibx-icon {
+  width: 12px;
+  height: 12px;
+}
+.ibx-compose-hint {
+  color: var(--ibx-muted);
+  opacity: 0.75;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ibx-input-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid var(--ibx-line);
+  background: var(--ibx-field);
+  border-radius: 10px;
+}
+.ibx-input-box:focus-within {
+  border-color: var(--color-accent-300);
+  box-shadow: 0 0 0 2px var(--ibx-pale);
+}
+.ibx-input-box textarea {
+  align-self: center;
+  border: 0 !important;
+  outline: 0;
+  box-shadow: none !important;
+  background: none !important;
+  resize: none;
+  padding: 3px 7px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.ibx-input-tools {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+.ibx-composer.ibx-note-mode .ibx-input-box {
+  background: var(--color-warning-bg);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+}
+.ibx-composer.ibx-note-mode .ibx-compose-modes [data-modo="note"] {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-fg);
+}
+
+/* ─── FAIXAS MENORES ──────────────────────────────────────────────────────── */
+@media (max-width: 1599px) {
+  .ibx-chat-header {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}
+@media (max-width: 1100px) {
+  .ibx-category {
+    font-size: 12px;
+  }
+  .ibx-compose-hint,
+  .ibx-search kbd {
+    display: none;
+  }
+  .ibx-list-tools {
+    padding: 16px 13px 0;
+  }
+  .ibx-open-conversation {
+    padding-left: 12px;
+    padding-right: 12px;
+    gap: 10px;
+  }
+  .ibx-avatar,
+  .ibx-avatar-face {
+    width: 35px;
+    height: 35px;
+    font-size: 12px;
+  }
+  .ibx-contact-name {
+    font-size: 13px;
+  }
+  .ibx-contact-name-row {
+    padding-right: 65px;
+  }
+  .ibx-row-time {
+    font-size: 12px;
+    right: 38px;
+    top: 18px;
+  }
+  .ibx-message-preview {
+    font-size: 12px;
+  }
+  .ibx-operational {
+    font-size: 12px;
+  }
+  .ibx-chat-header {
+    padding: 0 14px;
+    gap: 7px;
+  }
+  .ibx-chat-identity {
+    gap: 8px;
+  }
+  .ibx-chat-contact-name {
+    font-size: 12px;
+  }
+  .ibx-chat-subtitle {
+    font-size: 12px;
+  }
+  .ibx-chat-actions {
+    gap: 3px;
+  }
+  .ibx-chat-actions > .ibx-icon-button {
+    width: 38px;
+    height: 40px;
+  }
+  .ibx-button {
+    min-height: 40px;
+  }
+  .ibx-close-conversation {
+    padding: 8px 10px;
+  }
+  .ibx-close-conversation > span {
+    display: none;
+  }
+  .ibx-toolbar-divider {
+    margin: 0;
+  }
+  .ibx-thread-content {
+    padding: 19px 21px 20px;
+  }
+  .ibx-composer {
+    padding: 12px 15px 15px;
+  }
+  .ibx-compose-modes button {
+    min-height: 31px;
+  }
+  .ibx-filter-options label {
+    min-height: 42px;
+  }
+  .ibx-menu-item {
+    min-height: 44px;
+  }
+}
+@media (max-width: 850px) {
+  .ibx-grade {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  .ibx-list-panel {
+    border-right: 0;
+  }
+  .ibx-show-list {
+    display: inline-grid;
+  }
+  .ibx-contact-name {
+    font-size: 13px;
+  }
+  .ibx-avatar,
+  .ibx-avatar-face {
+    width: 40px;
+    height: 40px;
+  }
+  .ibx-chat-header {
+    min-height: 74px;
+  }
+  .ibx-chat-contact-name {
+    font-size: 13px;
+  }
+  .ibx-chat-subtitle {
+    font-size: 12px;
+  }
+  .ibx-bubble {
+    max-width: 77%;
+  }
+}
+@media (max-width: 640px) {
+  .ibx-chat-header {
+    padding: 0 10px;
+  }
+  .ibx-chat-identity .ibx-avatar,
+  .ibx-status,
+  .ibx-toolbar-divider,
+  .ibx-busca-na-conversa {
+    display: none;
+  }
+  .ibx-chat-contact-name {
+    font-size: 12px;
+  }
+  .ibx-chat-actions > .ibx-icon-button {
+    width: 32px;
+  }
+  .ibx-chat-actions {
+    gap: 2px;
+  }
+  .ibx-close-conversation {
+    display: none;
+  }
+  .ibx-button {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+  .ibx-thread-content {
+    padding: 15px 13px 18px;
+  }
+  .ibx-bubble {
+    max-width: 85%;
+  }
+  .ibx-composer {
+    padding: 10px 10px 12px;
+  }
+  .ibx-input-box {
+    gap: 1px;
+    padding: 6px;
+  }
+}
+@container ibx-chat (max-width: 700px) {
+  .ibx-chat-header {
+    padding-left: 14px;
+    padding-right: 14px;
+    gap: 8px;
+  }
+  .ibx-chat-contact-name {
+    font-size: 12px;
+  }
+  .ibx-chat-subtitle {
+    font-size: 12px;
+    gap: 5px;
+  }
+  .ibx-chat-actions {
+    gap: 3px;
+  }
+  .ibx-chat-actions > .ibx-icon-button {
+    width: 32px;
+  }
+  .ibx-close-conversation {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .ibx-close-conversation > span,
+  .ibx-compose-hint {
+    display: none;
+  }
+  .ibx-composer {
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+}
+@container ibx-chat (max-width: 480px) {
+  .ibx-chat-identity .ibx-avatar,
+  .ibx-chat-header .ibx-status,
+  .ibx-toolbar-divider {
+    display: none;
+  }
+  .ibx-bubble {
+    max-width: 86%;
+    font-size: 13px;
+  }
+}
+
+/* A cor de ação é escura; texto e ícones de orientação usam azul claro legível. */
+[data-theme="dark"] .ibx {
+  --ibx-muted: var(--color-text-muted);
+  --ibx-pale: #203e50;
+  --ibx-pale-strong: #284b60;
+}
+[data-theme="dark"] .ibx :is(.ibx-category, .ibx-brand-mark, .ibx-filter-chip, .ibx-text-button) {
+  color: var(--color-accent-text);
+}
+[data-theme="dark"] .ibx .ibx-category-count {
+  color: var(--color-text);
+}
+.ibx-message-preview {
+  font-size: 14px;
+  line-height: 1.5;
+  height: auto;
+  min-height: 21px;
+  /* A prévia se confundia com a linha de quem atende (17/10/2026): um peso a
+     mais e o tom de texto secundário — não o apagado — a destacam nos dois temas. */
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+.ibx-bubble {
+  font-size: 15px;
+  color: var(--color-text);
+}
+.ibx-bubble.ibx-outgoing {
+  color: #ffffff;
+}
+.ibx-bubble-time,
+.ibx-bubble-label,
+.ibx-day {
+  font-size: 12px;
+}
+.ibx-search input,
+.ibx-filter-popover {
+  font-size: 14px;
+}
+
+/* Chat suspenso: a janela, o trilho e a bolha entram com um deslize curto. */
+@keyframes chat-suspenso-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.chat-suspenso-entrada {
+  animation: chat-suspenso-entrada 180ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-suspenso-entrada {
+    animation: none;
+  }
+}
+
+/* Composer do chat suspenso (`compacto`): texto em cima, inteiro; botões
+   embaixo, com o enviar à direita. Sem a dica de atalho. */
+.ibx-composer-compacto .ibx-compose-hint {
+  display: none;
+}
+.ibx-composer-compacto .ibx-input-box {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ibx-composer-compacto .ibx-input-box textarea {
+  order: -1;
+  flex: 1 0 100%;
+  min-height: 40px;
+  padding: 2px 4px 6px;
+}
+.ibx-composer-compacto .ibx-input-box > :last-child {
+  margin-left: auto;
+}
+
+/* Tique de "lida" (30/10/2026). Na lista, o azul de texto do tema; sobre a bolha
+   de SAÍDA — que já é azul (`--ibx-blue`) — um azul-claro, senão o "lida" some
+   no fundo e não se distingue do "entregue" (branco). */
+.ibx-ack-read {
+  color: var(--ibx-blue-text);
+}
+.ibx-outgoing .ibx-ack-read {
+  color: #8fe3ff;
+}

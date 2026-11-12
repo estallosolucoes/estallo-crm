@@ -58,7 +58,7 @@
  * lidos como os novos. Como a borda (`lib/schemas/tags.ts`) também normaliza
  * por aqui, quem mandar `#12a594` pela API passa a ter `#00655a` gravado.
  */
-import { escolheAFrente } from "@/lib/branding/contraste";
+import { frenteSobreCor } from "@/lib/branding/contraste";
 import { ehHexValido, normalizarHex } from "@/lib/branding/rampa";
 
 /**
@@ -98,6 +98,30 @@ export const NOME_DO_TOM: Record<string, string> = {
   "#ab4aba": "Roxo",
   "#6f6f6f": "Cinza",
 };
+
+/**
+ * Os tons da MARCA Estallo (régua do produto, `lib/branding/regua-do-produto.ts`),
+ * a fileira "Cores da marca" da tela de Tags. Ficam FORA de
+ * `PALETA_DE_ETIQUETAS` de propósito: aquela paleta é medida para continuar
+ * separável sob dicromacia, e os tons da marca são escolha de identidade. O
+ * texto do chip continua saindo de `escolheAFrente`, então a legibilidade vale
+ * igual.
+ */
+export const CORES_DA_MARCA: Readonly<Record<string, string>> = {
+  "#1099d3": "Azul Estallo",
+  "#0b6e9a": "Azul Estallo escuro",
+  "#10ba84": "Verde Estallo",
+  "#087653": "Verde Estallo escuro",
+  "#bc3038": "Vermelho Estallo",
+  "#17232c": "Ink",
+};
+
+/** O nome de qualquer cor que a tela oferece; fora delas, "Personalizada". */
+export function nomeDaCor(cor: string | null | undefined): string | null {
+  const normalizada = normalizarCorDeEtiqueta(cor);
+  if (normalizada === null) return null;
+  return CORES_DA_MARCA[normalizada] ?? NOME_DO_TOM[normalizada] ?? "Personalizada";
+}
 
 /**
  * Os tons escurecidos na #2373, de → para. A cor é gravada como hex, então a
@@ -164,35 +188,72 @@ export function corDeEtiquetaValida(valor: unknown): valor is string {
  *
  * Função PURA: recebe o `settings` já lido, não toca em banco nem em rede.
  */
-export function etiquetasComCor(settings: unknown): { tag: string; cor: string }[] {
+export function etiquetasComCor(settings: unknown): EtiquetaCadastrada[] {
+  return etiquetasCadastradas(settings).filter((e) => e.cor !== null);
+}
+
+/** Desde a 0659 cada etiqueta do cadastro é de uma entidade. */
+export type EntidadeDaEtiqueta = "lead" | "contact";
+
+export interface EtiquetaCadastrada {
+  tag: string;
+  cor: string | null;
+  /** Ausente só em entrada antiga (anterior à 0659): vale para as duas. */
+  entidade?: EntidadeDaEtiqueta;
+}
+
+/**
+ * TODO o cadastro (com e sem cor) — o que o seletor de etiquetas oferece. Lê as
+ * duas formas de entrada (string antiga e objeto).
+ */
+export function etiquetasCadastradas(settings: unknown): EtiquetaCadastrada[] {
   const lista = (settings as Record<string, unknown> | null | undefined)?.["tags"];
   if (!Array.isArray(lista)) return [];
 
-  const entradas: { tag: string; cor: string }[] = [];
+  const entradas: EtiquetaCadastrada[] = [];
   for (const entrada of lista) {
-    if (typeof entrada !== "object" || entrada === null) continue;
-    const objeto = entrada as Record<string, unknown>;
-    if (typeof objeto["tag"] !== "string") continue;
+    const objeto: Record<string, unknown> | null =
+      typeof entrada === "string"
+        ? { tag: entrada }
+        : typeof entrada === "object" && entrada !== null
+          ? (entrada as Record<string, unknown>)
+          : null;
+    if (!objeto || typeof objeto["tag"] !== "string") continue;
     const nome = objeto["tag"].trim();
-    const cor = normalizarCorDeEtiqueta(objeto["cor"]);
-    if (nome === "" || cor === null) continue;
-    entradas.push({ tag: nome, cor });
+    if (nome === "") continue;
+    const entidade = objeto["entidade"];
+    entradas.push({
+      tag: nome,
+      cor: normalizarCorDeEtiqueta(objeto["cor"]),
+      ...(entidade === "lead" || entidade === "contact" ? { entidade } : {}),
+    });
   }
   return entradas;
 }
 
-/** O mesmo vocabulário, agora indexado pela chave canônica do chip. */
+/**
+ * O mesmo vocabulário, indexado para o chip: `entidade:chave` (a cor daquela
+ * entidade) e `chave` (a primeira cor achada, para quem não sabe a entidade).
+ */
 export function coresDoVocabulario(settings: unknown): CoresPorEtiqueta {
   const mapa: Record<string, string> = {};
-  for (const { tag, cor } of etiquetasComCor(settings)) {
-    mapa[chaveDaEtiqueta(tag)] = cor;
+  for (const { tag, cor, entidade } of etiquetasComCor(settings)) {
+    if (cor === null) continue;
+    const chave = chaveDaEtiqueta(tag);
+    if (entidade) mapa[`${entidade}:${chave}`] = cor;
+    else {
+      mapa[`lead:${chave}`] ??= cor;
+      mapa[`contact:${chave}`] ??= cor;
+    }
+    mapa[chave] ??= cor;
   }
   return mapa;
 }
 
 /**
  * O estilo do chip quando a etiqueta tem cor: fundo na cor, texto escolhido por
- * `escolheAFrente` (a régua, com piso de 4,5 — issue #2373) e borda da mesma
+ * `frenteSobreCor` — branco sobre azul (decisão do dono, 2026-10-15), a régua
+ * `escolheAFrente` (piso de 4,5 — issue #2373) nas outras cores — e borda da mesma
  * cor (o chip do design system já tem borda; deixá-la no token padrão criaria
  * um aro claro em torno de um fundo escuro — medido na revisão visual da tela
  * de Tags).
@@ -213,6 +274,6 @@ export function estiloDoChip(cor: string | null | undefined): React.CSSPropertie
   return {
     backgroundColor: normalizada,
     borderColor: normalizada,
-    color: escolheAFrente(normalizada),
+    color: frenteSobreCor(normalizada),
   };
 }

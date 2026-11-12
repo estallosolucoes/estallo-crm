@@ -13,7 +13,13 @@ export const dynamic = "force-dynamic";
 
 const FLOW_COLUMNS = "id, name, status, active_version_id, handoff_policy, updated_at";
 
-export default async function FollowupFlowsPage() {
+export default async function FollowupFlowsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aba?: string; fluxo?: string }>;
+}) {
+  // `?aba=fila&fluxo=<id>`: o link "Ver execuções" de cada fluxo abre o histórico já filtrado por ele.
+  const { aba, fluxo } = await searchParams;
   const user = await requireAuth();
   // `t` local em vez do hook: esta página é componente de SERVIDOR, e lá o
   // idioma vem resolvido em `user.idioma` (a cadeia pessoa → organização →
@@ -46,16 +52,16 @@ export default async function FollowupFlowsPage() {
           </p>
         </div>
       </header>
-      <Tabs defaultValue="fluxos" className="flex flex-1 flex-col">
+      <Tabs defaultValue={aba === "fila" ? "fila" : "fluxos"} className="flex flex-1 flex-col">
         <TabsList>
           <TabsTrigger value="fluxos">{t("Fluxos")}</TabsTrigger>
-          <TabsTrigger value="fila">Fila</TabsTrigger>
+          <TabsTrigger value="fila">{t("Fila e histórico")}</TabsTrigger>
         </TabsList>
         <TabsContent value="fluxos">
           <FlowsList initialData={flows} canWrite={canWrite} />
         </TabsContent>
         <TabsContent value="fila">
-          <QueueTab canWrite={canWrite} />
+          <QueueTab canWrite={canWrite} fluxoInicial={fluxo} />
         </TabsContent>
       </Tabs>
     </div>

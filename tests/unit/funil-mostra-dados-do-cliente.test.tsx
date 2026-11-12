@@ -235,7 +235,7 @@ describe("ContatoDoNegocio — as abas do dossiê", () => {
     useContact.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     comQuery(<ContatoDoNegocio contactId="c-1" pipelineId="p-1" />);
 
-    expect(screen.getByText("Carregando…")).toBeInTheDocument();
+    expect(screen.getByLabelText("Carregando…")).toHaveAttribute("aria-busy", "true");
   });
 
   it("falha ao carregar o contato é dita, não silenciada", () => {
@@ -255,14 +255,16 @@ describe("a fiação — quem usa a regra a chama", () => {
     const etapa = rota.slice(inicio, fim);
 
     expect(etapa, "a consulta não traz telefone, e-mail e custom_fields").toMatch(
-      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized"\s*\)/,
+      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized, name, display_name, avatar_storage_path"\s*\)/,
     );
     expect(etapa, "anexarDadosDoContato não é chamada na etapa").toMatch(
       /anexarDadosDoContato\(\s*leadsDoQuadro,\s*linhas\s*\)/,
     );
-    // sem etapa nova na cadeia: `funil-filtro-de-tag-le-as-duas-caixas` e
-    // `kanban-atalho-conversa` vigiam withConversas → withMarcadoresDoContato → resposta
-    expect(rota).toMatch(/leads:\s*leadsComMarcadores\.leads/);
+    // a etapa roda no Promise.all das etapas e o resultado dela entra na soma
+    // que vira a resposta (`funil-filtro-de-tag-le-as-duas-caixas` e
+    // `kanban-atalho-conversa` vigiam o mesmo elo)
+    expect(rota).toMatch(/etapas\s*=\s*await Promise\.all\(\[[\s\S]*?withMarcadoresDoContato\(supabase, organizationId, leadsVisiveis\)/);
+    expect(rota).toMatch(/etapas\.map\(\(e\) => e\.leads\[i\]\)[\s\S]*?leads:\s*leadsEnriquecidos/);
   });
 
   it("o card e o dossiê renderizam os componentes novos", () => {

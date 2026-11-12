@@ -230,6 +230,38 @@ describe("processNode — action after send closed", () => {
     });
     expect(result.kind).toBe("recheck");
   });
+
+  it("para na hora, com o motivo, quando o job de envio morreu — em vez de conferir por horas", () => {
+    const result = processNode({
+      node,
+      edges,
+      enrollment: enrollment({ current_node_id: "a1" }),
+      lead: lead(),
+      clock,
+      actionEnqueued: true,
+      actionCompleted: false,
+      actionRecheckCount: 0,
+      actionTurnFalhou: "envio fixo: o CRM recusou o envio — Envio automático bloqueado pelo modo de teste do canal.",
+    });
+    expect(result).toEqual({
+      kind: "dead",
+      reason: "action_turn_failed: envio fixo: o CRM recusou o envio — Envio automático bloqueado pelo modo de teste do canal.",
+    });
+  });
+
+  it("o envio que já fechou vence a falha antiga (a corrida de recheck se cura)", () => {
+    const result = processNode({
+      node,
+      edges,
+      enrollment: enrollment({ current_node_id: "a1" }),
+      lead: lead(),
+      clock,
+      actionEnqueued: true,
+      actionCompleted: true,
+      actionTurnFalhou: "qualquer",
+    });
+    expect(result).toMatchObject({ kind: "advance", next_node_id: "cap" });
+  });
 });
 
 describe("processNode — collect/skill (passagem no relógio)", () => {
@@ -1198,5 +1230,65 @@ describe("turno descartado pela suspensão (migration 0501)", () => {
     const antes = [ev("turn_enqueued"), ...Array.from({ length: 13 }, () => ev("action_recheck"))];
     expect(rechecksOciososDaAcao(antes, "a1")).toBe(14);
     expect(rechecksOciososDaAcao([...antes, ev("turn_discarded"), ev("turn_enqueued")], "a1")).toBe(1);
+  });
+});
+
+describe("processNode — condition por produto do negócio", () => {
+  const COLETA = { id: "chk_coleta", field: "product" as const, op: "contains" as const, value: "Coleta na Prática" };
+  const MICRO = { id: "chk_micro", field: "product" as const, op: "contains" as const, value: "Micro na Prática" };
+  const node = (): FlowNode => ({
+    id: "c1",
+    type: "condition",
+    label: "Por produto",
+    position: { x: 0, y: 0 },
+    config: { combinator: "and", branching: "per_check", checks: [COLETA, MICRO] },
+  });
+  const edges = [
+    edge({ source: "c1", target: "msg-x", condition: { type: "branch", branch_id: "chk_coleta" } }),
+    edge({ source: "c1", target: "msg-y", condition: { type: "branch", branch_id: "chk_micro" } }),
+    edge({ source: "c1", target: "nenhum", condition: { type: "always" } }),
+  ];
+  const vai = (products: string[] | undefined) =>
+    processNode({ node: node(), edges, enrollment: enrollment(), lead: lead({ products }), clock });
+
+  it("cada produto manda o lead pela sua mensagem; \"contém\" acha as variantes e ignora a caixa", () => {
+    expect(vai(["Coleta na Prática SSA"])).toMatchObject({ kind: "advance", next_node_id: "msg-x" });
+    expect(vai(["coleta na prática vca"])).toMatchObject({ kind: "advance", next_node_id: "msg-x" });
+    expect(vai(["Micro na Prática"])).toMatchObject({ kind: "advance", next_node_id: "msg-y" });
+  });
+
+  it("sem produto, produto de outro curso ou produtos não carregados: cai no ramo nenhum", () => {
+    expect(vai([])).toMatchObject({ next_node_id: "nenhum" });
+    expect(vai(["Hemato na Prática"])).toMatchObject({ next_node_id: "nenhum" });
+    expect(vai(undefined)).toMatchObject({ next_node_id: "nenhum" });
+  });
+
+  it("com os dois produtos vence a primeira regra da lista", () => {
+    expect(vai(["Micro na Prática", "Coleta na Prática VCA"])).toMatchObject({ next_node_id: "msg-x" });
+  });
+
+  it("eq exige o nome inteiro; neq é verdadeiro sem o produto e falso com ele; valor vazio nunca casa", () => {
+    const check = (op: "eq" | "neq" | "contains", value: string, products: string[]) =>
+      processNode({
+        node: {
+          id: "c1",
+          type: "condition",
+          label: "x",
+          position: { x: 0, y: 0 },
+          config: { combinator: "and", checks: [{ field: "product", op, value }] },
+        },
+        edges: [
+          edge({ source: "c1", target: "sim", condition: { type: "cond_result", value: true } }),
+          edge({ source: "c1", target: "nao", condition: { type: "cond_result", value: false } }),
+        ],
+        enrollment: enrollment(),
+        lead: lead({ products }),
+        clock,
+      });
+    expect(check("eq", "Coleta na Prática", ["Coleta na Prática SSA"])).toMatchObject({ next_node_id: "nao" });
+    expect(check("eq", "Coleta na Prática SSA", ["Coleta na Prática SSA"])).toMatchObject({ next_node_id: "sim" });
+    expect(check("neq", "Micro na Prática", [])).toMatchObject({ next_node_id: "sim" });
+    expect(check("neq", "Micro na Prática", ["Micro na Prática"])).toMatchObject({ next_node_id: "nao" });
+    expect(check("contains", "  ", ["Micro na Prática"])).toMatchObject({ next_node_id: "nao" });
   });
 });

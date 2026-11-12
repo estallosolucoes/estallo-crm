@@ -67,7 +67,7 @@ async function novoFluxo(page: Page, nome: string): Promise<string> {
   await campoNome.fill(nome);
   await dialogo.getByRole("button", { name: "Criar fluxo" }).click();
   await expect(dialogo).not.toBeVisible({ timeout: PRAZO });
-  await page.locator("li", { hasText: nome }).getByRole("link").click();
+  await page.locator("li", { hasText: nome }).getByRole("link").first().click();
   await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/, { timeout: PRAZO });
   await expect(page.locator(".react-flow")).toBeVisible({ timeout: PRAZO });
   return page.url().split("/").pop()!;
@@ -128,7 +128,7 @@ async function moverNo(page: Page, nodeId: string, x: number, y: number): Promis
 async function ligar(page: Page, origem: string, destino: string, ramo?: string): Promise<void> {
   const seletor = ramo
     ? `.react-flow__node[data-id="${origem}"] .react-flow__handle.source[data-handleid="${ramo}"]`
-    : `.react-flow__node[data-id="${origem}"] .react-flow__handle.source`;
+    : `.react-flow__node[data-id="${origem}"] .react-flow__handle.source:not([data-handleid="on_error"])`;
   const source = page.locator(seletor).first();
   const target = page.locator(`.react-flow__node[data-id="${destino}"] .react-flow__handle.target`);
   const sBox = await source.boundingBox();
@@ -157,7 +157,7 @@ async function ligar(page: Page, origem: string, destino: string, ramo?: string)
 async function publicarEExigirSucesso(page: Page): Promise<void> {
   await page.getByTestId("publish-button").click();
   const toast = page.getByText("Fluxo publicado.");
-  const recusa = page.locator('[data-testid^="node-error-"]').first();
+  const recusa = page.locator('[data-testid^="node-error-"]:not([data-testid^="node-error-handle-"])').first();
   await expect
     .poll(
       async () =>

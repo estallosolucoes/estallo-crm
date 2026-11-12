@@ -96,10 +96,8 @@ describe("quais filtros a contagem aplica", () => {
  * escrevê-lo à mão.
  */
 describe("o marcador da contagem é o da lista — uma régua só", () => {
-  it("a régua casa as DUAS caixas onde se marca", () => {
-    expect(predicadoDoMarcador("urgente")).toBe(
-      'tags.cs."{\\"urgente\\"}",tags_do_contato.cs."{\\"urgente\\"}"',
-    );
+  it("a régua casa a caixa do CONTATO (0659: conversa não tem etiqueta)", () => {
+    expect(predicadoDoMarcador("urgente")).toBe('tags_do_contato.cs."{\\"urgente\\"}"');
   });
 
   it("marcador com `,` e `}` chega inteiro — o `or=` não vira outra árvore", () => {
@@ -107,7 +105,7 @@ describe("o marcador da contagem é o da lista — uma régua só", () => {
     // PostgREST, e `{`/`}` desligam o literal de array: o valor tem de viajar
     // entre aspas, com as aspas internas escapadas por barra.
     expect(predicadoDoMarcador("vip,ouro}")).toBe(
-      'tags.cs."{\\"vip,ouro}\\"}",tags_do_contato.cs."{\\"vip,ouro}\\"}"',
+      'tags_do_contato.cs."{\\"vip,ouro}\\"}"',
     );
   });
 

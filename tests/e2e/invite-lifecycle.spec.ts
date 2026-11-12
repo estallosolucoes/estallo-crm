@@ -477,7 +477,11 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await adminPage.goto("/app/team");
     const row = adminPage.getByRole("row", { name: new RegExp(FRESH_EMAIL, "i") });
     await row.getByRole("button", { name: /Ações/i }).click();
-    await adminPage.getByRole("menuitem", { name: /Revogar/i }).click();
+    // O menu abre parcialmente fora da janela (o Estallo tem a barra de cima mais alta): o clique do Playwright recusa
+    // um item fora do viewport. Foco + Enter é o que o teclado faz, e o Radix trata igual.
+    const revogar = adminPage.getByRole("menuitem", { name: /Revogar/i });
+    await revogar.focus();
+    await adminPage.keyboard.press("Enter");
     await adminPage.getByRole("button", { name: /^Revogar$/ }).click();
     await expect(adminPage.getByText(/Convite revogado/i)).toBeVisible();
 

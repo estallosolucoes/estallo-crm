@@ -101,7 +101,6 @@ describe("o nome em texto das páginas públicas vem do BANCO", () => {
     expect(relativos).toContain("app/legal/layout.tsx");
     expect(relativos).toContain("app/legal/privacy/page.tsx");
     expect(relativos).toContain("app/legal/terms/page.tsx");
-    expect(relativos).toContain("app/page.tsx");
     // A árvore autenticada não entra na regra (tem a própria, pelo contexto).
     expect(relativos.filter((r) => r.startsWith("app/app/"))).toEqual([]);
   });
@@ -124,12 +123,12 @@ describe("o nome em texto das páginas públicas vem do BANCO", () => {
     ).map((p) => path.relative(RAIZ, p).replace(/\\/g, "/"));
 
     // A guarda de vacuidade do caso POSITIVO: o resolvedor não pode sumir do
-    // conjunto sem que alguém perceba — sete é o piso medido hoje (home,
-    // fachada de acesso, login, get-started, onboarding/welcome e o layout do
-    // onboarding, mais o `/legal` do #2511).
-    expect(comResolvedor.length).toBeGreaterThanOrEqual(7);
+    // conjunto sem que alguém perceba — seis é o piso medido hoje (fachada de
+    // acesso, login, get-started, onboarding/welcome e o layout do onboarding,
+    // mais o `/legal` do #2511). A home virou `app/route.ts`, que serve a
+    // landing estática da Estallo (identidade fixa do SaaS).
+    expect(comResolvedor.length).toBeGreaterThanOrEqual(6);
     expect(comResolvedor).toContain("app/legal/layout.tsx");
-    expect(comResolvedor).toContain("app/page.tsx");
 
     for (const relativo of comResolvedor) {
       expect(

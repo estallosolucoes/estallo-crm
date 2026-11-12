@@ -46,15 +46,24 @@ async function actor(user: string | null, sql: string, args: unknown[] = []) {
   }
 }
 
-function operar(org: string, acao: string, tag: string, destino: string | null) {
+// Desde a 0659 toda operação é de UMA entidade: `contact` mexe em contatos e nas
+// regras com destino "contato"; `lead` mexe nos negócios e nas demais regras.
+function operar(
+  org: string,
+  acao: string,
+  tag: string,
+  destino: string | null,
+  entidade: "lead" | "contact",
+  cor: string | null = null,
+) {
   return actor(
     GOV_MANAGER,
-    "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4) as r",
-    [org, acao, tag, destino],
+    "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5,$6) as r",
+    [org, acao, tag, destino, cor, entidade],
   );
 }
 
-async function tagsDe(tabela: "contacts" | "crm_leads" | "conversations", id: string) {
+async function tagsDe(tabela: "contacts" | "crm_leads", id: string) {
   const r = await pool.query(`select tags from public.${tabela} where id = $1`, [id]);
   return (r.rows[0]?.tags ?? []) as string[];
 }
@@ -74,7 +83,7 @@ describe("fatia S4 — vocabulário de tags", () => {
       ["cccccccc-3333-4000-8000-0000000000c4", GOV_ORG],
     );
 
-    const r = await operar(GOV_ORG, "renomear", "reclamacao", "atendimento");
+    const r = await operar(GOV_ORG, "renomear", "reclamacao", "atendimento", "contact");
     expect(Number((r.rows[0].r as { contatos: number }).contatos)).toBeGreaterThanOrEqual(1);
 
     expect(await tagsDe("contacts", "cccccccc-3333-4000-8000-0000000000c4")).toEqual(["atendimento"]);
@@ -88,7 +97,7 @@ describe("fatia S4 — vocabulário de tags", () => {
       "update public.crm_leads set tags = array['vip','VIP','obra'] where organization_id = $1",
       [GOV_ORG],
     );
-    await operar(GOV_ORG, "juntar", "vip", "VIP");
+    await operar(GOV_ORG, "juntar", "vip", "VIP", "lead");
 
     const linhas = await pool.query(
       "select tags from public.crm_leads where organization_id = $1",
@@ -113,7 +122,7 @@ describe("fatia S4 — vocabulário de tags", () => {
       "update public.crm_leads set tags = array['VIP','obra'] where organization_id = $1",
       [GOV_ORG],
     );
-    await operar(GOV_ORG, "juntar", "obra", "VIP");
+    await operar(GOV_ORG, "juntar", "obra", "VIP", "lead");
 
     const linhas = await pool.query(
       "select tags from public.crm_leads where organization_id = $1",
@@ -140,7 +149,7 @@ describe("fatia S4 — vocabulário de tags", () => {
       [regra, GOV_ORG],
     );
 
-    await operar(GOV_ORG, "renomear", "promo", "Promoção");
+    await operar(GOV_ORG, "renomear", "promo", "Promoção", "lead");
 
     const depois = await pool.query("select actions from public.automation_rules where id = $1", [regra]);
     const acoes = depois.rows[0].actions as Array<{ type: string; config?: { tags?: string[] } }>;
@@ -159,7 +168,7 @@ describe("fatia S4 — vocabulário de tags", () => {
       [regra, GOV_ORG],
     );
 
-    const r = await operar(GOV_ORG, "excluir", "vip", null);
+    const r = await operar(GOV_ORG, "excluir", "vip", null, "lead");
     expect(Number((r.rows[0].r as { regras: number }).regras)).toBeGreaterThanOrEqual(1);
 
     const depois = await pool.query("select actions from public.automation_rules where id = $1", [regra]);
@@ -169,23 +178,64 @@ describe("fatia S4 — vocabulário de tags", () => {
 
   it("viewer é recusado antes de qualquer escrita", async () => {
     await expect(
-      actor(GOV_VIEWER, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4)", [
+      actor(GOV_VIEWER, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5,$6)", [
         GOV_ORG,
         "excluir",
         "obra",
         null,
+        null,
+        "lead",
       ]),
     ).rejects.toThrow(/insufficient_role/);
   });
 
   it("anon não alcança a função", async () => {
     await expect(
-      actor(null, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4)", [
+      actor(null, "select public.fn_vocabulario_de_tags_operar($1,$2,$3,$4,$5,$6)", [
         GOV_ORG,
         "excluir",
         "obra",
         null,
+        null,
+        "lead",
       ]),
     ).rejects.toThrow(/permission denied|insufficient_role/);
+  });
+});
+
+describe("0659 — tags por entidade", () => {
+  const C = "cccccccc-3333-4000-8000-0000000006c1";
+
+  async function vocabulario() {
+    const r = await pool.query("select settings -> 'tags' as t from public.organizations where id = $1", [GOV_ORG]);
+    return (r.rows[0]?.t ?? []) as { tag: string; entidade?: string; cor?: string }[];
+  }
+
+  it("excluir tira SÓ a etiqueta pedida do registro", async () => {
+    await pool.query(
+      "insert into public.contacts(id,organization_id,name,display_name,tags) values($1,$2,'Ex','Ex',array['vip','obra']) on conflict (id) do update set tags = array['vip','obra']",
+      [C, GOV_ORG],
+    );
+    await operar(GOV_ORG, "excluir", "vip", null, "contact");
+    expect(await tagsDe("contacts", C)).toEqual(["obra"]);
+  });
+
+  it("a mesma etiqueta vive nas duas entidades, cada uma com sua cor; excluir de uma não toca a outra", async () => {
+    await pool.query("update public.organizations set settings = settings - 'tags' where id = $1", [GOV_ORG]);
+    await operar(GOV_ORG, "criar", "Retorno", null, "lead", "#0091ff");
+    await operar(GOV_ORG, "criar", "Retorno", null, "contact", "#cf3716");
+    await expect(operar(GOV_ORG, "criar", "retorno", null, "lead")).rejects.toThrow(/tag_ja_existe/);
+
+    const lidas = await actor(GOV_MANAGER, "select * from public.fn_vocabulario_de_tags($1)", [GOV_ORG]);
+    const linhas = lidas.rows as { tag: string; entidade: string; cor: string | null }[];
+    expect(linhas.find((l) => l.tag === "Retorno" && l.entidade === "lead")?.cor).toBe("#0091ff");
+    expect(linhas.find((l) => l.tag === "Retorno" && l.entidade === "contact")?.cor).toBe("#cf3716");
+
+    await operar(GOV_ORG, "excluir", "Retorno", null, "lead");
+    expect((await vocabulario()).map((e) => `${e.entidade}:${e.tag}`)).toEqual(["contact:Retorno"]);
+  });
+
+  it("criar exige entidade válida", async () => {
+    await expect(operar(GOV_ORG, "criar", "x", null, "conversa" as "lead")).rejects.toThrow(/entidade_invalida/);
   });
 });

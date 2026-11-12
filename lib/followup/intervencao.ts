@@ -204,6 +204,8 @@ export interface EnrollmentParaIntervir {
   next_eval_at: string | null;
   claimed_until: string | null;
   steps_taken: number;
+  /** Execução conduzida bloco a bloco pelo operador (migration 0714). */
+  passo_a_passo?: boolean;
 }
 
 const COLUNAS = [
@@ -216,6 +218,7 @@ const COLUNAS = [
   "next_eval_at",
   "claimed_until",
   "steps_taken",
+  "passo_a_passo",
 ].join(", ");
 
 export type FalhaDaIntervencao = {
@@ -252,6 +255,7 @@ async function carrega(
 }
 
 interface Patch {
+  passo_a_passo?: boolean;
   status?: string;
   next_eval_at?: string | null;
   current_node_id?: string;
@@ -502,6 +506,83 @@ export async function retomaEnrollment(
   });
 
   return { ok: true, enrollment: alvo, status_novo: volta.status, next_eval_at: volta.next_eval_at };
+}
+
+/**
+ * O instante «agora» do BANCO (`fn_agora()`, migration 0147). Agendar «para agora» com o relógio do processo deixa o
+ * horário 17–34 ms À FRENTE do `now()` do claim, o tick seguinte não reclama e a execução espera mais um ciclo (até
+ * 60 s). Só o service role chama `fn_agora`; sem ele (erro de rede), cai no relógio do processo — pior caso é um ciclo
+ * a mais, nunca uma falha.
+ */
+async function agoraDoBanco(deps: DepsDaIntervencao, reserva: string): Promise<string> {
+  const { data, error } = await deps.admin.rpc("fn_agora" as never);
+  if (error || typeof data !== "string") return reserva;
+  return data;
+}
+
+/**
+ * PASSO A PASSO — «Executar próximo bloco»: devolve ao relógio, AGORA, a execução que o operador conduz bloco a bloco e
+ * que está pausada no bloco a executar. O motor roda aquele bloco e, ao concluí-lo, pausa de novo no seguinte
+ * (`pausaDepoisDoBloco`). Só vale para execução com a marca `passo_a_passo` e pausada por pessoa.
+ */
+export async function executaProximoBloco(
+  deps: DepsDaIntervencao,
+  id: string,
+): Promise<ResultadoDaIntervencao> {
+  const agoraIso = (deps.agora ?? new Date()).toISOString();
+  const aberto = await abre(
+    deps,
+    id,
+    podeRetomar,
+    "Só dá para executar o próximo bloco de uma execução passo a passo que está pausada.",
+  );
+  if (!aberto.ok) return aberto;
+  const alvo = aberto.alvo;
+  if (alvo.passo_a_passo !== true) {
+    return { ok: false, codigo: "estado_incompativel", mensagem: "Esta execução não é passo a passo." };
+  }
+  const agoraBanco = await agoraDoBanco(deps, agoraIso);
+  const aplicado = await aplicaPatchComGuarda(
+    deps,
+    alvo,
+    { status: "active", next_eval_at: agoraBanco, claimed_until: null, updated_at: agoraIso },
+    agoraIso,
+  );
+  if (!aplicado.ok) return aplicado;
+  await registraEvento(deps, alvo, "step_manual", { executed_node_id: alvo.current_node_id });
+  return { ok: true, enrollment: alvo, status_novo: "active", next_eval_at: agoraBanco };
+}
+
+/**
+ * PASSO A PASSO — «Continuar automaticamente»: tira a marca e devolve a execução ao relógio; dali em diante ela segue
+ * sozinha, como qualquer outra (inclusive esperas e envios).
+ */
+export async function continuaAutomaticamente(
+  deps: DepsDaIntervencao,
+  id: string,
+): Promise<ResultadoDaIntervencao> {
+  const agoraIso = (deps.agora ?? new Date()).toISOString();
+  const aberto = await abre(
+    deps,
+    id,
+    podeRetomar,
+    "Só dá para continuar automaticamente uma execução passo a passo que está pausada.",
+  );
+  if (!aberto.ok) return aberto;
+  const alvo = aberto.alvo;
+  if (alvo.passo_a_passo !== true) {
+    return { ok: false, codigo: "estado_incompativel", mensagem: "Esta execução não é passo a passo." };
+  }
+  const agoraBanco = await agoraDoBanco(deps, agoraIso);
+  const aplicado = await aplicaPatchComGuarda(
+    deps,
+    alvo,
+    { passo_a_passo: false, status: "active", next_eval_at: agoraBanco, claimed_until: null, updated_at: agoraIso },
+    agoraIso,
+  );
+  if (!aplicado.ok) return aplicado;
+  await registraEvento(deps, alvo, "step_auto_continued", { from_node_id: alvo.current_node_id });
+  return { ok: true, enrollment: alvo, status_novo: "active", next_eval_at: agoraBanco };
 }
 
 export async function adiaEnrollment(

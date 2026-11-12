@@ -14,7 +14,6 @@ import {
   estadoEfetivoDaTarefa,
   estadoGravadoDaTarefa,
   TAREFA_DA_MANIPULACAO,
-  TAREFA_DA_URGENCIA,
   TAREFA_DO_CLIMA,
   TAREFAS_DO_JEV,
   tarefaEhNova,
@@ -97,7 +96,6 @@ describe("TAREFAS_DO_JEV", () => {
     expect(cascata.map((t) => t.id)).toEqual([
       TAREFA_DO_PEDIDO_DE_HUMANO.id,
       TAREFA_DO_PEDIDO_PARA_PARAR.id,
-      TAREFA_DA_URGENCIA.id,
     ]);
     for (const t of cascata) {
       expect(t.ponto, t.id).toBeUndefined();
@@ -112,7 +110,6 @@ describe("TAREFAS_DO_JEV", () => {
     // E nascem observando para quem já tem o Jev ligado (R7), com o selo "Nova".
     const ligado = config({ ligado: true, modo: "decide", aceite: ACEITE });
     expect(cascata.map((t) => [estadoEfetivoDaTarefa(ligado, t), tarefaEhNova(ligado, t)])).toEqual([
-      ["observando", true],
       ["observando", true],
       ["observando", true],
     ]);

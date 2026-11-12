@@ -183,13 +183,8 @@ function monta(over: Partial<Estado> = {}, deps: Partial<AvisoDeps> = {}) {
         return { externalId: "wamid.ABC" };
       },
     },
-    pacing: {
-      async decide() {
-        return { liberado: true };
-      },
-      async registraEnvio() {
-        e.ledger += 1;
-      },
+    async esperarRitmo() {
+      e.ledger += 1;
     },
     ...deps,
   };
@@ -399,44 +394,6 @@ describe("aviso ao suporte — a janela de horário NÃO segura o aviso (decisã
     expect(estado.enviados).toHaveLength(1);
   });
 
-  it("o espaçamento entre mensagens CONTINUA valendo, e vira retry_at — não sono", async () => {
-    const liberaEm = new Date(AGORA.getTime() + 1200);
-    const { deps, estado } = monta(
-      {},
-      {
-        pacing: {
-          async decide() {
-            return { liberado: false, motivo: "espacamento" as const, liberaEm };
-          },
-          async registraEnvio() {},
-        },
-      },
-    );
-    const espera = vi.spyOn(globalThis, "setTimeout");
-    const r = await aplicaAvisoDeCaso(deps, evento());
-    expect(r.status).toBe("retry");
-    expect(r.retry_at).toBe(liberaEm.toISOString());
-    expect(estado.enviados).toHaveLength(0);
-    expect(espera).not.toHaveBeenCalled();
-  });
-
-  it("teto diário do número grava o código PRÓPRIO — não vira `expirou` genérico", async () => {
-    const liberaEm = new Date(AGORA.getTime() + 3600_000);
-    const { deps, estado } = monta(
-      {},
-      {
-        pacing: {
-          async decide() {
-            return { liberado: false, motivo: "teto_diario" as const, liberaEm };
-          },
-          async registraEnvio() {},
-        },
-      },
-    );
-    const r = await aplicaAvisoDeCaso(deps, evento());
-    expect(r.status).toBe("retry");
-    expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "teto_diario_do_numero" });
-  });
 });
 
 describe("aviso ao suporte — o dreno dentro da requisição não toca a rede", () => {

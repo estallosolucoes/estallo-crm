@@ -5,6 +5,10 @@
 > `app/design/showcase.css`) foi a fonte até 05/10/2026, quando o movimento foi
 > promovido para o produto — ele segue sendo a vitrine, não o que o cliente roda.
 
+## Escopo Estallo
+
+Estas transições são a adaptação operacional do CRM ao [Design System Estallo](README.md). Preservam continuidade e acessibilidade; não definem outra identidade. O showcase citado abaixo é histórico e não governa cores ou fontes. Animações de marca podem seguir o Brand System em apresentação e marketing, com legibilidade e redução de movimento.
+
 ## O que deste documento está EM CÓDIGO
 
 Em 05/10/2026 o produto tinha **uma** animação (`deskcomm-card-pulse`), **uma**
@@ -41,7 +45,7 @@ de layout, não de movimento.
 
 ## Filosofia
 
-Motion no DeskcommCRM **comunica continuidade espacial** — a interface não "aparece", ela "se desloca" da posição anterior pra atual. Não é decoração, não é celebração, não é "modernidade". Cada animação tem propósito; o que não tem, sai.
+Motion no Estallo CRM **comunica continuidade espacial** — a interface não "aparece", ela "se desloca" da posição anterior pra atual. Não é decoração, não é celebração, não é "modernidade". Cada animação tem propósito; o que não tem, sai.
 
 Quatro testes pra cada animação:
 

@@ -38,6 +38,9 @@ vi.mock("@/lib/supabase/server", () => ({
     auth: { getUser: vi.fn(async () => ({ data: { user: null } })) },
   })),
 }));
+// Sem sessão, o idioma do visitante sai do cabeçalho Accept-Language (`idiomaDoVisitante`), que também
+// só existe dentro de uma requisição. Visitante sem preferência declarada: cai no padrão pt-BR.
+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 
 const MARCA: MarcaDeSaida = {
   nome: "Vendas Turbo",

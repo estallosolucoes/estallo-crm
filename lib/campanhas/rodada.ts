@@ -37,9 +37,9 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
-import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
-import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
+import { esperarRitmo } from "@/lib/messaging/ritmo-entre-envios";
+import { inicioDoDiaNoFuso } from "@/lib/tempo/inicio-do-dia";
+import { fusoDaOrganizacao } from "@/lib/tempo/fuso-da-organizacao";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { logger } from "@/lib/logger";
 import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
@@ -335,7 +335,6 @@ async function rodarUmaCampanha(
   // os números dela. Quem quer que o rodízio aumente o volume deixa o ritmo da
   // campanha em branco e herda o de cada número; quem põe 60s aqui manda uma a
   // cada 60s no total, com um número ou com cinco.
-  const pool = getRequestPool();
   const ritmo: RitmoDaCampanha = {
     intervaloSegundos: campanha.intervalo_segundos,
     janelaInicioHora: campanha.janela_inicio_hora,
@@ -344,16 +343,12 @@ async function rodarUmaCampanha(
     tetoHorario: campanha.teto_horario,
   };
   const numeros = await numerosDaCampanha(admin, campanha);
-  // O fuso da janela da campanha é o do número PRINCIPAL: ela é uma decisão da
-  // campanha, e precisa de um relógio só — três números em fusos diferentes
-  // fariam a mesma campanha abrir e fechar a janela três vezes.
-  const knobsDoPrincipal = await loadChannelKnobs(pool, campanha.organization_id, campanha.channel_session_id);
-  // ⚠️ O estado do ritmo é lido DEPOIS dos knobs porque precisa do MESMO fuso
-  // que a janela usa. Com `setUTCHours`, o "dia" virava 21h no horário de
-  // Brasília — DENTRO da janela de envio —, e uma campanha que já tinha batido
-  // o teto diário voltava a enviar com uma hora de janela pela frente.
-  const estado = await estadoDeEnvio(admin, campanha.id, agora, knobsDoPrincipal.knobs.timezone);
-  const doRitmo = podeMandarAgora(ritmo, estado, agora, knobsDoPrincipal.knobs.timezone);
+  // O fuso da janela da campanha é o da ORGANIZAÇÃO: é uma decisão da campanha, e precisa de um relógio só.
+  const fusoDaCampanha = await fusoDaOrganizacao(admin, campanha.organization_id);
+  // ⚠️ O estado do ritmo é lido no MESMO fuso que a janela usa. Com `setUTCHours`, o "dia" virava 21h no horário de
+  // Brasília — DENTRO da janela de envio —, e uma campanha que já tinha batido o teto diário voltava a enviar.
+  const estado = await estadoDeEnvio(admin, campanha.id, agora, fusoDaCampanha);
+  const doRitmo = podeMandarAgora(ritmo, estado, agora, fusoDaCampanha);
   if (!doRitmo.pode) {
     // Espera não é falha: grava QUANDO tentar de novo para a fila não ser varrida
     // a cada tique por uma campanha que só volta amanhã.
@@ -370,45 +365,21 @@ async function rodarUmaCampanha(
 
   // ─── O RODÍZIO: qual número fala com esta pessoa ───
   const disponiveis: NumeroDisponivel[] = [];
-  const knobsPorNumero = new Map<string, Awaited<ReturnType<typeof loadChannelKnobs>>>();
   for (const sessionId of numeros) {
-    const k =
-      sessionId === campanha.channel_session_id
-        ? knobsDoPrincipal
-        : await loadChannelKnobs(pool, campanha.organization_id, sessionId);
-    knobsPorNumero.set(sessionId, k);
-
     const { data: canal } = await admin
       .from("channel_sessions")
-      .select("daily_message_limit, status")
+      .select("status")
       .eq("organization_id", campanha.organization_id)
       .eq("id", sessionId)
       .maybeSingle();
-    const linha = canal as { daily_message_limit: number | null; status: string } | null;
+    const linha = canal as { status: string } | null;
     // Número fora do ar não entra no rodízio: mandar por ele seria fabricar uma
     // mensagem presa em `sending` que o recovery depois marca como falha.
     if (!linha || linha.status !== "WORKING") continue;
 
-    const estadoDoNumero = await loadPacingState(pool, campanha.organization_id, sessionId, {
-      now: agora,
-      timezone: k.knobs.timezone,
-      numberActivatedAt: k.numberActivatedAt,
-    });
-    const decisao = decidePacing({
-      now: agora,
-      knobs: k.knobs,
-      state: estadoDoNumero,
-      crmDailyLimit: linha.daily_message_limit ?? null,
-    });
-    disponiveis.push({
-      sessionId,
-      folgaDoDia:
-        linha.daily_message_limit === null
-          ? null
-          : Math.max(0, linha.daily_message_limit - estadoDoNumero.sentToday),
-      podeAgora: decisao.allow,
-      ultimoEnvio: estadoDoNumero.lastSentAt,
-    });
+    // O ritmo entre envios é fixo e vale por número (`esperarRitmo`), então nenhum número "não pode agora" nem tem folga
+    // diária a respeitar: o rodízio só distingue quem está no ar.
+    disponiveis.push({ sessionId, folgaDoDia: null, podeAgora: true, ultimoEnvio: null });
   }
 
   const escolha = escolherNumero(disponiveis, await numeroDoHistorico(admin, campanha, alvo.contact_id));
@@ -418,7 +389,6 @@ async function rodarUmaCampanha(
     return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "canal:sem_numero_livre" };
   }
   const sessionEscolhida = escolha.sessionId;
-  const knobs = knobsPorNumero.get(sessionEscolhida)!.knobs;
 
   // ─── O envio ───
   // O id da mensagem nasce AQUI, e não do insert: com ele, o destinatário já
@@ -444,7 +414,7 @@ async function rodarUmaCampanha(
   const corpo = renderizar(
     congelado,
     { nome: nomeDoContato(contato) },
-    { agora, fuso: knobs.timezone },
+    { agora, fuso: fusoDaCampanha },
   ).texto;
 
   try {
@@ -459,6 +429,7 @@ async function rodarUmaCampanha(
       .update({ conversation_id: boundary.conversation_id, channel_session_id: sessionEscolhida })
       .eq("id", alvo.id);
 
+    await esperarRitmo(sessionEscolhida);
     const mensagem = await sendMessageHandler(
       admin,
       {
@@ -482,7 +453,6 @@ async function rodarUmaCampanha(
         },
       } as Parameters<typeof sendMessageHandler>[2],
     );
-    await recordSend(pool, campanha.organization_id, sessionEscolhida, agora);
 
     // O desfecho vem do ESTADO da mensagem, nunca da ausência de exceção — o
     // handler marca `failed` e devolve normalmente.
@@ -650,7 +620,7 @@ export async function estadoDeEnvio(
 ): Promise<{ ultimoEnvio: Date | null; enviadasHoje: number; enviadasNaUltimaHora: number }> {
   // O dia do teto diário é o dia DO CLIENTE, como o resto do ritmo. Ver a nota
   // no chamador: `setUTCHours` fazia o dia virar 21h em `America/Sao_Paulo`.
-  const inicioDoDia = dayStartInTz(agora, fuso);
+  const inicioDoDia = inicioDoDiaNoFuso(agora, fuso);
   const { data } = await admin
     .from("campaign_recipients")
     .select("sent_at")

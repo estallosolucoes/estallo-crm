@@ -9,7 +9,7 @@ export function AcceptInviteForm({ token, label, failureLabel, pendingLabel, pla
   return <form action={submit} className="mt-4 space-y-3">
     {result && !result.ok && <p role="alert">{result.error === "limite_do_plano" ? planLimitLabel : failureLabel}</p>}
     <button type="submit" disabled={pending}
-      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+      className="rounded-md bg-primary dark:bg-accent-700 px-4 py-2 text-sm font-medium text-primary-foreground">
       {pending ? pendingLabel : label}
     </button>
   </form>;

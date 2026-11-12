@@ -82,39 +82,28 @@ function portasFalsas(
   parcial: {
     contato?: ContatoDoAviso | null;
     ehNumeroInterno?: boolean;
-    pacingLiberado?: boolean;
   } = {},
 ) {
   const avisados = new Set<string>();
   const enviadas: Array<{ chave: string; body: string }> = [];
-  const registrosDePacing: number[] = [];
 
   const deps: PortasDoAviso = {
     leContato: async () =>
       parcial.contato === undefined ? contato() : parcial.contato,
     ehNumeroInterno: async () => parcial.ehNumeroInterno ?? false,
     jaAvisado: async (_org, _contactId, chave) => avisados.has(chave),
-    pacing: {
-      decide: async () =>
-        parcial.pacingLiberado === false
-          ? { liberado: false, motivo: 'daily_cap' }
-          : { liberado: true },
-      registraEnvio: async () => {
-        registrosDePacing.push(registrosDePacing.length + 1);
-      },
-    },
     envia: async (e) => {
       avisados.add(e.chave);
       enviadas.push({ chave: e.chave, body: e.body });
     },
   };
 
-  return { deps, enviadas, registrosDePacing };
+  return { deps, enviadas };
 }
 
 describe('fora do horário de atendimento: o aviso (#1926)', () => {
-  it('fora da janela, primeiro contato ⇒ avia NA HORA e conta no pacing', async () => {
-    const { deps, enviadas, registrosDePacing } = portasFalsas();
+  it('fora da janela, primeiro contato ⇒ avisa NA HORA', async () => {
+    const { deps, enviadas } = portasFalsas();
 
     const decisao = await enviaAvisoForaDoHorario(deps, entrada(QUARTA_NOITE));
 
@@ -126,7 +115,6 @@ describe('fora do horário de atendimento: o aviso (#1926)', () => {
       chaveDoAviso('lead-1', new Date('2026-10-07T21:00:00Z')),
     );
     // Gastou uma mensagem do número: entra no ledger como qualquer resposta.
-    expect(registrosDePacing).toHaveLength(1);
   });
 
   it('dentro da janela ⇒ NÃO avisa (a IA responde no turno)', async () => {
@@ -202,16 +190,6 @@ describe('fora do horário de atendimento: o aviso (#1926)', () => {
 
     expect(decisao).toEqual({ enviar: false, motivo: 'numero_interno' });
     expect(enviadas).toHaveLength(0);
-  });
-
-  it('teto de envio batido (pacing vetou) ⇒ não envia e não conta como enviado', async () => {
-    const { deps, enviadas, registrosDePacing } = portasFalsas({ pacingLiberado: false });
-
-    const decisao = await enviaAvisoForaDoHorario(deps, entrada(QUARTA_NOITE));
-
-    expect(decisao).toEqual({ enviar: false, motivo: 'pacing:daily_cap' });
-    expect(enviadas).toHaveLength(0);
-    expect(registrosDePacing).toHaveLength(0);
   });
 
   it('texto não configurado ⇒ não envia frase inventada', async () => {

@@ -90,6 +90,7 @@ const bodySchema = z.object({
  * a regra do mapeamento carregar um campo que ela nunca lê.
  */
 type EtapaComAutoria = EtapaDoMapa & {
+  color?: string | null;
   avisar_na_central?: boolean | null;
   /**
    * Janela de "esfriando" da etapa, em horas (`crm_stages.expected_duration_hours`).
@@ -120,7 +121,7 @@ async function lerFunil(
     // consulta só para ela seria um round-trip por render numa tela de
     // configuração — e um caminho a mais para a lista e a autoria divergirem.
     .select(
-      "id, name, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at",
+      "id, name, color, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at",
     )
     .eq("organization_id", orgId)
     .eq("pipeline_id", pipelineId)
@@ -151,6 +152,7 @@ function corpo(etapas: EtapaComAutoria[]) {
     etapas: etapas.map((e) => ({
       id: e.id,
       name: e.name,
+      color: e.color ?? null,
       is_won: e.is_won,
       is_lost: e.is_lost,
       avisar_na_central: e.avisar_na_central === true,

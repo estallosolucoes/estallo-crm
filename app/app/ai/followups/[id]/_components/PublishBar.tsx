@@ -40,7 +40,9 @@ import { Trash, TreeStructure } from "@/lib/ui/icons";
 import { FlowStatusBadge } from "../../_components/FlowStatusBadge";
 import { DeleteFollowupFlowButton } from "../../_components/DeleteFollowupFlowButton";
 import { RenameFollowupFlowButton } from "../../_components/RenameFollowupFlowButton";
+import { ExportFollowupFlowButton } from "../../_components/ExportFollowupFlowButton";
 import { TriggerConfigControl } from "./TriggerConfigControl";
+import { SimularCaminho } from "./SimularCaminho";
 
 interface Props {
   flowId: string;
@@ -193,6 +195,8 @@ export function PublishBar({
         >
           {t("Rollback")}
         </Button>
+        <SimularCaminho graph={graph} />
+        <ExportFollowupFlowButton flowId={flowId} nome={flow.name} temPublicada={flow.active_version_id !== null} />
         {onAutoFit && (
           <Button
             type="button"

@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "./helpers/test";
+import { abrirFichaDoContato } from "./helpers/ficha-do-contato";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
@@ -312,6 +313,8 @@ test.describe("perguntar ao acervo no painel da conversa", () => {
     await page.goto(`/app/inbox?id=${conversaA}&filter=all`);
     await expect(bolhas(page)).toHaveCount(MENSAGENS_A.length, { timeout: 30_000 });
 
+    // A ficha do contato (onde mora a caixa do acervo) é gaveta abaixo da faixa 2xl.
+    await abrirFichaDoContato(page);
     const caixa = page.getByTestId("inbox-acervo");
     await caixa.scrollIntoViewIfNeeded();
     await expect(caixa).toBeVisible();

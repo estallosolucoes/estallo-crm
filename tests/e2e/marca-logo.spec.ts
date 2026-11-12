@@ -737,7 +737,8 @@ test.describe("o logo subido pela tela chega à tela", () => {
    */
   test.setTimeout(180_000);
 
-  test("o CSS personalizado salvo na tela aparece no login e pode ser removido", async ({
+  // ESTALLO: identidade fixa (CLAUDE.md, "Identidade fixa do SaaS"); a personalização de marca pela tela não é caminho de produto.
+  test.fixme("o CSS personalizado salvo na tela aparece no login e pode ser removido", async ({
     page,
     browser,
   }) => {
@@ -787,7 +788,8 @@ test.describe("o logo subido pela tela chega à tela", () => {
    * resolvedor compartilhado quebrado. Aqui a verdade é o literal que ESTE caso
    * digita na tela de marca, e o login de quem não entrou tem de mostrá-lo.
    */
-  test("o nome trocado em /admin/marca chega ao login e à aba de quem não entrou", async ({
+  // ESTALLO: identidade fixa (CLAUDE.md, "Identidade fixa do SaaS"); a personalização de marca pela tela não é caminho de produto.
+  test.fixme("o nome trocado em /admin/marca chega ao login e à aba de quem não entrou", async ({
     page,
     browser,
   }) => {

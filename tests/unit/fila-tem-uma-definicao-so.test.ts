@@ -38,7 +38,6 @@ function fonte(caminho: string): string {
 const SITIOS_DA_FILA = [
   "lib/routing/queue.ts",
   "app/api/v1/conversations/counts/route.ts",
-  "components/inbox/InboxLayout.tsx",
   "lib/mcp/tools/conversations.ts",
 ] as const;
 

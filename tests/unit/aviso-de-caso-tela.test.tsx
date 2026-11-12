@@ -113,27 +113,6 @@ describe("os avisos de estado viram frase", () => {
     expect(alerta.textContent).toContain("mais seguro");
   });
 
-  it("o aquecimento mostra os NÚMEROS, que é a informação que faltava", () => {
-    montar(
-      estado({
-        avisos: [
-          {
-            codigo: "aquecimento",
-            bloqueia: false,
-            // Meio-dia UTC de propósito: à meia-noite UTC esta data renderiza
-            // no DIA ANTERIOR em qualquer fuso a oeste, e o caso reprovaria por
-            // fuso da máquina — não por defeito da tela.
-            dados: { enviadosHoje: 7, teto: 20, fimEm: "2026-10-12T12:00:00.000Z" },
-          },
-        ],
-      }),
-    );
-    const bloco = screen.getByTestId("aquecimento-de-hoje");
-    expect(bloco.textContent).toContain("7");
-    expect(bloco.textContent).toContain("20");
-    expect(bloco.textContent).toContain("12/10");
-  });
-
   it("o descarte diz o total e a data — nunca um número que o banco não guarda", () => {
     montar(
       estado({

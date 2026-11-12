@@ -82,7 +82,8 @@ export function listaDeValoresParaOr(valores: readonly string[]): string {
  */
 export function predicadoDoMarcador(marcador: string): string {
   const valor = arrayDeUmValorParaOr(marcador);
-  return `tags.cs.${valor},tags_do_contato.cs.${valor}`;
+  // Estallo (0659): conversa não tem mais etiqueta — só a caixa do contato.
+  return `tags_do_contato.cs.${valor}`;
 }
 
 /**
@@ -195,7 +196,7 @@ export function predicadoDeVariasEtiquetas(
   if (marcadores.length === 1) return predicadoDeUmMarcador(marcadores[0]!);
   const operador = modo === "ou" ? "ov" : "cs";
   const valor = listaDeValoresParaOr(marcadores);
-  return `tags.${operador}.${valor},tags_do_contato.${operador}.${valor}`;
+  return `tags_do_contato.${operador}.${valor}`;
 }
 
 /**

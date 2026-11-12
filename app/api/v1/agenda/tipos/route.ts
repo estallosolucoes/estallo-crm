@@ -66,7 +66,7 @@ const CATEGORIAS = [
   "outro",
 ] as const;
 
-const LOCAIS = ["in_person", "phone", "whatsapp", "video_link", "google_meet"] as const;
+const LOCAIS = ["in_person", "phone", "whatsapp", "video_link"] as const;
 
 /**
  * Os limites são os MESMOS do CHECK do banco, e isso é deliberado.

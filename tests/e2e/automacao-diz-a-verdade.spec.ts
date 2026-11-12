@@ -252,8 +252,7 @@ test.describe("a automação conta o que aconteceu de verdade", () => {
       // rotula "Aguardando envio": a asserção seguinte então falha com
       // `element(s) not found`, um sintoma que não menciona relógio nenhum e que
       // já custou horas de investigação. Com esta linha antes, a spec falha
-      // dizendo O QUE aconteceu. Quem garante que não acontece é o seed, que
-      // fixa a janela em 0h-24h (`garantirJanelaSempreAberta`).
+      // dizendo O QUE aconteceu. A janela de envio por canal não existe mais.
       await expect(
         cartao.getByText("Aguardando envio"),
         "o envio foi ADIADO (janela de envio fechada), não tentado — a janela do rig deveria estar aberta 0h-24h pelo seed",

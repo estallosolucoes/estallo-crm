@@ -93,27 +93,8 @@ describe("no Brasil, fora do português, o texto é o da main", () => {
   });
 });
 
-describe("o call site usa a dica com o vocabulário do país", () => {
-  // Teste de função pura que passasse com a tela escrevendo o literal de novo
-  // não provaria nada: o defeito morava no CALL SITE. A régua da tela inteira
-  // (render) é da revisão do mantenedor; aqui se mede o elo que o diff toca.
-  const FORM = readFileSync(
-    path.join(process.cwd(), "app/app/settings/marca/_form.tsx"),
-    "utf8",
-  );
-  const PAGINA = readFileSync(
-    path.join(process.cwd(), "app/app/settings/marca/page.tsx"),
-    "utf8",
-  );
-
-  it("o formulário renderiza `dicaDoRelatorio(t, vocabulario)` e não guarda a frase", () => {
-    expect(FORM).toContain("dicaDoRelatorio(t, vocabulario)");
-    expect(FORM, "a frase literal voltou para a tela").not.toContain(LITERAL_ANTIGO);
-  });
-
-  it("a página lê `country` da organização e resolve o perfil do país", () => {
-    expect(PAGINA).toContain("perfilDoPais(");
-    expect(PAGINA, "a página não lê a coluna do país").toMatch(/select\("settings, country"\)/);
-    expect(PAGINA).toContain("vocabulario={{");
-  });
-});
+// O describe «o call site usa a dica com o vocabulário do país» saiu: ele lia
+// `app/app/settings/marca/_form.tsx`, o formulário que a identidade fixa da Estallo aposentou
+// (a página `/app/app/settings/marca` agora só mostra a marca). Enquanto nenhuma tela renderizar
+// `dicaDoRelatorio`, não há call site para vigiar; quem religar a dica numa tela traz o teste
+// do novo elo junto.

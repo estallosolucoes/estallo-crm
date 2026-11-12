@@ -33,6 +33,24 @@ export async function limparSessoesDeCanalE2E(
   const ids = (sessoes ?? []).map((s) => s.id as string);
   if (ids.length === 0) return { removidas: 0 };
 
+  // Inscrições de follow-up do contrato novo (execution_contract = 1) NÃO podem ter a conversa de origem trocada:
+  // `followup_execution_origin_immutable` (migration 0704) barra o UPDATE, e é um UPDATE que o `on delete set null`
+  // da chave estrangeira faria ao apagar a conversa. Apagar a conversa com elas de pé derrubava o teardown INTEIRO
+  // do e2e. As inscrições vão primeiro (DELETE não passa pela trava de UPDATE); o que cai junto é dado de teste.
+  const { data: conversas, error: conversasBuscaErro } = await admin
+    .from("conversations")
+    .select("id")
+    .in("channel_session_id", ids);
+  if (conversasBuscaErro) throw new Error(`listar conversations E2E: ${conversasBuscaErro.message}`);
+  const idsDeConversa = (conversas ?? []).map((c) => c.id as string);
+  if (idsDeConversa.length > 0) {
+    const { error: inscricoesErro } = await admin
+      .from("followup_enrollments")
+      .delete()
+      .in("conversation_id", idsDeConversa);
+    if (inscricoesErro) throw new Error(`apagar followup_enrollments E2E: ${inscricoesErro.message}`);
+  }
+
   const { error: conversasErro } = await admin
     .from("conversations")
     .delete()

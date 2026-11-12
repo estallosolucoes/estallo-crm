@@ -131,12 +131,44 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
     nota: "backoff de retry e grace do classify — intervalos de minutos, o desvio é irrelevante.",
   },
   "intervencao.ts": {
-    agenda: "futuro",
-    nota: "retomada de pausa manual: agenda o restante do adiamento, sempre no futuro.",
+    agenda: "agora",
+    nota:
+      "Dois usos. A retomada da pausa manual e o adiamento agendam o restante da espera, sempre no futuro " +
+      "(o relógio do processo serve). «Executar próximo bloco» e «Continuar automaticamente» (passo a passo, 0714) " +
+      "agendam PARA AGORA e leem o relógio do BANCO por `fn_agora()` (`agoraDoBanco`), nunca `new Date()`.",
+  },
+  "passo-a-passo.ts": {
+    agenda: "nenhum",
+    nota:
+      "Só DESAGENDA: concluir um bloco numa execução passo a passo grava `next_eval_at = null` e `paused_manual` " +
+      "(o CHECK do relógio põe esse estado no grupo sem relógio). `null` não tem relógio para escolher errado.",
+  },
+  "reiniciar.ts": {
+    agenda: "agora",
+    nota:
+      "A reexecução nasce vencida: o insert omite a coluna e o default now() do banco decide (0147). No passo a passo " +
+      "grava `next_eval_at: null` (pausada, sem relógio) — desagendar não é agendar.",
+  },
+  "motivo-da-espera.ts": {
+    agenda: "nenhum",
+    nota: "só descreve o horário para a tela (dossiê); não escreve nada.",
   },
   "eventos-legiveis.ts": {
     agenda: "nenhum",
     nota: "traduz o campo para a timeline do dossiê; não escreve.",
+  },
+  "execution-contract.ts": {
+    agenda: "nenhum",
+    nota: "só declara o campo no schema Zod do contrato de execução; não agenda nada.",
+  },
+  "execution-journal-pg.ts": {
+    agenda: "agora",
+    nota:
+      "O diário do contrato 1. Todo 'avance agora' (conclusão de tarefa, tags, movimentação, " +
+      "envio e decisão) lê o instante do BANCO (`dbNow` → `now()` do banco, o mesmo valor de `fn_agora()`, 0147) dentro da própria " +
+      "transação, nunca `new Date()`. O que ele agenda para o FUTURO (espera `wait` e o backoff de " +
+      "retry) usa o relógio do processo, onde 30 ms não mudam nada. Vigiado por " +
+      'o bloco "relógio do banco" de `tests/invariants/automacoes-attachjob-contraprova.test.ts`.',
   },
 };
 

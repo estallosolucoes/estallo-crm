@@ -56,9 +56,7 @@ export interface AvaliacaoDaRespostaDeTeste {
 const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> = [
   { gate: "stop", porque: "depende de o contato ter pedido para sair — não há contato real no teste" },
   { gate: "lgpd", porque: "depende da base legal registrada para o contato" },
-  { gate: "pacing", porque: "depende de quantas mensagens o número já enviou hoje e do horário do envio" },
   { gate: "messaging_window", porque: "depende de quando o contato falou com você pela última vez" },
-  { gate: "spinning", porque: "depende das últimas mensagens enviadas por este número" },
   { gate: "promise", porque: "depende da tabela de preços e condições da organização" },
   { gate: "semantic_promise", porque: "esta checagem textual não chama modelo; a prévia do motor pode chamar um modelo adicional" },
   {

@@ -75,7 +75,6 @@ function argsDoTurno(pool: pg.Pool, extras: Partial<RunBeforeSendArgs> = {}): Ru
     channelSessionId: "00000000-0000-4000-8000-000000000004",
     body: "Olá — segue o orçamento",
     optedOutThisTurn: false,
-    crmDailyLimit: null,
     now: new Date("2026-09-19T12:00:00.000Z"),
     rng: () => 0,
     sleep: async () => {},

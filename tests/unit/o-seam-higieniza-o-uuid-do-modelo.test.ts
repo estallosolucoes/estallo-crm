@@ -49,6 +49,8 @@ const { pickToolsFromMcp } = await import("@/lib/ai/runtime/tools");
 function montarTurno() {
   return pickToolsFromMcp({
     toolIds: ["crm_find_free_slots"],
+    // A Agenda é capacidade da empresa (padrão desligada): aqui ela está ligada.
+    capacidadesLigadas: ["agenda"],
     auth: {
       organizationId: "org-1",
       role: "ai_operator",

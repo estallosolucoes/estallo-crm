@@ -336,6 +336,15 @@ beforeAll(() => {
                     (select id from public.crm_leads where organization_id = v_org limit 1));
         end if;
 
+        -- custom_field_definitions (0657): o cadastro central de campos da
+        -- empresa. Vazar a linha entrega ao vizinho o que a empresa pergunta aos
+        -- clientes dela. A semente dispara a projeção para settings.fields.
+        -- (sem crase nesta prosa: o bloco inteiro é um template literal de JS.)
+        if not exists (select 1 from public.custom_field_definitions where organization_id = v_org) then
+          insert into public.custom_field_definitions (organization_id, entity, key, label, type)
+            values (v_org, 'lead', 'rls_campo', 'Campo de invariante', 'text');
+        end if;
+
         -- voice_calls (0232): a chamada pendurada na sessão de canal da org.
         -- O wacalls_call_id varia por organizacao porque a tabela tem
         -- unique (organization_id, wacalls_call_id) — mesmo cuidado do endpoint
@@ -747,6 +756,10 @@ export const TABLES = [
   // RPC. Vazar a linha entrega ao vizinho quando o outro vai mexer nas
   // conexões dele — e a retomada programada passaria a ser do vizinho.
   "channel_schedules",
+  // migration 0657 — o cadastro central de campos personalizados. Leitura
+  // org-flat (o agent semeado lê para preencher o formulário); a escrita é
+  // admin e não é medida aqui.
+  "custom_field_definitions",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

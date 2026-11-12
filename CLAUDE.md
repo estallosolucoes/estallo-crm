@@ -1,4 +1,4 @@
-# CLAUDE.md — DeskcommCRM
+# CLAUDE.md — Estallo CRM
 
 > Instruções pra futuras sessões Claude trabalhando neste repo. Leitura obrigatória antes de qualquer task de código.
 
@@ -14,7 +14,9 @@
 
 ## Visão (1 parágrafo)
 
-DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — multi-nicho (e-commerce, clínicas, imobiliárias, infoprodutos, serviços), com WhatsApp como canal primário (via WAHA). Agentes com RAG por tenant atendem, qualificam e movem o funil junto com humanos; CRM inteiro exposto via MCP. Monetização = self-host em VPS (parceria HostGator), não assinatura. Arquitetura multi-tenant com RLS desde o dia 1; LGPD nativa. Posicionamento completo: `VISION.md`.
+Estallo CRM é o SaaS comercial da Estallo para atendimento e vendas por WhatsApp, com organizações isoladas por RLS, identidade fixa e planos por assinatura. A Estallo hospeda e administra a plataforma. A cobrança futura usa Stripe, com Nutrigg como referência; o módulo comercial herdado do upstream não é a base desta oferta. Os preços exibidos nesta etapa são demonstrativos, sem cobrança ou limites aplicados. Decisões atuais: `VISION.md` e `docs/estallo-produto.md`. A licença e o histórico MIT do DeskcommCRM permanecem preservados.
+
+**Operação deste fork:** o repositório de trabalho é `WJuniorL/estallo-crm` (saiu de `estallosolucoes/estallo-crm` em 07/11/2026). O caminho de deploy é **push → PR → merge na `main` → `publish-image.yml` publica no GHCR (`ghcr.io/wjuniorl/…`) → `deploy-vps.yml` manda a VPS trocar as imagens**, por SSH com uma chave presa ao comando fixo `/opt/deploy-estallo.sh` (fonte: `infra/vps/deploy-estallo.sh`; secrets `VPS_DEPLOY_KEY` e `VPS_HOST_KEY`). A VPS tem `docker login ghcr.io` com token só de leitura. `publish-image.yml` só roda em push na `main` ou tag `v*` — push em branch não publica nada. O `entregar.sh` (imagens construídas localmente) é exceção de emergência. **Nem ele nem o `deploy-vps` aplicam migrations**: só o fluxo `agent` chama `migrate(previous,target)`, que **recusa** qualquer migration já aplicada que apareça como modificada (`M`) — migration nova se aplica à mão antes do merge, e migration aplicada nunca se edita. Para o estado real, sem confiar nesta linha: `gh workflow list --all` e `gh run list --workflow=deploy-vps.yml`. Os trechos sobre a branch protection do upstream (`melgarafael/DeskcommCRM`) descrevem o upstream, não este fork. A Estallo opera a VPS; o cliente do SaaS não instala o aplicativo.
 
 ---
 
@@ -38,6 +40,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 ## Convenções críticas (NÃO NEGOCIÁVEIS)
 
 ### Multi-tenancy
+
 - `organization_id uuid not null references organizations(id) on delete cascade` em **toda** tabela tenant-aware
 - RLS policy `tenant_isolation_<tabela>_all` aplicada via helper `fn_user_org_ids()`
 - Service role bypassa RLS — handlers que usam admin client **DEVEM** filtrar `organization_id` manualmente, resolvido de fonte confiável (cookie/JWT/webhook secret/path token), **NUNCA do body**
@@ -45,11 +48,13 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - Teste de isolamento (cria 2 tenants, verifica não-vazamento) é obrigatório no CI antes de merge
 
 ### Idempotência & event sourcing leve
+
 - Mensagens WhatsApp e eventos externos: `unique (organization_id, external_id)` + captura `code === '23505'` no INSERT
 - POSTs de criação na API aceitam header `Idempotency-Key: <uuid>` (TTL 24h). O recibo mora no **Postgres** (`public.idempotency_keys`, único por organização + chave + endpoint), não no Upstash — ver `lib/api/idempotency.ts`. Quais rotas leem o header: `grep -rln 'Idempotency-Key' app/api/v1 --include='route.ts'`
 - **Trigger Postgres NUNCA faz HTTP.** Trigger emite linha em `event_log`; worker (cron / Realtime listener) consome e dispara side effect
 
 ### API REST `/api/v1/`
+
 - Versionamento por path. JSON snake_case. UUID v4. ISO-8601 UTC. Dinheiro em `_cents` + `currency` ISO-4217
 - Wrapper sucesso: `{ data, meta?: { cursor, has_more, total } }`
 - Wrapper erro: `{ error: { code, message, details? } }` — usar helpers `ok()` / `fail()` de `lib/api/wrappers.ts`
@@ -75,6 +80,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - `X-Request-Id` em toda response (correlaciona com audit log)
 
 ### Auth & RBAC
+
 - Sempre `getUser()` (valida JWT no backend). NUNCA `getSession()` (confia no cookie local)
 - 4 roles dentro do tenant: `viewer` (1) < `agent` (2) < `manager` (3) < `admin` (4)
 - Super-admin de plataforma é uma role transversal — `is_platform_admin` (decisão final na Spec 01)
@@ -88,8 +94,9 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   `requireRole`/RBAC/MFA — e é cobrada pelo gate `tests/unit/suporte-cobertura-de-efeitos.test.ts`
 
 ### Audit log
+
 - Toda mutação POST/PATCH/DELETE bem-sucedida → 1 entrada em `api_audit_log` (fire-and-forget, p99 ≤500ms)
-- **Rodada de cron que não fez nada NÃO é mutação e não audita** — e a que fez, audita. `routing-worker` (1×/min) e o extinto `attendant-heartbeat` (1×/5min, removido no #720) auditavam incondicionalmente: ~51.840 linhas/mês numa instalação que não atende ninguém, e numa VPS real **95% do audit log** era batida de cron vazia (`docs/testing/user-journey-map.md`, achado 17). A guarda certa é *auditar quando houve efeito*, nunca *parar de auditar* — as duas direções são medidas por `tests/unit/cron-audita-so-quando-ha-efeito.test.ts`, que varre o AST de **toda** rota de `app/api/v1/cron/`
+- **Rodada de cron que não fez nada NÃO é mutação e não audita** — e a que fez, audita. `routing-worker` (1×/min) e o extinto `attendant-heartbeat` (1×/5min, removido no #720) auditavam incondicionalmente: ~51.840 linhas/mês numa instalação que não atende ninguém, e numa VPS real **95% do audit log** era batida de cron vazia (`docs/testing/user-journey-map.md`, achado 17). A guarda certa é _auditar quando houve efeito_, nunca _parar de auditar_ — as duas direções são medidas por `tests/unit/cron-audita-so-quando-ha-efeito.test.ts`, que varre o AST de **toda** rota de `app/api/v1/cron/`
 - Audit é append-only para os papéis do PostgREST, e isso é do SCHEMA e não da prosa: `anon`, `authenticated` e `service_role` não têm GRANT de UPDATE, DELETE **nem TRUNCATE** em `api_audit_log` — **nem `service_role`** (migration 0258). O dono (`postgres`) pode tudo, como em qualquer tabela: a garantia é sobre os papéis que o PostgREST assume, nunca absoluta. Para conferir na fonte em vez de acreditar nesta linha:
 
   ```bash
@@ -128,11 +135,13 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   ```bash
   grep -nE '^GRANT [A-Z,]+ ON TABLE' supabase/baseline.sql | grep -v 'GRANT ALL'
   ```
+
 - **Retenção default de 5 anos, configurável, e agora EXECUTADA.** O expurgo é `public.fn_expurgar_auditoria_vencida` (`security definer`, **piso de 90 dias dentro do corpo**, revogada de anon/authenticated), chamada em lotes pelo cron `app/api/v1/cron/data-retention` (diário). O knob é `AUDIT_LOG_RETENTION_DAYS`. **Não há camada cold/S3** — o "hot 90 dias, cold (S3) o resto" que este arquivo afirmava por meses nunca existiu em código (auditoria de 2026-08-14: zero ocorrência de arquivamento), e um self-host não tem para onde arquivar: o Storage do cliente é a MESMA cota de 1 GB, já dividida com `whatsapp-media`. Para ver o que está em vigor: `grep -n "RETENCAO_AUDITORIA_DIAS" lib/retencao/politica.ts`
 - Por que uma `security definer` de expurgo não é porta de adulteração (o argumento inteiro está no cabeçalho da migration 0167): ela **não tem seletor de linha** — nenhum parâmetro de org, ator, ação ou id, e o único predicado é `created_at < now() - N dias`; o piso mora **no corpo**, não em quem chama; não é alcançável pela REST; é, desde a 0258, o **único** apagamento de auditoria ao alcance da service key — e não escolhe linha, só alcança a ponta mais velha que o piso; e **registra a própria erosão** (`retention.sweep_run`, com a contagem, numa linha nova demais para a chamada seguinte alcançar)
 - Falha de write em audit gera alerta Sentry, não bloqueia mutação principal
 
 ### LGPD
+
 - Anonimização preferida sobre delete. Nome do contato vira `Cliente Anonimizado #N`
 - Cascade de redact: contact + conversations + messages (mídia removida do storage) + activities (preserva timestamps)
 - Reversão de anonimização: 403 `lgpd_anonymization_irreversible`
@@ -140,11 +149,12 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - Action audit obrigatória: `lgpd.data_request_received`, `lgpd.export_generated`, `lgpd.redact_executed`, `lgpd.consent_changed`
 
 ### WAHA
+
 - Imagem NOWEB pinada por arquitetura: `latest-2026.7.2` em x86 e `noweb-arm-2026.7.2` em ARM64. A prova local criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não prova pairing, duas contas `WORKING` nem envio. Não bloquear segunda sessão por tier: conferir resposta estruturada e pós-condição da operação.
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões
 - Auth: env do WAHA recebe **hash SHA512 hex** da api key; cliente envia plaintext em `X-Api-Key`
 - Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`
-- Anti-banimento: throttle 1 msg/1.2s + jitter ≤800ms. Campanha 1 msg/5s. Warm-up 7-14d. Spinning de copy. Janela de disparo 7h-22h (domingo LIBERADO por default desde 2026-08-20; a janela é knob por canal). Janela de RESPOSTA por canal (0495, `channel_knobs.resposta_*`), que herda a de disparo quando vazia — só `inbound_turn`/`case_reply_turn` a leem
+- Ritmo de envio: não há mais "Proteção de envio" (janela, aquecimento, teto diário, spinning) — toda mensagem por número sem API oficial espera 0,3–0,8 s sorteados depois da anterior do mesmo número, em memória (`lib/messaging/ritmo-entre-envios.ts`); o atraso na resposta do agente é do módulo de agentes (`guardrails`), e o disjuntor de saúde do canal (`channel_session_health`) permanece
 - STOP detection: a regra mora em `lib/opt-out/deteccao.ts` e é a MESMA nos dois lados —
   a ingestão (que grava `is_blocked=true`) e o runtime do agente. **Não é mais a palavra
   solta:** só bloqueia palavra ISOLADA (mensagem inteira = a palavra) ou verbo de cessação
@@ -165,21 +175,32 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - Grupos: entram **só os ligados** em Conexões › Grupos (`channel_session_groups`). O grupo ligado vira conversa `is_group` com um contato `kind = 'whatsapp_group'` que nunca entra em funil, lista, campanha ou IA; o remetente é `p.author` (nunca `p.from`), gravado em `messages.metadata.group_sender` (`lib/messaging/remetente-de-grupo.ts`). Para conversa de grupo o banco emite `message.group_received`, e não `message.received`, e o roteamento automático pula grupo. O filtro `ignore.groups` do WAHA é propriedade desta funcionalidade (`definirRecebimentoDeGrupos`); compatibilidade e convergência não o tocam. Spec: `docs/superpowers/specs/2026-09-23-grupos-na-inbox-design.md`
 - Cron `recover-stuck-messages` (`app/api/v1/cron/recover-stuck-messages/route.ts`, agendado no `scheduler` do `docker-compose.prod.yml`): marca `status='sending'` há >5min como `failed` **e abre aviso na Central** (`agent_inbox_items` kind `message_send_stuck`). Não toca em `queued`: esse estado tem dono (o agent-engine reagenda por `SEND_QUEUED_RETRY_MS`), e falhá-lo perderia mensagem que ia sair. Não reenvia — envio em dobro é pior que não-envio
 
-### Marca própria (white-label)
-- **Uma imagem Docker serve todas as marcas.** Nada de `NEXT_PUBLIC_*` para marca, nada de `public/favicon.ico`, nada de imagem por revendedor — a imagem é pré-buildada e o `update.sh` regrava `APP_IMAGE` incondicionalmente
-- **O banco está ACIMA do `.env`.** `platform_branding` (instalação) e `organizations.settings.branding` (organização) são a fonte; `APP_NAME`/`APP_LOGO_URL`/`APP_ACCENT_HEX` são **semente e piso de rollback** (o `agent.sh` reverte a imagem, nunca o banco)
-- **Resolvedor NUNCA lança.** `lib/branding/instalacao.ts` e `lib/branding/saida.ts` degradam para o padrão do produto e seguem: `branding()` roda em `app/layout.tsx`, e um throw ali é 500 em todas as telas
-- **Saída sem DOM usa `marcaDaSaida()`** (`lib/branding/saida.ts`) — e-mail, remetente, ícone, `issuer` do MFA. Um hex e uma frente legível, tema **claro** sempre. Nunca passe `MarcaResolvida` a template de e-mail
-- **O PDF de LGPD NUNCA leva marca.** Ele nomeia o **controlador** (`organizations.legal_name`) e o DPO resolvido. Nomear ali o revendedor — que é operador — inverteria papéis num documento que responde a direito legal. Vigiado em `tests/unit/mapas-de-arquitetura.test.ts`
-- Vazamento de marca no código é vigiado por `tests/unit/branding.test.ts` (varre `app|components|lib|workers|hooks`), com allowlist que **só encolhe**. Contexto de venda em [`docs/white-label.md`](docs/white-label.md); mapa em `docs/architecture/marca-propria.architecture.json`
+### Design System Estallo — padrão único
+
+- A única referência visual vigente é o Design System da Estallo, documentado em [`docs/design-system/README.md`](docs/design-system/README.md), a partir do Estallo Brand System v1.0 fornecido pelo proprietário.
+- Usar Sora para títulos, Manrope para leitura e controles, JetBrains Mono para dados técnicos; Estallo Blue para ação, Estallo Green para resultado e Ink para texto e navegação.
+- Tokens do produto vivem em `app/globals.css`; `lib/branding/regua-do-produto.ts` é o espelho runtime. O laboratório em `app/design/` e documentos históricos não são fontes normativas de identidade.
+- Specs, planos e handoffs que mencionam escolhas visuais do upstream estão superados nesse aspecto. Seus contratos técnicos permanecem válidos; não restaurar marca, fontes ou paleta antigas.
+- O padrão vale para todos os módulos. O redesenho é progressivo e a existência de uma tela antiga não autoriza um padrão concorrente. Validar contraste, mobile e ambos os temas ao alterar UI.
+
+### Identidade fixa do SaaS
+
+- A marca do produto é Estallo CRM; nome centralizado em `lib/branding.ts`, política em `lib/branding/plataforma.ts`.
+- Banco, ambiente, organizações e extensões legadas não substituem a identidade do SaaS. Dados legais e identidade da empresa nos documentos comerciais continuam independentes.
+- O layout raiz entrega a mesma marca para títulos, CSS e contexto do navegador. `marcaDaSaida()` entrega a identidade do produto para e-mail e MFA, sem depender de uma consulta de branding.
+- O PDF de LGPD continua nomeando o controlador e o DPO, sem confundir a marca da plataforma com a empresa atendida.
+- Os resolvedores white-label herdados ficam como compatibilidade técnica; não usar suas telas ou contratos para habilitar personalização comercial.
+- Tokens vivem em `app/globals.css`; a régua runtime é gerada por `extrairRegua()` e verificada por teste. A geometria oficial e as fontes são servidas pelo aplicativo.
 
 ### Doutrina DIRC (antes de adicionar campo)
+
 - **D**uplicar — vive aqui mesmo?
 - **I**ntegrar — vem de outra tabela via FK?
 - **R**eferenciar — só ponteiro?
 - **C**alcular — pode ser computado on-demand?
 
 ### Modelagem
+
 - 5 tabelas core CRM: `crm_pipelines`, `crm_stages`, `crm_leads`, `crm_lead_activities` (polimórfica timeline), `crm_lead_links` (polimórficos vínculos)
 - `position_in_stage numeric` (fractional indexing via `midpoint()`) — **NUNCA `int`**
 - `external_id` nullable (mensagem outbound `sending` ainda não tem ID WAHA)
@@ -217,23 +238,23 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ## Paths importantes
 
-| Path | Conteúdo |
-|---|---|
-| `docs/prd/00-prd-master.md` | Visão geral, escopo MVP, KPIs |
-| `docs/prd/01-prd-platform-base.md` | Auth, tenancy, RBAC, LGPD framework |
-| `docs/prd/02-...06-` | Customer 360, WhatsApp, Pipeline, IA-RAG, Nuvemshop |
-| `docs/specs/` | Specs técnicas detalhadas (schema SQL, payloads exatos) |
-| `docs/business-rules/` | Regras de negócio fora do código |
-| `docs/research/reference-synthesis.md` | Arquitetura herdada do curso WAHA |
-| `tasks/todo.md` | Workflow de construção atual |
-| `app/globals.css` | **Tailwind 4 é CSS-first: não existe `tailwind.config.ts`.** Tokens em `:root` / `[data-theme]`, ponte token → utilitário no `@theme inline`, alcance do scanner nos `@source`. Vigiado por `tests/unit/tailwind-tokens.test.ts` |
-| `lib/api/wrappers.ts` | `ok()`, `fail()`, tipos `ApiSuccess<T>` / `ApiError` |
-| `lib/api/errors.ts` | Códigos de erro canônicos |
-| `lib/env.ts` | Validação Zod das env vars (lança no startup se faltar crítica) |
-| `lib/supabase/{browser,server,admin}.ts` | Clients canônicos |
-| `app/api/v1/health/route.ts` | Health check (Supabase + Redis + WAHA) |
-| `supabase/migrations/` | Schema versionado |
-| `docs/runbooks/deploy.md` | **Deploy em produção — leia ANTES de mexer na VPS** |
+| Path                                     | Conteúdo                                                                                                                                                                                                                         |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/prd/00-prd-master.md`              | Visão geral, escopo MVP, KPIs                                                                                                                                                                                                    |
+| `docs/prd/01-prd-platform-base.md`       | Auth, tenancy, RBAC, LGPD framework                                                                                                                                                                                              |
+| `docs/prd/02-...06-`                     | Customer 360, WhatsApp, Pipeline, IA-RAG, Nuvemshop                                                                                                                                                                              |
+| `docs/specs/`                            | Specs técnicas detalhadas (schema SQL, payloads exatos)                                                                                                                                                                          |
+| `docs/business-rules/`                   | Regras de negócio fora do código                                                                                                                                                                                                 |
+| `docs/research/reference-synthesis.md`   | Arquitetura herdada do curso WAHA                                                                                                                                                                                                |
+| `tasks/todo.md`                          | Workflow de construção atual                                                                                                                                                                                                     |
+| `app/globals.css`                        | **Tailwind 4 é CSS-first: não existe `tailwind.config.ts`.** Tokens em `:root` / `[data-theme]`, ponte token → utilitário no `@theme inline`, alcance do scanner nos `@source`. Vigiado por `tests/unit/tailwind-tokens.test.ts` |
+| `lib/api/wrappers.ts`                    | `ok()`, `fail()`, tipos `ApiSuccess<T>` / `ApiError`                                                                                                                                                                             |
+| `lib/api/errors.ts`                      | Códigos de erro canônicos                                                                                                                                                                                                        |
+| `lib/env.ts`                             | Validação Zod das env vars (lança no startup se faltar crítica)                                                                                                                                                                  |
+| `lib/supabase/{browser,server,admin}.ts` | Clients canônicos                                                                                                                                                                                                                |
+| `app/api/v1/health/route.ts`             | Health check (Supabase + Redis + WAHA)                                                                                                                                                                                           |
+| `supabase/migrations/`                   | Schema versionado                                                                                                                                                                                                                |
+| `docs/runbooks/deploy.md`                | **Deploy em produção — leia ANTES de mexer na VPS**                                                                                                                                                                              |
 
 ---
 
@@ -415,7 +436,7 @@ Duas armadilhas irmãs, as duas pagas no mesmo dia:
   echo "rodapé: ${r:-0 failed} | grep contou: $g"   # têm de bater
   ```
 
-  Se não baterem, antes de diagnosticar *"sonda cega"* e re-rodar a suíte inteira
+  Se não baterem, antes de diagnosticar _"sonda cega"_ e re-rodar a suíte inteira
   com `--reporter=verbose`, confira se a divergência é explicada por **falha de
   coleta ou de hook** (que o Vitest imprime na seção dedicada `Failed Suites`,
   somando às linhas `FAIL` sem entrar no rodapé de casos `Tests ... failed`):
@@ -429,7 +450,7 @@ Duas armadilhas irmãs, as duas pagas no mesmo dia:
   suíte, então log truncado ou comando que não rodou também devolvem zero.
   Se `Failed Suites` for > 0 (e o log estiver inteiro), a conta fecha: `Tests failed` + `Failed Suites` = `grep FAIL`.
   A causa (falha de sintaxe na coleta ou `Hook timed out` em `beforeAll`) está no próprio log.
-  Reserve o diagnóstico de *"sonda cega"* (trocar por `--reporter=verbose`) para quando
+  Reserve o diagnóstico de _"sonda cega"_ (trocar por `--reporter=verbose`) para quando
   as seções também não explicarem a divergência.
 
   **E as duas podem bater em zero com a suíte reprovada.** O Vitest sai com
@@ -444,16 +465,17 @@ Duas armadilhas irmãs, as duas pagas no mesmo dia:
   ```
 
   Medido em 2026-09-15: `EnvironmentTeardownError: [vitest-worker]: Closing rpc
-  while "onUserConsoleLog" was pending`, sob carga. Rodapé `0 failed`, `grep FAIL`
+while "onUserConsoleLog" was pending`, sob carga. Rodapé `0 failed`, `grep FAIL`
   vazio, exit 1. **O exit code é a autoridade; o rodapé e o grep são explicação
   dele.** Quando o exit diverge dos dois, leia a linha `Errors` antes de concluir
   qualquer coisa:
 
-  ```bash
+  ````bash
   grep -aE "^ *Errors " /tmp/vt.log      # vazio é o esperado
   ``` (Comparar contra `Test Files` dá
   divergência falsa: `2 failed` de arquivos contra `7` de casos parece defeito
   da sonda e é só régua trocada.)
+  ````
 
 **Vermelho local que NÃO é seu:** `lib/ai/dispatcher/rate-limit.test.ts` falha em 5 casos, com
 15s de timeout cada, quando o `.env.local` tem `UPSTASH_REDIS_REST_URL`/`TOKEN` e o Redis para o
@@ -501,6 +523,7 @@ Checks **obrigatórios** na branch protection da `main` (verificado na configura
   ```
 
   **Por que não há mais número aqui.** O conserto que este parágrafo pedia era pôr a prosa sob gate — `tests/unit/e2e-cobertura-completa.test.ts` cobrando também o texto daqui. Tirar o número é melhor e mais barato: não há o que policiar, e a diferença entre disco e CI segue vigiada onde importa, no próprio teste, que reprova toda spec nova que não esteja em `SPECS_PARTE_*` ou em `FORA_DO_CI` **com motivo escrito**. Prosa que nenhum gate lê é prosa que diverge; prosa que não afirma número não tem como divergir.
+
 - **`imagens-ok`** (`publish-image.yml`) — reprova quando qualquer uma das três imagens Docker não constrói. **É obrigatório desde 2026-08-13**; este arquivo dizia o contrário em outro parágrafo (ver a doutrina de packaging acima, já corrigida).
 
 Todos os **cinco** são **obrigatórios** — medido em 2026-08-14 na branch protection:
@@ -541,9 +564,10 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 
 ## QA Visual com Recursos Reais — DOUTRINA (produto self-host)
 
-**O DeskcommCRM é distribuído open-source: a experiência de quem instala numa VPS É o produto.** Toda feature nova (ou fix de comportamento visível) DEVE ser provada como um **usuário leigo a usaria de verdade** — pelo frontend, num ambiente que imita a instalação fresca — antes de "pronto". Não é opcional; é critério de aceite de toda sessão que toca UI ou fluxo de usuário.
+**O Estallo CRM é distribuído open-source: a experiência de quem instala numa VPS É o produto.** Toda feature nova (ou fix de comportamento visível) DEVE ser provada como um **usuário leigo a usaria de verdade** — pelo frontend, num ambiente que imita a instalação fresca — antes de "pronto". Não é opcional; é critério de aceite de toda sessão que toca UI ou fluxo de usuário.
 
 **O que "recurso real" significa (e o que NÃO conta):**
+
 - **Conta.** Prova pela tela, dirigindo o browser (Playwright), logando com conta de teste real. `curl`/chamada de API **não** provam UX — validam o backend, mas não o que o usuário vê, clica e entende. Use curl só como diagnóstico.
 - **Banco fresco estilo VPS.** Postgres limpo aplicado do `supabase/baseline.sql` (não das `migrations/` — a cadeia fresh não sobe) + `scripts/bootstrap-owner.ts` (o que o `install.sh` faz). O ambiente do teste = o que o clone recém-instalado tem: sem os seus dados, sem os seus envs opcionais.
 - **Dependências como na VPS.** WAHA local, Redis local (`redis` + `serverless-redis-http`), cron drain via endpoint. E **teste com os envs opcionais AUSENTES** (ex.: sem `RESEND_API_KEY`) — é o estado real de um primeiro deploy, e é onde moram os piores bugs de primeira impressão.
@@ -552,6 +576,7 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 **Prioridade: primeira impressão acima de tudo.** Onboarding e as primeiras ações (criar conta, conectar canal, primeiro lead, primeiro convite) são a primeira impressão do usuário — bug ali é abandono. Teste esses caminhos primeiro e com o maior rigor.
 
 **Registro obrigatório (senão o progresso é invisível):**
+
 - Mapa de jornadas vivo em `docs/testing/user-journey-map.md` — casos por jornada, prioridade (`[P0]` primeira impressão), e achados. Atualize quando adicionar cobertura ou achar bug.
 - Specs em `tests/e2e/*.spec.ts` que dirigem o **frontend** (não só API). Evidência visual (screenshot/trace) em `evidence/<entrega>/`, que é versionada; nunca em pasta que o `.gitignore` ignora, senão a prova não sai da sua máquina.
 - Bug achado executando → **conserta na causa raiz**, com migration versionada se tocar schema (ver doutrina abaixo), commit próprio, e re-teste verde como prova.
@@ -623,6 +648,7 @@ Processo padrão (siga sempre):
    ```bash
    pnpm checar:colisao-de-migration          # mede o SEU PR contra origin/main
    ```
+
 2. **Idempotente sempre que possível**: `add column if not exists`, `create ... if not exists`, `create or replace function`. Uma migration deve poder ser re-aplicada sem quebrar nem duplicar efeito.
 3. **Portável em `psql` puro** (clones podem não usar o MCP/CLI Supabase): **sem** `create temporary table ... on commit drop` fora de transação explícita; **sem** `BEGIN`/`COMMIT` explícito (o runner já envolve em transação, como as demais migrations). Prefira CTEs, subqueries de janela e colunas-mapa (ex.: `is_merged_into`) a temp tables.
 4. **Data migrations genéricas**: se a migration corrige/deduplica dados, escreva pensando em QUALQUER banco de clone (não hardcode IDs do seu tenant). Repointe FKs conferindo o catálogo (`information_schema` FK map) para não perder histórico.
@@ -667,8 +693,8 @@ Processo padrão (siga sempre):
     print(s[i:s.index('\$\$;', i)+3])"
     ```
 
-    Contar ocorrências no arquivo inteiro responde *"o arquivo menciona"*, nunca
-    *"o banco faz"*. As duas perguntas divergem sempre que há apêndice — e
+    Contar ocorrências no arquivo inteiro responde _"o arquivo menciona"_, nunca
+    _"o banco faz"_. As duas perguntas divergem sempre que há apêndice — e
     apêndice é o mecanismo padrão desta casa.
 
 **Resumo do fluxo de uma mudança de schema:** arquivo em `migrations/` (fonte da verdade p/ Supabase CLI) **+** apêndice idempotente no `baseline.sql` (p/ o kit self-host) **+** linha `-- manifest:` no cabeçalho do `.sql`. Os dois artefatos de schema andam juntos. Nunca edite migrations já aplicadas — corrija com uma "forward-fix" nova (e mais um apêndice no baseline).
@@ -738,10 +764,11 @@ Antes de declarar uma task pronta:
     ```bash
     grep -c 'href:' lib/navigation/catalogo.ts lib/navigation/registry.ts
     ```
+
 15. **Se tocou Dockerfile, compose ou setup kit: a mudança chega a quem já instalou** (lei em `docs/doctrine/packaging.md`) — nenhum serviço de produção ficou `build:`-only; variável nova tem default que não quebra `.env` antigo; a atualização não pede edição manual de arquivo; e, se mudou o que a imagem contém, o `update.sh` alcança essa peça. Rode `pnpm test:shell` — é o único gate que exercita o kit
 16. **Se o PR muda comportamento, procure a afirmação de estado sobre esse comportamento.** Só
     sobre o que você mudou, e só nos documentos de autoridade — não saia caçando pelo repo. A
-    documentação afirma como o mundo *está*, e uma auditoria de 2026-08-14 achou **227
+    documentação afirma como o mundo _está_, e uma auditoria de 2026-08-14 achou **227
     afirmações desatualizadas em 393 medidas**
     ([`docs/audits/2026-08-14-afirmacoes-de-estado.md`](docs/audits/2026-08-14-afirmacoes-de-estado.md)).
     Onde a afirmação puder virar **comando**, troque em vez de corrigir: um número corrigido

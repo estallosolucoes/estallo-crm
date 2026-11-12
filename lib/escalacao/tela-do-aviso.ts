@@ -31,10 +31,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { knobsDoCanal } from "@/lib/automation/janela-do-canal";
 import { listSelectableChannels } from "@/lib/channels/selectable";
-import { lerEstadoDoPacing } from "@/lib/agent-engine/pacing/ledger-supabase";
-import { warmupCapFor } from "@/lib/agent-engine/pacing/engine";
 import { logger } from "@/lib/logger";
 
 import { mascara } from "./aviso-ao-suporte";
@@ -117,11 +114,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
     lerEntregas(db, orgId),
   ]);
 
-  const canalEscolhido = config?.channel_session_id ?? null;
-  const [aquecimento, laco] = await Promise.all([
-    canalEscolhido ? lerAquecimento(admin, orgId, canalEscolhido, agora) : Promise.resolve(null),
-    lerLaco(admin, orgId, agora),
-  ]);
+  const laco = await lerLaco(admin, orgId, agora);
 
   const configNaTela: ConfiguracaoNaTela | null = config
     ? {
@@ -142,7 +135,6 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
       ignoradas: config?.mensagens_ignoradas ?? 0,
       ultimaEm: config?.ultima_mensagem_ignorada_em ?? null,
     },
-    aquecimento,
     agora,
   };
 
@@ -332,55 +324,6 @@ async function lerEntregas(db: SupabaseClient, orgId: string): Promise<EntregaNa
   return (
     (data ?? []) as Array<Omit<EntregaNaTela, "destino_mascarado"> & { destino: string }>
   ).map(({ destino, ...resto }) => ({ ...resto, destino_mascarado: mascara(destino) }));
-}
-
-/**
- * O teto de hoje do número que ENVIA os avisos (C2 da revisão).
- *
- * A composição que esta leitura existe para tornar visível: um número recém
- * pareado tem cap 20/dia; o 21º aviso vira `retry`, passa das 24 h e morre como
- * `expirou`. Sem o número na tela, o motivo real — aquecimento — não é dito em
- * lugar nenhum, e quem investiga procura defeito onde há regra.
- */
-async function lerAquecimento(
-  admin: SupabaseClient,
-  orgId: string,
-  channelSessionId: string,
-  agora: Date,
-): Promise<FatosDaTelaDeAviso["aquecimento"]> {
-  try {
-    const knobs = await knobsDoCanal(admin, orgId, channelSessionId);
-    const estado = await lerEstadoDoPacing(admin, orgId, channelSessionId, {
-      agora,
-      timezone: knobs.timezone,
-    });
-    const idadeDias = estado.numberActivatedAt
-      ? Math.max(0, (agora.getTime() - estado.numberActivatedAt.getTime()) / 86_400_000)
-      : 0;
-    const teto = warmupCapFor(idadeDias, knobs.warmupDailyCaps);
-
-    // O fim do aquecimento é o primeiro degrau SEM teto — derivado da tabela de
-    // knobs, nunca do número 31 escrito à mão: quem edita `warmup_daily_caps`
-    // de um canal muda a resposta, e uma constante aqui mentiria para ele.
-    const semTeto = [...knobs.warmupDailyCaps]
-      .sort((a, b) => a.minAgeDays - b.minAgeDays)
-      .find((passo) => passo.cap === null);
-    const fimEm =
-      estado.numberActivatedAt && semTeto
-        ? new Date(
-            estado.numberActivatedAt.getTime() + semTeto.minAgeDays * 86_400_000,
-          ).toISOString()
-        : null;
-
-    return { enviadosHoje: estado.sentToday, teto, fimEm };
-  } catch (err) {
-    logger.warn("[aviso-de-caso] aquecimento do número não medido", {
-      organizationId: orgId,
-      channelSessionId,
-      causa: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
 }
 
 /** O laço de retorno: casos avisados × casos não avisados, mesma organização. */

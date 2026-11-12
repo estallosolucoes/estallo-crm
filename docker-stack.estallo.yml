@@ -1,0 +1,174 @@
+# Executado por scripts/estallo-vps.py; configuração protegida fora do clone.
+version: "3.8"
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+x-deploy: &deploy
+  replicas: 1
+  restart_policy:
+    condition: any
+    delay: 10s
+  update_config:
+    parallelism: 1
+    order: stop-first
+    failure_action: pause
+  rollback_config:
+    parallelism: 1
+    order: stop-first
+# DNS do host (systemd-resolved com cache e TLS, ouvindo no docker_gwbridge):
+# os DNS da Locaweb perdem ~5-12% das consultas, e cada perda travava a chamada
+# ao Supabase por 5-10s. Receita em docs/estallo-vps.md, seção "DNS".
+x-dns: &dns [172.18.0.1]
+services:
+  app:
+    image: ghcr.io/wjuniorl/estallo-crm:${ESTALLO_IMAGE_TAG}
+    dns: *dns
+    env_file: /opt/stacks/estallo-crm/runtime.env
+    environment:
+      SUPABASE_DB_ADMIN_URL: ""
+      EVENT_LOG_WORKER_DRAINS: "true"
+    networks: [internal, NetPratica]
+    logging: *logging
+    # Probe de PORTA, de propósito. Em 15/10/2026 um healthcheck que reprovava com
+    # o Supabase "down" pôs o app em loop de reinício durante uma queda do banco
+    # (cota de Disk IO do Supabase esgotada): o domínio passou a responder 404 e
+    # reiniciar não trazia o banco de volta. Supabase fora não é defeito do app.
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      <<: *deploy
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+        reservations: { memory: 256M }
+      labels:
+        traefik.enable: "true"
+        traefik.swarm.network: NetPratica
+        traefik.http.routers.estallo-crm.rule: Host(`crm.estallo.com.br`)
+        traefik.http.routers.estallo-crm.entrypoints: websecure
+        traefik.http.routers.estallo-crm.tls.certresolver: letsencryptresolver
+        traefik.http.routers.estallo-crm.service: estallo-crm
+        traefik.http.services.estallo-crm.loadbalancer.server.port: "3000"
+  worker:
+    image: ghcr.io/wjuniorl/estallo-crm-worker:${ESTALLO_IMAGE_TAG}
+    dns: *dns
+    env_file: /opt/stacks/estallo-crm/runtime.env
+    environment:
+      SUPABASE_DB_ADMIN_URL: ""
+    networks: [internal]
+    logging: *logging
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      <<: *deploy
+      resources:
+        limits: { cpus: "0.75", memory: 512M }
+        reservations: { memory: 128M }
+  scheduler:
+    image: ghcr.io/wjuniorl/estallo-crm-scheduler:${ESTALLO_IMAGE_TAG}
+    dns: *dns
+    env_file: /opt/stacks/estallo-crm/runtime.env
+    networks: [internal]
+    logging: *logging
+    deploy:
+      <<: *deploy
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+        reservations: { memory: 16M }
+  waha:
+    image: devlikeapro/waha:latest-2026.7.2
+    environment:
+      WAHA_API_KEY: sha512:${WAHA_API_KEY_SHA512}
+      WHATSAPP_HOOK_URL: http://app:3000/api/v1/webhooks/waha
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
+      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WHATSAPP_RESTART_ALL_SESSIONS: "True"
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WAHA_PRINT_QR: "false"
+    volumes:
+      - waha-data:/app/.sessions
+      - waha-media:/app/.media
+    networks: [internal]
+    logging: *logging
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      <<: *deploy
+      resources:
+        limits: { cpus: "0.75", memory: 1280M }
+        reservations: { memory: 256M }
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        redis-server,
+        --save,
+        "",
+        --appendonly,
+        "no",
+        --maxmemory,
+        32mb,
+        --maxmemory-policy,
+        noeviction,
+      ]
+    networks: [internal]
+    logging: *logging
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      <<: *deploy
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+        reservations: { memory: 16M }
+  srh:
+    image: hiett/serverless-redis-http@sha256:5b0bb9239fce53abf87b2018a7a0deb9ec7bd900c5360738fe5fbeeb426f9150
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${SRH_TOKEN}
+      SRH_CONNECTION_STRING: redis://redis:6379
+    networks: [internal]
+    logging: *logging
+    deploy:
+      <<: *deploy
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+        reservations: { memory: 16M }
+networks:
+  internal:
+    driver: overlay
+    attachable: true
+  NetPratica:
+    external: true
+volumes:
+  waha-data:
+  waha-media:

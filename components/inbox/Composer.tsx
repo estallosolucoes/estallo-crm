@@ -9,7 +9,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from "react";
-import { PaperPlaneTilt } from "@/lib/ui/icons";
+import { Note, PaperPlaneTilt } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
@@ -23,7 +23,13 @@ import {
   resolverMencao,
   type OpcaoDeMencao,
 } from "@/components/inbox/composer/MentionMenu";
-import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
+import {
+  filtrarTemplates,
+  idDaOpcaoDeTemplate,
+  resolveSlash,
+  TemplateMenu,
+} from "@/components/inbox/composer/TemplateMenu";
+import { focarCampoDeMensagem } from "@/lib/inbox/foco-do-campo";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
@@ -118,6 +124,12 @@ interface Props {
    * `draft_id` que o consumo usa depois do clique.
    */
   rascunho?: AvisoDeRascunho | null;
+  /**
+   * A versão estreita do chat suspenso: o texto ocupa a linha de cima, inteira,
+   * e os botões (anexo, emoji, IA, enviar) ficam na de baixo — como os
+   * aplicativos de mensagem num painel pequeno. Sem a dica de atalho.
+   */
+  compacto?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -136,6 +148,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     respondendo,
     onCancelarResposta,
     rascunho = null,
+    compacto = false,
   },
   ref,
 ) {
@@ -177,6 +190,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [mencoes, setMencoes] = useState<MencaoEscolhida[]>([]);
   const [mencaoDispensada, setMencaoDispensada] = useState(false);
   const [mencaoIndice, setMencaoIndice] = useState(0);
+  const [slashIndice, setSlashIndice] = useState(0);
   useEffect(() => {
     onDraftChange?.(text, mode);
   }, [text, mode, onDraftChange]);
@@ -186,7 +200,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const createNote = useCreateNote();
   const templates = useMessageTemplates();
   const slash = resolveSlash(text);
-  const menuOpen = mode === "reply" && slash.open && !menuDismissed;
+  const slashFiltrados = slash.open ? filtrarTemplates(templates.data ?? [], slash.query) : [];
+  // Com espaços permitidos no termo, uma mensagem que começa com "/" manteria
+  // o menu aberto — e o Enter, reservado ao menu, nunca enviaria. O menu só
+  // conta como aberto enquanto há resposta rápida que case com o termo.
+  const menuOpen =
+    mode === "reply" &&
+    slash.open &&
+    !menuDismissed &&
+    (slash.query.trim() === "" || slashFiltrados.length > 0);
+  // O destaque do slash-menu: o MESMO desenho do `mencaoIndice`. Aberto, a
+  // primeira opção vem marcada; o índice volta a 0 a cada tecla digitada.
+  const slashAtual = menuOpen ? (slashFiltrados[slashIndice] ?? slashFiltrados[0]) : undefined;
 
   // SÓ em nota: a menção é assunto interno, e uma menção no campo de resposta
   // sairia para o cliente como texto solto. A query roda enquanto a lista está
@@ -200,6 +225,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
   }));
+
+  // Abrir (ou trocar de) conversa já deixa o campo pronto para escrever — no
+  // Inbox e no chat suspenso (que só foca a conversa à vista: `active`).
+  useEffect(() => {
+    if (active) focarCampoDeMensagem(taRef.current, { mesmoNoCelular: false });
+  }, [conversationId, active]);
+
+  // "Responder a esta mensagem": o próximo gesto é escrever a resposta.
+  const respondendoId = respondendo?.id ?? null;
+  useEffect(() => {
+    if (active && respondendoId) focarCampoDeMensagem(taRef.current, { mesmoNoCelular: true });
+  }, [respondendoId, active]);
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
   // até a API voltar impedia digitar a próxima mensagem com o campo ainda cheio.
@@ -391,9 +428,31 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Escape" && menuOpen) {
-      setMenuDismissed(true);
-      return;
+    if (menuOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMenuDismissed(true);
+        return;
+      }
+      const total = slashFiltrados.length;
+      if (e.key === "ArrowDown" && total) {
+        e.preventDefault();
+        setSlashIndice((i) => (i + 1) % total);
+        return;
+      }
+      if (e.key === "ArrowUp" && total) {
+        e.preventDefault();
+        setSlashIndice((i) => (i - 1 + total) % total);
+        return;
+      }
+      // Enter (e Tab, quando há o que escolher) APLICA a resposta: insere o
+      // texto no campo e NÃO envia — o envio é o Enter seguinte, já com o menu
+      // fechado. Shift+Enter segue sendo quebra de linha.
+      if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Tab" && slashAtual)) {
+        e.preventDefault();
+        if (slashAtual) applyTemplate(slashAtual);
+        return;
+      }
     }
     // A lista de menções come as teclas ANTES do Enter salvar — a mesma lei
     // do slash-menu: com o menu aberto, Enter escolhe, não envia.
@@ -427,7 +486,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (menuOpen) return; // deixa o Enter pro menu; não envia /query como mensagem
       handleSubmit();
     }
   }
@@ -443,18 +501,20 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   return (
     <>
       <div
+        // O composer do modelo do Inbox (16/10/2026): abas em pílula clara com
+        // a dica do Enter ao lado, e + / emoji / IA / campo / enviar numa caixa
+        // só. Em nota interna a CAIXA fica amarela (régua em inbox.css).
         className={cn(
-          "relative border-t border-border bg-background px-3 py-2",
-          mode === "note" && "border-warning/40 bg-warning-bg",
+          "ibx-composer relative",
+          mode === "note" && "ibx-note-mode",
+          compacto && "ibx-composer-compacto",
         )}
       >
-        {mode === "reply" && (
-          <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
-        )}
         <TemplateMenu
           open={menuOpen}
-          query={slash.query}
-          templates={templates.data ?? []}
+          opcoes={slashFiltrados}
+          indice={slashAtual ? slashFiltrados.indexOf(slashAtual) : 0}
+          onHover={setSlashIndice}
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
@@ -489,31 +549,31 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </p>
           </div>
         )}
-        <div className="mb-1.5 flex gap-1">
-          <button
-            type="button"
-            onClick={() => setMode("reply")}
-            className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-              mode === "reply"
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted",
-            )}
-          >
-            {t("Responder")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("note")}
-            className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-              mode === "note"
-                ? "bg-warning text-warning-fg"
-                : "text-muted-foreground hover:bg-muted",
-            )}
-          >
-            {t("Nota interna")}
-          </button>
+        <div className="ibx-composer-heading">
+          <div className="ibx-compose-modes">
+            <button
+              type="button"
+              onClick={() => setMode("reply")}
+              aria-pressed={mode === "reply"}
+              data-modo="reply"
+            >
+              {t("Responder")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("note")}
+              aria-pressed={mode === "note"}
+              data-modo="note"
+            >
+              <Note className="ibx-icon" aria-hidden />
+              {t("Nota interna")}
+            </button>
+          </div>
+          <span className="ibx-compose-hint">
+            {mode === "note"
+              ? t("Enter salva a nota · Shift + Enter quebra a linha")
+              : t("Enter envia · Shift + Enter quebra a linha")}
+          </span>
         </div>
         {/*
           A FAIXA DA CITAÇÃO — o que o atendente escolheu responder.
@@ -547,7 +607,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </button>
           </div>
         )}
-        <div className="flex items-end gap-2">
+        <div className="ibx-input-box">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
               documento — porque a nota passou a aceitar anexo. A terceira
@@ -579,14 +639,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               });
             }}
           />
+          {mode === "reply" && (
+            <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
+          )}
           <textarea
             ref={taRef}
             value={text}
+            aria-activedescendant={slashAtual ? idDaOpcaoDeTemplate(slashAtual.id) : undefined}
             onChange={(e) => {
               setText(e.target.value);
               const pos = e.target.selectionStart ?? e.target.value.length;
               setCaret(pos);
               setMencaoIndice(0);
+              setSlashIndice(0);
               // A escolha que sumiu do texto sai da lista AGORA (#2463): com
               // duas pessoas de mesmo rótulo, a escolha apagada roubava o
               // `@Nome` da próxima e a nota notificava quem não foi mencionado.
@@ -628,10 +693,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 ? t("Enter salva a nota · Shift+Enter quebra linha")
                 : t("Enter envia · Shift+Enter quebra linha")
             }
-            className={cn(
-              "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
-            )}
+            className="max-h-[120px] min-h-6 flex-1 placeholder:text-muted-foreground"
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
           />

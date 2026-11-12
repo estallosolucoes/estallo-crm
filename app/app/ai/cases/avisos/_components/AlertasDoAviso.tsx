@@ -40,7 +40,6 @@ const TITULO_DO_ESTADO = {
   casos_desligados: "Nenhum assistente está autorizado a abrir casos",
   agente_assistido: "Seus assistentes só sugerem respostas",
   atendimento_externo: "O atendimento desta conta é conduzido por outro sistema",
-  aquecimento: "Este número ainda está em aquecimento",
   descarte_acontecendo: "As respostas para este número são ignoradas de propósito",
 } as const satisfies Record<CodigoDoEstadoDoAviso, string>;
 
@@ -63,8 +62,6 @@ const CORPO_DO_ESTADO = {
     "Um assistente em modo assistido não abre caso sozinho: ele escreve a sugestão e espera alguém. Nenhum aviso vai sair por ele.",
   atendimento_externo:
     "Quem conduz as conversas desta conta é um sistema de fora, e ele não abre casos aqui.",
-  aquecimento:
-    "Um número novo começa com poucas mensagens por dia e vai crescendo por cerca de um mês. É o que protege o número de ser bloqueado pelo WhatsApp.",
   descarte_acontecendo:
     "Quem responder a esse número não vira atendimento, não vira contato e não chega ao CRM. É assim que o recurso funciona.",
 } as const satisfies Record<CodigoDoEstadoDoAviso, string>;
@@ -103,7 +100,7 @@ export function AlertasDoAviso({ avisos }: { avisos: AvisoDaTela[] }) {
         const rotulo = ROTULO_DO_LINK[aviso.codigo];
         const Icone = aviso.bloqueia
           ? WarningOctagon
-          : aviso.codigo === "aquecimento" || aviso.codigo === "descarte_acontecendo"
+          : aviso.codigo === "descarte_acontecendo"
             ? Info
             : Warning;
         return (
@@ -121,20 +118,6 @@ export function AlertasDoAviso({ avisos }: { avisos: AvisoDaTela[] }) {
             <div className="space-y-1">
               <p className="text-sm font-medium">{t(TITULO_DO_ESTADO[aviso.codigo])}</p>
               <p className="text-xs text-muted-foreground">{t(CORPO_DO_ESTADO[aviso.codigo])}</p>
-
-              {aviso.codigo === "aquecimento" ? (
-                <p className="text-xs font-medium" data-testid="aquecimento-de-hoje">
-                  {t("Hoje")}: {numero(aviso.dados?.enviadosHoje) ?? 0} /{" "}
-                  {numero(aviso.dados?.teto) ?? 0} {t("mensagens neste número")}
-                  {typeof aviso.dados?.fimEm === "string" ? (
-                    <>
-                      {" · "}
-                      {t("em aquecimento até")}{" "}
-                      {format(new Date(aviso.dados.fimEm), "dd/MM", { locale })}
-                    </>
-                  ) : null}
-                </p>
-              ) : null}
 
               {aviso.codigo === "descarte_acontecendo" ? (
                 <p className="text-xs font-medium" data-testid="descarte-de-hoje">

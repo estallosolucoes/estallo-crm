@@ -110,3 +110,99 @@ describe("GET /api/v1/ai/followups/queue — status da promessa", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Histórico (Fase 3): período, modo, versão e negócio filtram as EXECUÇÕES e
+// calam a fonte de promessas — uma promessa não tem início, modo nem versão, e
+// mostrá-la sob "modo: teste" seria mentir sobre o filtro.
+// ---------------------------------------------------------------------------
+import { limiteDoPeriodo } from "@/app/api/v1/ai/followups/queue/route";
+
+describe("limiteDoPeriodo", () => {
+  it("data pura vale o dia inteiro: início 00:00, fim 23:59:59.999 (UTC)", () => {
+    expect(limiteDoPeriodo("2026-11-05", false)).toBe("2026-11-05T00:00:00.000Z");
+    expect(limiteDoPeriodo("2026-11-05", true)).toBe("2026-11-05T23:59:59.999Z");
+  });
+  it("instante ISO passa como está; lixo vira null", () => {
+    expect(limiteDoPeriodo("2026-11-05T10:00:00Z", false)).toBe("2026-11-05T10:00:00.000Z");
+    expect(limiteDoPeriodo("amanhã", false)).toBeNull();
+  });
+});
+
+describe("enrollmentToQueueRow — dados do histórico", () => {
+  it("leva início, fim, tentativas, passos, versão e modo; ausentes viram null, não zero", () => {
+    const completa = enrollmentToQueueRow({
+      ...base,
+      ai_agents: null,
+      started_at: "2026-11-05T10:00:00Z",
+      completed_at: "2026-11-05T10:12:00Z",
+      attempts: 2,
+      steps_taken: 5,
+      version_id: "v1",
+      execution_mode: "test",
+    });
+    expect(completa).toMatchObject({ started_at: "2026-11-05T10:00:00Z", completed_at: "2026-11-05T10:12:00Z", attempts: 2, steps_taken: 5, version_id: "v1", mode: "test" });
+    const legada = enrollmentToQueueRow({ ...base, ai_agents: null });
+    expect(legada).toMatchObject({ started_at: null, completed_at: null, attempts: null, steps_taken: null, version_id: null, mode: null });
+  });
+});
+
+describe("GET /api/v1/ai/followups/queue — filtros do histórico", () => {
+  function sessao() {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { idioma: "pt-BR" },
+      org: { orgId: "o1" },
+    } as unknown as Awaited<ReturnType<typeof requireRole>>);
+  }
+  const get = (qs: string) => GET(new NextRequest(`http://localhost/api/v1/ai/followups/queue?${qs}`));
+
+  it.each([
+    ["desde=ontem"],
+    ["ate=32/13/2026"],
+    ["modo=producao"],
+    ["versao=nao-e-uuid"],
+    ["lead=nao-e-uuid"],
+  ])("parâmetro inválido (%s) → 400, sem consultar o banco", async (qs) => {
+    sessao();
+    vi.mocked(createClient).mockClear();
+    const res = await get(qs);
+    expect(res.status).toBe(400);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("aplica período, modo, versão e negócio na consulta das execuções e não lê promessas", async () => {
+    sessao();
+    const chamadas: Array<[string, ...unknown[]]> = [];
+    const tabelasLidas: string[] = []; // só as que foram de fato AGUARDADAS (consultadas)
+    vi.mocked(createClient).mockResolvedValue({
+      from: (tabela: string) => {
+        const b: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit", "in", "or", "is", "gt", "gte", "lte"]) {
+          b[m] = (...args: unknown[]) => {
+            chamadas.push([m, ...args]);
+            return b;
+          };
+        }
+        b.then = (res: (v: { data: never[]; error: null }) => unknown) => {
+          tabelasLidas.push(tabela);
+          return Promise.resolve({ data: [], error: null }).then(res);
+        };
+        return b;
+      },
+    } as unknown as Awaited<ReturnType<typeof createClient>>);
+
+    const V = "11111111-1111-4111-8111-111111111111";
+    const L = "22222222-2222-4222-8222-222222222222";
+    const res = await get(`desde=2026-11-01&ate=2026-11-05&modo=test&versao=${V}&lead=${L}`);
+
+    expect(res.status).toBe(200);
+    expect(tabelasLidas).toEqual(["followup_enrollments"]); // promessas caladas
+    expect(chamadas).toContainEqual(["gte", "started_at", "2026-11-01T00:00:00.000Z"]);
+    expect(chamadas).toContainEqual(["lte", "started_at", "2026-11-05T23:59:59.999Z"]);
+    expect(chamadas).toContainEqual(["eq", "execution_mode", "test"]);
+    expect(chamadas).toContainEqual(["eq", "version_id", V]);
+    expect(chamadas).toContainEqual(["eq", "lead_id", L]);
+    expect(chamadas).toContainEqual(["eq", "organization_id", "o1"]);
+  });
+});

@@ -248,19 +248,11 @@ export interface TransporteDoAviso {
   ): Promise<{ externalId: string | null }>;
 }
 
-export type DecisaoDePacing =
-  | { liberado: true }
-  | { liberado: false; motivo: "espacamento" | "teto_diario"; liberaEm: Date };
-
-export interface PacingDoAviso {
-  decide(orgId: string, channelSessionId: string, agora: Date): Promise<DecisaoDePacing>;
-  registraEnvio(orgId: string, channelSessionId: string, quando: Date): Promise<void>;
-}
-
 export interface AvisoDeps {
   db: AvisoDb;
   transporte: TransporteDoAviso;
-  pacing: PacingDoAviso;
+  /** Espera o ritmo fixo do número antes de enviar (`lib/messaging/ritmo-entre-envios.ts`). */
+  esperarRitmo: (channelSessionId: string) => Promise<void>;
   clock: () => Date;
   /**
    * `env.NEXT_PUBLIC_APP_URL` já LIDO pelo chamador. O módulo não importa
@@ -452,18 +444,6 @@ export async function aplicaAvisoDeCaso(
     return retry(new Date(agora.getTime() + ADIAMENTO_DO_CANAL_MS), "transporte fora do ar");
   }
 
-  // ── 11. Espaçamento e teto diário — SEM a janela de horário ──────────────
-  const pacing = await deps.pacing.decide(orgId, channelSessionId, agora);
-  if (!pacing.liberado) {
-    // O teto diário grava o código PRÓPRIO: sem ele, um número em warm-up (cap
-    // de 20/dia) veria os avisos expirarem como `expirou` genérico, mandando
-    // quem investiga procurar defeito onde há regra.
-    await deps.db.atualizaEntrega(orgId, entrega.id, {
-      erro_codigo: pacing.motivo === "teto_diario" ? "teto_diario_do_numero" : null,
-    });
-    return retry(pacing.liberaEm, `pacing:${pacing.motivo}`);
-  }
-
   // ── 11b. O destino ainda é de fora? ──────────────────────────────────────
   //
   // `fn_definir_aviso_de_caso` recusa um número de conexão DA PRÓPRIA
@@ -513,6 +493,8 @@ export async function aplicaAvisoDeCaso(
   });
 
   // ── 14. O transporte ─────────────────────────────────────────────────────
+  // O ritmo fixo do número entra aqui, e não antes das recusas: quem foi recusado não gastou envio nenhum.
+  await deps.esperarRitmo(channelSessionId);
   let externalId: string | null = null;
   try {
     const resposta = await deps.transporte.envia(orgId, canal, to, body);
@@ -576,15 +558,6 @@ async function depoisDoEnvio(
   to: string,
   agora: Date,
 ): Promise<void> {
-  try {
-    await deps.pacing.registraEnvio(orgId, channelSessionId, agora);
-  } catch (err) {
-    logger.warn("[aviso-de-caso] envio não contabilizado no pacing", {
-      organizationId: orgId,
-      channelSessionId,
-      causa: err instanceof Error ? err.message : String(err),
-    });
-  }
   try {
     await deps.db.registraJidDoAviso(orgId, to);
   } catch (err) {

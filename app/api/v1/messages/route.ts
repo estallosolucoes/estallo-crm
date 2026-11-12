@@ -19,13 +19,11 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { JANELA_SEGUNDOS, TETO_DE_ESCRITA, TETO_POR_ORGANIZACAO } from "@/lib/mcp/rate-limit";
 import {
   depsDoRitmo,
-  registrarEnvioPorToken,
   segurarEnvioPorToken,
-  type EnvioSegurado,
 } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { sendMessageSchema, validateRequest, type SendMessageInput } from "@/lib/schemas";
-import { conversaFicaComQuemAtendeu } from "@/lib/schemas/routing";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
 import type { Message } from "@/lib/types/messaging";
 
 import { sendMessageHandler } from "./_handler";
@@ -217,16 +215,29 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     }
 
-    // Freio anti-ban do número (espaçamento + teto diário), só para token:
-    // ver o cabeçalho de `lib/messaging/ritmo-do-envio-por-token.ts`.
-    const ritmo = authz.via === "token" ? await depsDoRitmo(createAdminClient()) : null;
-    const segurado: EnvioSegurado = ritmo
-      ? await segurarEnvioPorToken(ritmo, {
-          organizationId,
-          conversationId: (input as SendMessageInput).conversation_id,
-          requestId,
-        })
-      : null;
+    // Ritmo fixo do número, só para token: ver o cabeçalho de `lib/messaging/ritmo-do-envio-por-token.ts`.
+    if (authz.via === "token") {
+      await segurarEnvioPorToken(depsDoRitmo(createAdminClient()), {
+        organizationId,
+        conversationId: (input as SendMessageInput).conversation_id,
+        requestId,
+      });
+    }
+
+    // Observe ANTES do envio: um fechamento ocorrido enquanto o canal responde
+    // deve prevalecer. A revisão é conferida pela RPC canônica de atendimento.
+    let revisaoFechada: number | null = null;
+    if (authz.via === "session" && actor.type === "user") {
+      const { data: conversa, error } = await supabase
+        .from("conversations")
+        .select("service_revision")
+        .eq("organization_id", organizationId)
+        .eq("id", input.conversation_id)
+        .eq("status", "closed")
+        .maybeSingle();
+      if (error) throw new ApiError(500, "internal_error", undefined, requestId);
+      revisaoFechada = conversa?.service_revision ?? null;
+    }
 
     const message = await sendMessageHandler(
       supabase,
@@ -241,67 +252,88 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       input as SendMessageInput,
     );
-    // Uma resposta humana pelo inbox assume uma conversa livre — SÓ quando a
-    // empresa ligou "a conversa fica com quem atendeu" (settings.routing,
-    // desligado por padrão). A RPC faz o claim condicional e registra a troca
-    // de dono na mesma transação; se outro atendente chegou primeiro, não
-    // tomamos a conversa dele. O envio já pode ter sido aceito pelo canal,
-    // portanto falha do claim nunca vira erro de envio (o operador poderia
-    // reenviar e duplicar a mensagem).
+    if (revisaoFechada !== null && message.status !== "failed") {
+      try {
+        const { error } = await createAdminClient().rpc("fn_service_status", {
+          p_org: organizationId,
+          p_conversation: input.conversation_id,
+          p_status: "open",
+          p_expected: revisaoFechada,
+        });
+        if (error) throw error;
+        void audit({
+          action: "conversation.released",
+          actorUserId: actor.type === "user" ? actor.id : null,
+          organizationId,
+          resourceType: "conversation",
+          resourceId: input.conversation_id,
+          requestId,
+          metadata: { status: "open", reason: "human_reply", message_id: message.id },
+        });
+      } catch (error) {
+        // A mensagem já foi aceita: não induzir reenvio e duplicação se a
+        // revisão mudou ou se a reabertura falhou depois da entrega.
+        logger.warn("messages.send.reopen_failed", {
+          organization_id: organizationId,
+          conversation_id: input.conversation_id,
+          code: (error as { code?: string })?.code,
+        });
+      }
+    }
+    // A primeira resposta humana pelo inbox numa conversa SEM responsável passa
+    // a conversa para quem respondeu — sempre (decisão do dono do produto,
+    // 2026-10-15; antes dependia de "a conversa fica com quem atendeu", que
+    // agora governa só a reabertura de conversa encerrada). A RPC faz o claim
+    // condicional (`p_enforce_expected` sem esperado = só se estiver livre) e
+    // registra a troca de dono na mesma transação: se outro atendente chegou
+    // primeiro, não tomamos a conversa dele. O envio já pode ter sido aceito
+    // pelo canal, portanto falha do claim nunca vira erro de envio (o operador
+    // poderia reenviar e duplicar a mensagem).
     if (authz.via === "session" && actor.type === "user" && message.status !== "failed") {
       try {
-        const { data: org, error: orgError } = await supabase
-          .from("organizations")
-          .select("settings")
-          .eq("id", organizationId)
-          .maybeSingle();
-        if (orgError) throw orgError;
-        if (conversaFicaComQuemAtendeu(org?.settings)) {
-          const { data: claimed, error: claimError } = await supabase.rpc("fn_conversation_assign", {
-            p_organization_id: organizationId,
-            p_conversation_id: message.conversation_id,
-            p_to_user_id: actor.id,
-            p_reason: "claim",
-            p_enforce_expected: true,
+        const { data: claimed, error: claimError } = await supabase.rpc("fn_conversation_assign", {
+          p_organization_id: organizationId,
+          p_conversation_id: message.conversation_id,
+          p_to_user_id: actor.id,
+          p_reason: "claim",
+          p_enforce_expected: true,
+        });
+        if (claimError) throw claimError;
+        if (claimed?.[0]) {
+          await audit({
+            action: "conversation.claimed",
+            actorUserId: actor.id,
+            organizationId,
+            resourceType: "conversation",
+            resourceId: message.conversation_id,
+            requestId,
           });
-          if (claimError) throw claimError;
-          if (claimed?.[0]) {
-            await audit({
-              action: "conversation.claimed",
-              actorUserId: actor.id,
-              organizationId,
-              resourceType: "conversation",
-              resourceId: message.conversation_id,
-              requestId,
-            });
-            // A mesma linha na linha do tempo que o botão Assumir deixa: sem ela,
-            // a conversa mudaria de dono sem nenhum registro à vista de quem atende.
-            await registrarTrocaDeComando({
-              supabase,
-              organizationId,
-              conversationId: message.conversation_id,
-              contactId: (claimed[0] as { contact_id: string | null }).contact_id,
-              tipo: "conversation_claimed",
-              actor,
-              motivo: "Assumiu o atendimento desta conversa",
-            });
-            // O mesmo evento que o botão Assumir emite.
-            const { error: emitErr } = await supabase.rpc("emit_event", {
-              p_event_type: "conversation.claimed",
-              p_entity_kind: "conversation",
-              p_entity_id: message.conversation_id,
-              p_payload: { assigned_to_user_id: actor.id },
-              p_metadata: { request_id: requestId },
-              p_organization_id: organizationId,
-            });
-            if (emitErr) console.error("[messages.send] emit_event failed", emitErr.message);
-          }
+          // A mesma linha na linha do tempo que o botão Assumir deixa: sem ela,
+          // a conversa mudaria de dono sem nenhum registro à vista de quem atende.
+          await registrarTrocaDeComando({
+            supabase,
+            organizationId,
+            conversationId: message.conversation_id,
+            contactId: (claimed[0] as { contact_id: string | null }).contact_id,
+            tipo: "conversation_claimed",
+            actor,
+            motivo: "Assumiu o atendimento desta conversa",
+          });
+          // O mesmo evento que o botão Assumir emite.
+          const { error: emitErr } = await supabase.rpc("emit_event", {
+            p_event_type: "conversation.claimed",
+            p_entity_kind: "conversation",
+            p_entity_id: message.conversation_id,
+            p_payload: { assigned_to_user_id: actor.id },
+            p_metadata: { request_id: requestId },
+            p_organization_id: organizationId,
+          });
+          if (emitErr) console.error("[messages.send] emit_event failed", emitErr.message);
         }
       } catch (claimError) {
         console.error("[messages.send] claim after reply failed", claimError);
       }
     }
-    if (ritmo) await registrarEnvioPorToken(ritmo, organizationId, segurado, message.status);
     return message;
   };
 

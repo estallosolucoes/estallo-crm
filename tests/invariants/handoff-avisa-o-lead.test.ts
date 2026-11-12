@@ -234,7 +234,6 @@ beforeEach(async () => {
   // caso herdando a trava do anterior mediria o turno pulado, não o desvio.
   await pool.query("delete from messages where organization_id = $1", [ORG]);
   await pool.query("delete from send_ledger where organization_id = $1", [ORG]);
-  await pool.query("delete from outbound_copies where organization_id = $1", [ORG]);
   await pool.query("delete from agent_inbox_items where organization_id = $1", [ORG]);
   await pool.query("delete from conversations where organization_id = $1", [ORG]);
   await pool.query("delete from contacts where organization_id = $1", [ORG]);

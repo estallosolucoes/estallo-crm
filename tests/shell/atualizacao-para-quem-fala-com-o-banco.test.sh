@@ -35,8 +35,8 @@ cat > "$tmp/bin/docker" <<'DUBLE'
 if [ "$1" = "ps" ]; then
   cat <<'LISTA'
 deskcomm-app-1
-deskcomm-worker-1
-deskcomm-scheduler-1
+estallo-crm-worker-1
+estallo-crm-scheduler-1
 realtime-dev.supabase-realtime
 supabase-auth
 supabase-db
@@ -96,7 +96,7 @@ echo "caso 4 — CONTROLE: Supabase hospedado devolve vazio"
 # onde o Supabase é hospedado não há o que parar, e quem protege é a conferência.
 cat > "$tmp/bin/docker" <<'DUBLE'
 #!/usr/bin/env bash
-if [ "$1" = "ps" ]; then printf 'deskcomm-app-1\ndeskcomm-worker-1\n'; exit 0; fi
+if [ "$1" = "ps" ]; then printf 'deskcomm-app-1\nestallo-crm-worker-1\n'; exit 0; fi
 exit 0
 DUBLE
 chmod +x "$tmp/bin/docker"

@@ -14,7 +14,6 @@ const MUDO = {
   enviadas: 0,
   turnoDescartado: false,
   passouParaAEquipe: false,
-  capDeEnvio: false,
 };
 
 describe("o turno mudo pede correção só quando nada explica o silêncio", () => {
@@ -27,7 +26,6 @@ describe("o turno mudo pede correção só quando nada explica o silêncio", () 
     ["algo saiu", { enviadas: 1 }],
     ["o turno foi descartado como obsoleto", { turnoDescartado: true }],
     ["a conversa foi passada à equipe", { passouParaAEquipe: true }],
-    ["o cap de envio do número barrou", { capDeEnvio: true }],
   ])("silêncio com razão — %s: não pede", (_razao, mudanca) => {
     expect(turnoMudoPedeCorrecao({ ...MUDO, ...mudanca })).toBe(false);
   });

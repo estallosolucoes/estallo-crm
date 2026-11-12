@@ -7,6 +7,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FlowGraph } from "./graph-schema";
 
+/**
+ * Motor único: todo fluxo do relógio (follow-up e automação do CRM) é publicado no contrato de
+ * execução 1. O roteiro de atendimento não: ele roda no turno, não pelo diário. A chave entra aqui,
+ * antes da validação, para o publicador validar o que de fato vai valer (blocos não integrados e a
+ * saída "Fallback erro" são conferidos como contrato 1).
+ */
+export function comContratoDeExecucao(graph: FlowGraph, surface: string): FlowGraph {
+  return surface === "atendimento" ? graph : { ...graph, execution_contract: 1 };
+}
+
 export interface PublishFlowOk {
   ok: true;
   version_id: string;
@@ -14,7 +24,7 @@ export interface PublishFlowOk {
 
 export interface PublishFlowFail {
   ok: false;
-  code: "pointer_not_found" | "internal_error";
+  code: "pointer_not_found" | "execution_contract_unavailable" | "internal_error";
   message: string;
 }
 
@@ -35,6 +45,11 @@ export async function publishFollowupFlowVersion(
     const raw = (error.message ?? "").trim();
     if (raw === "pointer_not_found") {
       return { ok: false, code: "pointer_not_found", message: raw };
+    }
+    // A guarda do banco (migration 0707): o validador da rota já recusa antes, então só chega aqui
+    // por um chamador que o contorne. É uma recusa de validação, não uma falha do servidor.
+    if (raw === "execution_contract_unavailable") {
+      return { ok: false, code: "execution_contract_unavailable", message: raw };
     }
     return { ok: false, code: "internal_error", message: raw || "publish_failed" };
   }

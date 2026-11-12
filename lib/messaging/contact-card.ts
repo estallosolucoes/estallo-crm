@@ -60,6 +60,24 @@ export function resolveSharedContact(
   return null;
 }
 
+/**
+ * Todos os contatos da mensagem. Um cartão com VÁRIOS contatos (o "enviar
+ * contatos" do WhatsApp) chega com um vCard por contato concatenado no corpo —
+ * o ingest de cada canal junta os vCards ali. Sem vários vCards, cai em
+ * `resolveSharedContact` (um contato só).
+ */
+export function resolveSharedContacts(
+  message: { type: string; body: string | null; metadata: Record<string, unknown> },
+): SharedContact[] {
+  if (message.type !== "contact") return [];
+  const cards = (message.body ?? "").split(/(?=BEGIN:VCARD)/).filter((c) => c.includes("BEGIN:VCARD"));
+  if (cards.length > 1) {
+    return cards.map(parseVcard).filter((c): c is SharedContact => c !== null);
+  }
+  const one = resolveSharedContact(message);
+  return one ? [one] : [];
+}
+
 /** Extrai telefone discável (E.164 com +) de texto livre; null se inválido. */
 export function parseDialablePhone(raw: string): string | null {
   const trimmed = raw.trim();

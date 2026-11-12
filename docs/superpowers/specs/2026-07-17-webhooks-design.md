@@ -1,3 +1,5 @@
+> **Referência visual substituída (14/10/2026):** o único padrão vigente é o [Design System Estallo](../../design-system/README.md). Cores, fontes, regras de marca e restrições estéticas herdadas neste documento não orientam novas implementações. Contratos técnicos e registros históricos permanecem em seu escopo; não copiar escolhas visuais do upstream.
+
 # Webhooks universais + mini motor de regras — Design
 
 **Data:** 2026-07-17 · **Status:** aprovado por Rafael (brainstorming em 3 blocos) · **Escopo:** v1
@@ -51,43 +53,46 @@ Landing page ──POST──▶ /api/v1/webhooks/in/[token]
 Três tabelas, todas com `organization_id uuid not null references organizations(id) on delete cascade` + RLS `tenant_isolation_<tabela>_all` via `fn_user_org_ids()` (padrão do repo).
 
 ### `webhook_sources` — fontes de captação inbound
-| Coluna | Tipo/nota |
-|---|---|
-| `id` | uuid pk |
-| `organization_id` | fk org |
-| `name` | text not null ("Landing Black Friday") |
-| `path_token` | text unique not null — gerado (32 bytes url-safe), vai na URL |
-| `secret` | text null — HMAC opcional (SHA-256 do raw body, header `X-Deskcomm-Signature`) |
-| `kind` | text check, v1 só `'lead_capture'` (text+check, não enum — doutrina) |
-| `default_pipeline_id` / `default_stage_id` | fk `crm_pipelines`/`crm_stages`, not null |
-| `field_map` | jsonb — mapeia payload→lead; default entende `nome/name`, `telefone/phone/whatsapp`, `email`; campos extras → `custom_fields` + UTMs → `source_metadata` |
-| `redirect_to` | text null — URL de "obrigado" p/ resposta a form-post |
-| `is_active` | boolean default true |
-| `last_received_at` | timestamptz null — feedback "fonte viva" na UI |
-| `created_by_user_id`, `created_at`, `updated_at` | padrão |
+
+| Coluna                                           | Tipo/nota                                                                                                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                             | uuid pk                                                                                                                                                  |
+| `organization_id`                                | fk org                                                                                                                                                   |
+| `name`                                           | text not null ("Landing Black Friday")                                                                                                                   |
+| `path_token`                                     | text unique not null — gerado (32 bytes url-safe), vai na URL                                                                                            |
+| `secret`                                         | text null — HMAC opcional (SHA-256 do raw body, header `X-Deskcomm-Signature`)                                                                           |
+| `kind`                                           | text check, v1 só `'lead_capture'` (text+check, não enum — doutrina)                                                                                     |
+| `default_pipeline_id` / `default_stage_id`       | fk `crm_pipelines`/`crm_stages`, not null                                                                                                                |
+| `field_map`                                      | jsonb — mapeia payload→lead; default entende `nome/name`, `telefone/phone/whatsapp`, `email`; campos extras → `custom_fields` + UTMs → `source_metadata` |
+| `redirect_to`                                    | text null — URL de "obrigado" p/ resposta a form-post                                                                                                    |
+| `is_active`                                      | boolean default true                                                                                                                                     |
+| `last_received_at`                               | timestamptz null — feedback "fonte viva" na UI                                                                                                           |
+| `created_by_user_id`, `created_at`, `updated_at` | padrão                                                                                                                                                   |
 
 ### `automation_rules` — regras do motor
-| Coluna | Tipo/nota |
-|---|---|
-| `id`, `organization_id` | padrão |
-| `name` | text not null |
-| `trigger_event` | text not null, check regex `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$` (mesmo formato de `event_log.event_type`) |
-| `conditions` | jsonb default `'[]'` — array `{field, op, value}`, AND |
-| `actions` | jsonb not null — array ordenado `{type, config}`; `type` ∈ {`create_or_move_lead`,`send_whatsapp_message`,`add_tag`,`assign_owner`,`call_webhook`} (validado por Zod na API, não por constraint) |
-| `is_active` | boolean **default false** — regra nasce pausada |
-| `last_run_at`, `run_count` | observabilidade barata |
-| `created_by_user_id`, `created_at`, `updated_at` | padrão |
+
+| Coluna                                           | Tipo/nota                                                                                                                                                                                        |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`, `organization_id`                          | padrão                                                                                                                                                                                           |
+| `name`                                           | text not null                                                                                                                                                                                    |
+| `trigger_event`                                  | text not null, check regex `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$` (mesmo formato de `event_log.event_type`)                                                                                        |
+| `conditions`                                     | jsonb default `'[]'` — array `{field, op, value}`, AND                                                                                                                                           |
+| `actions`                                        | jsonb not null — array ordenado `{type, config}`; `type` ∈ {`create_or_move_lead`,`send_whatsapp_message`,`add_tag`,`assign_owner`,`call_webhook`} (validado por Zod na API, não por constraint) |
+| `is_active`                                      | boolean **default false** — regra nasce pausada                                                                                                                                                  |
+| `last_run_at`, `run_count`                       | observabilidade barata                                                                                                                                                                           |
+| `created_by_user_id`, `created_at`, `updated_at` | padrão                                                                                                                                                                                           |
 
 ### `automation_rule_runs` — 1 linha por execução de regra
-| Coluna | Tipo/nota |
-|---|---|
-| `id`, `organization_id` | padrão |
-| `rule_id` | fk `automation_rules` on delete cascade |
-| `event_id` | fk `event_log` null (set null on delete) |
-| `status` | text check `'success'|'partial'|'failed'` |
-| `actions_result` | jsonb — por ação: `{type, status, error?, detail?}`; p/ `call_webhook` inclui `response_status` e body truncado |
-| `error` | text null (erro fora das ações, ex. condição malformada) |
-| `created_at` | timestamptz |
+
+| Coluna                  | Tipo/nota                                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `id`, `organization_id` | padrão                                                                                                          |
+| `rule_id`               | fk `automation_rules` on delete cascade                                                                         |
+| `event_id`              | fk `event_log` null (set null on delete)                                                                        |
+| `status`                | text check `'success'                                                                                           | 'partial' | 'failed'` |
+| `actions_result`        | jsonb — por ação: `{type, status, error?, detail?}`; p/ `call_webhook` inclui `response_status` e body truncado |
+| `error`                 | text null (erro fora das ações, ex. condição malformada)                                                        |
+| `created_at`            | timestamptz                                                                                                     |
 
 Sem tabela separada de deliveries: o resultado do outbound vive em `actions_result`. Reenvio manual (UI) re-executa só a ação `call_webhook` do run e grava run novo.
 
@@ -128,6 +133,7 @@ Registrado em `lib/event-log/register-handlers.ts`; `events`: os 4 gatilhos. Por
 5. Grava `automation_rule_runs`, atualiza `last_run_at`/`run_count`.
 
 **Emissões a garantir nos fluxos existentes** (adição pontual de `emit_event`, sem refactor):
+
 - `lead.stage_changed` — no update handler de leads quando `stage_id` muda (payload: lead + from_stage + to_stage).
 - `message.received` — na ingestão WAHA (`lib/waha/ingest.ts`), só inbound de contato (não grupo, não fromMe).
 - `lead.tag_added` / `contact.tag_added` — nos handlers de update quando `tags` ganha item novo (payload inclui `added_tags`).
@@ -143,7 +149,9 @@ Executores em `lib/automation/actions/` (um arquivo por ação, interface comum 
 - **`send_whatsapp_message`** — config `{channel_session_id, template}` com variáveis `{{nome}}`, `{{lead.campo}}`, `{{custom_fields.x}}`. Serviço novo `lib/automation/start-conversation.ts`: upsert de contato por telefone E.164 → cria/acha `conversation` (contato + sessão) → envia pelo caminho de produção existente (`sendMessageHandler`). Contato `is_blocked` (STOP) → ação pulada com motivo no run.
 
 ### Throttle anti-banimento (novo — hoje inexistente no repo)
+
 Aplicado ao envio automatizado (`send_whatsapp_message`):
+
 - Respeita `channel_sessions.daily_message_limit` (coluna existente) via contagem do dia em `channel_session_warmup`.
 - Janela 7h-22h (horário do servidor; configurável na config da ação em v2).
 - Espaçamento ≥1.2s + jitter ≤800ms entre envios automatizados por sessão dentro de um mesmo lote do drain.
@@ -154,16 +162,19 @@ Aplicado ao envio automatizado (`send_whatsapp_message`):
 **Sidebar**: item "Webhooks" (`WebhooksLogo` do Phosphor) em `NAV_ITEMS` (`components/shell/Sidebar.tsx`), visível para `manager+` (padrão de gate por `usePermission` existente). Design system travado (Sage + Atkinson Hyperlegible + Phosphor + estética aerada).
 
 **Aba 1 — Receber dados** (fontes):
+
 - Empty-state didático: "Conecte sua landing page em 2 minutos" com 3 passos.
 - Criar fonte = modal (nome + pipeline/estágio destino) → tela da fonte com: URL completa (de `APP_URL`) com copiar; snippet `<form>` HTML pronto; exemplo `curl` JSON; instruções por cenário (WordPress/Elementor, form próprio, Zapier/n8n).
 - Botão **"Enviar lead de teste"** — POST real na própria URL, mostra o lead criado (fecha o loop de confiança).
 - Feed de últimos recebimentos (de `webhook_events_log`) com status verde/vermelho.
 
 **Aba 2 — Automações** (regras):
+
 - Builder em linguagem natural, 3 blocos verticais: **QUANDO** (dropdown 4 gatilhos) → **SE** (linhas campo/operador/valor, opcional) → **ENTÃO** (ações ordenadas, mini-form por ação).
 - Regra nasce **pausada**; switch ativa após revisão.
 
 **Aba 3 — Atividade**:
+
 - Timeline de `automation_rule_runs` + recebimentos: "Regra X rodou para o lead João — ✓ movido, ✓ mensagem enviada, ✗ webhook externo falhou (500) [Reenviar]".
 
 **API de gestão** (`/api/v1/webhook-sources`, `/api/v1/automation-rules`, `/api/v1/automation-rules/[id]/runs`): CRUD padrão com `requireRole('manager')`, Zod em todo input, `ok()`/`fail()`, audit em toda mutação (actions novas: `webhook.source_created/updated/deleted`, `automation.rule_created/updated/deleted/toggled`, `webhook.lead_received`, `automation.rule_executed` — esta última só em falha, p/ não inflar audit).

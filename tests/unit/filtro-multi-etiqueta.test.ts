@@ -74,7 +74,7 @@ describe("a régua do filtro por várias etiquetas", () => {
     // O `cs` de um valor só cada seria OU ("vip OU orçamento"); a lista inteira
     // num literal só é o "contém todos" que o E pede.
     expect(predicadoDeVariasEtiquetas(["vip", "orcamento"], "e")).toBe(
-      'tags.cs."{\\"vip\\",\\"orcamento\\"}",tags_do_contato.cs."{\\"vip\\",\\"orcamento\\"}"',
+      'tags_do_contato.cs."{\\"vip\\",\\"orcamento\\"}"',
     );
   });
 
@@ -82,7 +82,7 @@ describe("a régua do filtro por várias etiquetas", () => {
     // Aqui `cs` seria o E de novo com outro nome — e o nome mente. O `ov` é o
     // "tem ALGUMA", que é o que OU pede.
     expect(predicadoDeVariasEtiquetas(["vip", "orcamento"], "ou")).toBe(
-      'tags.ov."{\\"vip\\",\\"orcamento\\"}",tags_do_contato.ov."{\\"vip\\",\\"orcamento\\"}"',
+      'tags_do_contato.ov."{\\"vip\\",\\"orcamento\\"}"',
     );
   });
 
@@ -110,11 +110,11 @@ describe("a régua do filtro por várias etiquetas", () => {
     // As DUAS caixas continuam em OU nos dois modos: é a régua da 0323, e perdê-la
     // em um dos modos faria o filtro de etiqueta do contato desaparecer.
     for (const predicado of [e, ou]) {
-      expect(predicado).toContain("tags.");
-      expect(predicado).toContain("tags_do_contato.");
+      // 0659: conversa não tem etiqueta — só a caixa do contato.
+      expect(predicado.startsWith("tags_do_contato.")).toBe(true);
     }
-    expect(e.startsWith("tags.cs.")).toBe(true);
-    expect(ou.startsWith("tags.ov.")).toBe(true);
+    expect(e.startsWith("tags_do_contato.cs.")).toBe(true);
+    expect(ou.startsWith("tags_do_contato.ov.")).toBe(true);
   });
 
   it("modo `e` é o PADRÃO: sem dizer nada, o filtro é o de sempre", () => {
@@ -199,7 +199,7 @@ describe("o `?tag=` singular continua byte a byte o de antes", () => {
     // que ela ganhe, e o teste passa a proteger a cópia, não o comportamento.
     const valor = arrayDeUmValorParaOr("vip");
     expect(plural.ors).toEqual([
-      `tags.cs.${valor},tags_do_contato.cs.${valor}`,
+      `tags_do_contato.cs.${valor}`,
     ]);
   });
 
@@ -307,10 +307,10 @@ describe("o funil: E e OU dão listas DIFERENTES", () => {
     expect(applyFilters(leia, { tag: ["vip", "orcamento"] }).map((l) => l.id)).toEqual(["a"]);
   });
 
-  it("o funil casa as TRÊS caixas do card (negócio, contato e conversa)", () => {
+  it("o funil casa as DUAS caixas do card (negócio e contato; conversa não tem tag desde a 0659)", () => {
     const porContato = lead("e", { contact_tags: ["vip", "orcamento"] });
-    const porConversa = lead("f", { conversation_tags: ["vip", "orcamento"] });
-    expect(applyFilters([porContato, porConversa], { tag: ["vip", "orcamento"] })).toHaveLength(2);
+    const porNegocio = lead("f", { tags: ["vip", "orcamento"] });
+    expect(applyFilters([porContato, porNegocio], { tag: ["vip", "orcamento"] })).toHaveLength(2);
   });
 
   it("uma etiqueta SÓ no funil continua filtrando como antes", () => {
@@ -340,8 +340,8 @@ describe("o funil: E e OU dão listas DIFERENTES", () => {
     expect(applyFilters([misturado], { tag: ["vip", "orcamento"], tagMode: "e" })).toHaveLength(0);
     // No OU a mesma mistura passa: é "qualquer uma em qualquer caixa".
     expect(applyFilters([misturado], { tag: ["vip", "orcamento"], tagMode: "ou" })).toHaveLength(1);
-    // E as DUAS na mesma caixa passam no E — em QUALQUER uma das três.
-    const naConversa = lead("h", { conversation_tags: ["vip", "orcamento"] });
+    // E as DUAS na mesma caixa passam no E — em QUALQUER uma das caixas.
+    const naConversa = lead("h", { contact_tags: ["vip", "orcamento"] });
     const noNegocio = lead("i", { tags: ["vip", "orcamento"] });
     expect(applyFilters([naConversa, noNegocio], { tag: ["vip", "orcamento"], tagMode: "e" })).toHaveLength(2);
   });
@@ -349,7 +349,7 @@ describe("o funil: E e OU dão listas DIFERENTES", () => {
   it("uma etiqueta só no funil não muda de sentido por causa da mesma-caixa", () => {
     // Com um item só, "todas na mesma caixa" é sinônimo de "está em alguma
     // caixa": o filtro de sempre continua filtrando o de sempre.
-    const emCaixasDiferentes = lead("j", { tags: ["vip"], conversation_tags: ["vip"] });
+    const emCaixasDiferentes = lead("j", { tags: ["vip"], contact_tags: ["vip"] });
     expect(applyFilters([emCaixasDiferentes], { tag: "vip" })).toHaveLength(1);
   });
 });
@@ -421,9 +421,9 @@ const orsDaConsulta = (chamadas: { metodo: string; args: unknown[] }[]): string[
  * propósito: derivá-los de `predicadoDeVariasEtiquetas` protegeria a função
  * contra si mesma, e é justamente a função que a sabotagem troca.
  */
-const OR_DE_E = String.raw`tags.cs."{\"vip\",\"orcamento\"}",tags_do_contato.cs."{\"vip\",\"orcamento\"}"`;
-const OR_DE_OU = String.raw`tags.ov."{\"vip\",\"orcamento\"}",tags_do_contato.ov."{\"vip\",\"orcamento\"}"`;
-const OR_SINGULAR = String.raw`tags.cs."{\"vip\"}",tags_do_contato.cs."{\"vip\"}"`;
+const OR_DE_E = String.raw`tags_do_contato.cs."{\"vip\",\"orcamento\"}"`;
+const OR_DE_OU = String.raw`tags_do_contato.ov."{\"vip\",\"orcamento\"}"`;
+const OR_SINGULAR = String.raw`tags_do_contato.cs."{\"vip\"}"`;
 const OR_DE_CONTATOS_E = String.raw`tags.ov."{\"vip\"}",tags.ov."{\"orcamento\"}"`;
 
 describe("o handler monta a expressão certa, nos DOIS modos", () => {

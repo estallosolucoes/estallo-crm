@@ -4,14 +4,14 @@
 
 ## Personalidade
 
-A voz do DeskcommCRM é **profissional sem ser formal, direta sem ser seca, humana sem ser casual**. A pessoa que está lendo é um atendente em meio a 40 conversas — ela precisa de clareza imediata, não de companhia.
+A voz da Estallo é a de um especialista acessível e confiante, direto no benefício e generoso no ensino, sem jargão ou promessa vazia. O CRM aplica essa voz ao atendimento: orientar com clareza, explicar o que aconteceu e oferecer um próximo passo. Referência: [Design System Estallo](README.md).
 
 Os 4 atributos canônicos:
 
 - **Claro.** Frase curta, ordem direta, palavra exata. Se uma frase precisa ser relida, ela falhou.
 - **Conciso.** Cada palavra carrega peso. Microcopy de botão raramente passa de 3 palavras; mensagem de confirmação raramente passa de 2 frases.
-- **Confiante.** Sem hedging ("talvez", "geralmente", "pode ser"). O sistema sabe o que aconteceu e diz o que aconteceu.
-- **Calmo.** Sem urgência manufaturada, sem celebração, sem exclamation marks — exceto em confirmação destrutiva onde o cuidado importa.
+- **Confiante e honesto.** Dizer o que foi confirmado e declarar incerteza quando existir; não prometer um resultado sem evidência.
+- **Humano e otimista.** Sem urgência manufaturada ou entusiasmo que distraia. Confirmações positivas são permitidas quando úteis; falhas exigem orientação concreta.
 
 ## Idioma e gramática
 
@@ -24,51 +24,51 @@ Os 4 atributos canônicos:
 
 ### Mensagens de erro
 
-| ❌ Não | ✅ Sim |
-|--------|-------|
-| "Oops! Algo deu errado 😬" | "Não conseguimos completar essa ação. Tente novamente em instantes." |
-| "Erro 500 — Internal Server Error" | "Tivemos um problema no servidor. Sua conversa não foi perdida." |
-| "Falha ao salvar!" | "Não foi possível salvar. Verifique sua conexão." |
-| "Acesso negado." | "Você não tem permissão pra essa ação. Fale com o admin do espaço." |
+| ❌ Não                             | ✅ Sim                                                               |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| "Oops! Algo deu errado 😬"         | "Não conseguimos completar essa ação. Tente novamente em instantes." |
+| "Erro 500 — Internal Server Error" | "Tivemos um problema no servidor. Sua conversa não foi perdida."     |
+| "Falha ao salvar!"                 | "Não foi possível salvar. Verifique sua conexão."                    |
+| "Acesso negado."                   | "Você não tem permissão pra essa ação. Fale com o admin do espaço."  |
 
 ### Confirmações
 
-| ❌ Não | ✅ Sim |
-|--------|-------|
-| "Salvo com sucesso! ✅" | "Salvo." |
-| "Conversa marcada como resolvida! 🎉" | "Conversa resolvida." |
-| "Awesome! Conta criada." | "Conta criada. Você já pode entrar." |
+| ❌ Não                                | ✅ Sim                               |
+| ------------------------------------- | ------------------------------------ |
+| "Salvo com sucesso! ✅"               | "Salvo."                             |
+| "Conversa marcada como resolvida! 🎉" | "Conversa resolvida."                |
+| "Awesome! Conta criada."              | "Conta criada. Você já pode entrar." |
 
 ### IA / automação
 
-| ❌ Não | ✅ Sim |
-|--------|-------|
-| "✨ Powered by AI" | "Atendimento com IA. Resposta em até 30 segundos." |
-| "Smart suggestions" | "Sugestões automáticas" |
-| "Magicamente organizado!" | "Organizado por contexto da conversa." |
+| ❌ Não                    | ✅ Sim                                             |
+| ------------------------- | -------------------------------------------------- |
+| "✨ Powered by AI"        | "Atendimento com IA. Resposta em até 30 segundos." |
+| "Smart suggestions"       | "Sugestões automáticas"                            |
+| "Magicamente organizado!" | "Organizado por contexto da conversa."             |
 
 ### Ações destrutivas
 
-| ❌ Não | ✅ Sim |
-|--------|-------|
-| "Tem certeza?? Essa ação é IRREVERSÍVEL!!!" | "Apagar 3 conversas? Essa ação não pode ser desfeita." |
-| "Cuidado! Você vai perder seus dados!" | "Você está saindo desta conta. Suas conversas continuam no espaço." |
+| ❌ Não                                      | ✅ Sim                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| "Tem certeza?? Essa ação é IRREVERSÍVEL!!!" | "Apagar 3 conversas? Essa ação não pode ser desfeita."              |
+| "Cuidado! Você vai perder seus dados!"      | "Você está saindo desta conta. Suas conversas continuam no espaço." |
 
 ### Empty states
 
-| ❌ Não | ✅ Sim |
-|--------|-------|
-| "Nada por aqui ainda 🌱" | "Nenhuma conversa pendente. Quando uma chegar, ela aparece aqui." |
-| "Sem resultados :(" | "Nenhuma conversa encontrada para 'pedido cancelado'. Tente outros termos ou limpe o filtro." |
-| "Lista vazia" | "Você não tem pedidos abertos. Crie um a partir de uma conversa." |
+| ❌ Não                   | ✅ Sim                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------- |
+| "Nada por aqui ainda 🌱" | "Nenhuma conversa pendente. Quando uma chegar, ela aparece aqui."                             |
+| "Sem resultados :("      | "Nenhuma conversa encontrada para 'pedido cancelado'. Tente outros termos ou limpe o filtro." |
+| "Lista vazia"            | "Você não tem pedidos abertos. Crie um a partir de uma conversa."                             |
 
 ### Loading states
 
-| ❌ Não | ✅ Sim |
-|--------|-------|
-| "Carregando…" | "Carregando conversas." |
+| ❌ Não              | ✅ Sim                               |
+| ------------------- | ------------------------------------ |
+| "Carregando…"       | "Carregando conversas."              |
 | "Por favor aguarde" | (skeleton sem texto, ou) "Buscando." |
-| "Hold on tight!" | "Sincronizando." |
+| "Hold on tight!"    | "Sincronizando."                     |
 
 ## Microcopy patterns
 

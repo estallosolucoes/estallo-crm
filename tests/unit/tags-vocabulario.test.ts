@@ -183,9 +183,10 @@ describe("fatia S4 — vocabulário de tags (contrato do que foi escrito)", () =
 
   it("a tela está no NAV_CATALOG, para manager, e a página existe", () => {
     const catalogo = ler("lib/navigation/catalogo.ts");
-    expect(catalogo).toMatch(/href: "\/app\/settings\/tags"/);
+    // 0659: a tela mudou para o CRM.
+    expect(catalogo).toMatch(/href: "\/app\/crm\/tags"/);
     expect(catalogo).toMatch(/minRole: "manager"/);
-    expect(existsSync(join(raiz, "app/app/settings/tags/page.tsx"))).toBe(true);
+    expect(existsSync(join(raiz, "app/app/crm/tags/page.tsx"))).toBe(true);
   });
 
   it("o teto da tela é o MESMO `limit` do SQL — e a tela avisa quando bate nele", () => {
@@ -193,13 +194,14 @@ describe("fatia S4 — vocabulário de tags (contrato do que foi escrito)", () =
     // o `TETO_DA_LISTA` do painel. Divergir não dá erro nenhum — dá uma tela que
     // corta em 500 e avisa em 400, ou que corta em 500 e nunca avisa. Este caso
     // liga as duas, e é o único lugar do repo que pode.
-    const sql = ler(MIGRATION);
+    // A leitura vigente é a da 0659 (uma linha por entidade).
+    const sql = ler("supabase/migrations/20261014160000_0659_tags_por_entidade_e_fim_da_tag_na_conversa.sql");
     const teto = /limit (\d+);/.exec(sql)?.[1];
     expect(teto, "a função precisa ter um `limit` explícito").toBeDefined();
 
-    const painel = ler("app/app/settings/tags/_painel.tsx");
+    const painel = ler("app/app/crm/tags/_client.tsx");
     expect(painel).toContain(`const TETO_DA_LISTA = ${teto};`);
-    expect(painel).toContain("tags.length >= TETO_DA_LISTA");
+    expect(painel).toContain("linhas.length >= TETO_DA_LISTA");
     // E a frase do aviso nomeia o mesmo número — quem lê a tela não abre o SQL.
     expect(painel).toContain(`Mostrando as ${teto} primeiras etiquetas`);
   });
